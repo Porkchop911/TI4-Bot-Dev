@@ -90,14 +90,14 @@ export function Toolbar({
               History
             </span>
             <nav aria-label="Turns of the Log" className="-ml-1 flex min-w-0 items-center">
-              {step("Previous turn", "‹", history.previous)}
+              {step("Older turn", "‹", history.previous)}
               <strong
                 className="min-w-0 truncate text-sm font-semibold text-text"
                 title={history.title}
               >
                 {history.title}
               </strong>
-              {step("Next turn", "›", history.next)}
+              {step("Newer turn", "›", history.next)}
             </nav>
           </div>
           <Button tone="quiet" size="sm" onClick={() => dispatch({ type: "closeTurn" })}>

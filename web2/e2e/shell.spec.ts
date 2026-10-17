@@ -150,9 +150,9 @@ test("desktop: with no decision of the viewer open there is no step sheet, the f
   await expect(page.locator("#step-panel")).toHaveCount(0);
   // The footer alone stays over the board while it has a button: here the undo and the step.
   await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeVisible();
-  // The Log has the phase that is played now as its last row, with "▶".
+  // The Log has the phase that is played now as its first row, with "▶".
   const log = page.getByRole("region", { name: "Log" });
-  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").first();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("Strategy phase · Round 1");
   await readOnly(log);
@@ -200,9 +200,12 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   await expect(page.locator("header strong")).toHaveText(/^Waiting for /);
 
   const log = page.getByRole("region", { name: "Log" });
-  // The action is the turn of the viewer that is played now: the last row, with "▶" and "You".
+  // The action is the turn of the viewer that is played now: the first row, with "▶" and "You".
   // A strategic turn opens its action: its row is a button.
-  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
+  const live = log
+    .getByRole("list", { name: "Turns" })
+    .locator("li > article, li > button")
+    .first();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("You");
   await expect(live).toContainText("Strategic · Leadership");
@@ -247,10 +250,13 @@ test("desktop: while the viewer decides a secondary, the sheet has its row and i
   await expect(sheet).not.toContainText("Then: ");
   await expect(sheet.getByRole("button", { name: /^Rules/ })).toHaveCount(1);
 
-  // The Log: the turn of Sol is its last row, live, with no copy of the choice.
+  // The Log: the turn of Sol is its first row, live, with no copy of the choice.
   const log = page.getByRole("region", { name: "Log" });
   // A strategic turn opens its action: its row is a button.
-  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
+  const live = log
+    .getByRole("list", { name: "Turns" })
+    .locator("li > article, li > button")
+    .first();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("Strategic · Leadership");
   await expect(log).not.toContainText("Command pools");
@@ -443,7 +449,7 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   // sheet has no line of its own for them.
   const turns = header.getByRole("navigation", { name: "Turns of the Log" });
   await expect(turns).toContainText(/Round 1 · Turn \d+ · /);
-  await expect(turns.getByRole("button", { name: "Next turn" })).toBeDisabled();
+  await expect(turns.getByRole("button", { name: "Newer turn" })).toBeDisabled();
   await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toHaveCount(0);
   await expect(turn.getByRole("button", { name: "Close" })).toHaveCount(0);
   // No control of the live game: the decision is a bar that says that it waits, with no footer.
@@ -609,13 +615,13 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   // "‹" and "›" go to the rows of the Log around it: the phase is the first row.
   const turns = page.locator("header").getByRole("navigation", { name: "Turns of the Log" });
   await expect(turns.locator("strong")).toHaveText("Round 1 · Strategy phase");
-  await expect(turns.getByRole("button", { name: "Previous turn" })).toBeDisabled();
-  await turns.getByRole("button", { name: "Next turn" }).click();
+  await expect(turns.getByRole("button", { name: "Older turn" })).toBeDisabled();
+  await turns.getByRole("button", { name: "Newer turn" }).click();
   await expect(phase).toHaveAttribute("aria-pressed", "false");
   await expect(log.getByRole("button", { pressed: true })).toHaveCount(1);
   await expect(turns.locator("strong")).toHaveText(/^Round 1 · Turn 1 · /);
   await expect(page.locator("header")).toContainText(/Round 1 · Turn 1 · /);
-  await turns.getByRole("button", { name: "Previous turn" }).click();
+  await turns.getByRole("button", { name: "Older turn" }).click();
   await expect(phase).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await expect(turn).toHaveCount(0);

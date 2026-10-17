@@ -256,7 +256,7 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
-  // The turns since the viewer's last turn, the turn that is played now last.
+  // The turns since the viewer's last turn, newest first, the turn that is played now on top.
   const log = <LogPanel log={view.log} open={view.inspect?.turn ?? null} />;
   // The open step is a sheet over the board. An open fleet, the open landings and the open build
   // of a production have its room; their check mark gives it back.

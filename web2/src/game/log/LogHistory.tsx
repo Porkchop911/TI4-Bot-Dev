@@ -3,14 +3,16 @@ import { cx } from "../../ui";
 import { SeatSymbol, useDispatch, useSeats } from "../context";
 
 /**
- * The turns since the viewer's last turn, oldest first: one large row for each turn and each
- * phase that is no action phase, the turn that is played now last. A row says who did what and
+ * The turns since the viewer's last turn, newest first: one large row for each turn and each
+ * phase that is no action phase, the turn that is played now on top. A row says who did what and
  * how it ended; what happened in it is the sheet of its action, read-only: a tactical, strategic
  * or component turn, and a phase, open it over the board.
  */
 export function LogHistory({ view, open = null }: { view: LogView; open?: string | null }) {
   // The start of an action phase has nothing to say: the turns that follow say their round.
-  const entries = view.entries.filter((entry) => entry.kind === "turn" || entry.phase !== "action");
+  const entries = view.entries
+    .filter((entry) => entry.kind === "turn" || entry.phase !== "action")
+    .reverse();
   if (entries.length === 0) {
     return (
       <p className="px-3 py-2 text-sm text-muted">

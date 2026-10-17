@@ -164,9 +164,12 @@ test("phone: the Log pane has the strategic action that the other seats follow a
     .getByRole("button", { name: "Log" })
     .click();
   const log = page.getByRole("region", { name: "Log" });
-  // The action is the turn of the viewer that is played now: the last row, with "▶" and "You".
+  // The action is the turn of the viewer that is played now: the first row, with "▶" and "You".
   // A strategic turn opens its action: its row is a button.
-  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
+  const live = log
+    .getByRole("list", { name: "Turns" })
+    .locator("li > article, li > button")
+    .first();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("You");
   await expect(live).toContainText("Strategic · Leadership");
@@ -216,7 +219,10 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     .click();
   const log = page.getByRole("region", { name: "Log" });
   // A strategic turn opens its action: its row is a button.
-  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
+  const live = log
+    .getByRole("list", { name: "Turns" })
+    .locator("li > article, li > button")
+    .first();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("Strategic · Leadership");
   await expect(log).not.toContainText("Command pools");
@@ -340,8 +346,8 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
   expect(system.y + system.height).toBeLessThanOrEqual(mark.y);
   // "‹" and "›" are in the toolbar, around the turn, in one line; the sheet has no line for them.
   const turns = header.getByRole("navigation", { name: "Turns of the Log" });
-  await expect(turns.getByRole("button", { name: "Previous turn" })).toBeVisible();
-  await expect(turns.getByRole("button", { name: "Next turn" })).toBeDisabled();
+  await expect(turns.getByRole("button", { name: "Older turn" })).toBeVisible();
+  await expect(turns.getByRole("button", { name: "Newer turn" })).toBeDisabled();
   expect((await turns.boundingBox())!.height).toBeLessThan(40);
   await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toHaveCount(0);
   await expect(turn.getByRole("button", { name: "Close" })).toHaveCount(0);
