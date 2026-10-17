@@ -14,4 +14,9 @@ resources?: number,
 /**
  * The influence of the planet now, when it differs from the printed value.
  */
-influence?: number, };
+influence?: number, 
+/**
+ * The technology specialties of the planet now ("warfare"), when they differ from the
+ * printed ones: with its attachments (`ti4_engine::planets::tech_specialties_now`).
+ */
+tech_specialties?: Array<string>, };

@@ -97,7 +97,13 @@ function tileView(
         resources: system?.planets[planet.id]?.resources ?? planet.resources,
         influence: system?.planets[planet.id]?.influence ?? planet.influence,
         owner: system?.planets[planet.id]?.controlled_by ?? null,
-        tech: TECH_COLORS[planet.tech_specialties?.[0] ?? ""] ?? null,
+        // The specialty now: an attachment can give a planet one.
+        tech:
+          TECH_COLORS[
+            (system?.planets[planet.id]?.tech_specialties ??
+              planet.tech_specialties ??
+              [])[0]?.toUpperCase() ?? ""
+          ] ?? null,
         groundForces: types.filter((type) => type && isGroundForce(type)).length,
         planetaryShield: types.includes("pds"),
         traits: traits(planet),

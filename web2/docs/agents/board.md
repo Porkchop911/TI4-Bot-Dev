@@ -41,6 +41,7 @@ The owner chose on 2026-10-10 where it shows: in the landing sheet and the syste
 - The sheet has the four decks. A deck says how many cards are left and who has its relic fragments. A card is one row for all cards of that name: the printed text, "left / total", and who drew one, when and where. A card with none left is dimmed; "0 / 1" is its sign, with no "–" before it (owner, 2026-10-11).
 - Exception to "rule text is behind hover": the deck sheet shows the printed text of each card, as a list of cards does. The reason: the player opens the sheet to read what the deck can still give.
 - `res/inf` is the value of a planet now, from the engine: the printed value with its attachments and the laws on it (`PlanetView.resources`/`influence`, sent when they differ). The attachment line says what each adds.
+- The map view "Tech skips" shows the technology specialty of a planet now, from the engine: the printed one, or the one that an attachment gave it (Warfare Research Facility; `PlanetView.tech_specialties`, sent when it differs). This holds in Live and in a turn of the Log, whose board is that of its step.
 - A decision that an exploration card asks has the card on top, as printed (the `source` block), with the deck and the planet.
 - The facts come from the engine: which planets are explored, what the decks hold, what was drawn (`exploration` of the update). The names and texts are the catalogue of the engine (`Transport.catalog`); without it a card is shown by its id.
 - The relic fragments and the relics of a player are in the sheet of that player.

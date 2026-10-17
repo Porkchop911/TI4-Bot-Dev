@@ -81,6 +81,10 @@ pub struct PlanetView {
     /// The influence of the planet now, when it differs from the printed value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub influence: Option<i64>,
+    /// The technology specialties of the planet now ("warfare"), when they differ from the
+    /// printed ones: with its attachments (`ti4_engine::planets::tech_specialties_now`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tech_specialties: Option<Vec<String>>,
 }
 
 /// Redacted view of a unit placed on the board.

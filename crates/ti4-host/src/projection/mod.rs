@@ -222,6 +222,26 @@ fn value_now(
     (now != ti4_engine::production::planet_value(content, sources, planet, kind)).then_some(now)
 }
 
+/// The technology specialties of `planet` now, when its attachments changed the printed ones.
+fn specialties_now(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &PlanetId,
+) -> Option<Vec<String>> {
+    let now = ti4_engine::planets::tech_specialties_now(state, content, sources, planet);
+    let printed: Vec<String> = ti4_content::galaxy::planet(content, planet.as_str(), sources)
+        .map(|record| {
+            record
+                .tech_specialties()
+                .into_iter()
+                .map(str::to_ascii_lowercase)
+                .collect()
+        })
+        .unwrap_or_default();
+    (now != printed).then_some(now)
+}
+
 /// Projects the full board view with combat and dice information, with the content and the
 /// sources of the game.
 #[must_use]
@@ -256,6 +276,7 @@ pub fn project_board_view_full(
                         .unwrap_or_default(),
                     resources: value_now(state, content, sources, &planet_id, Spend::Resources),
                     influence: value_now(state, content, sources, &planet_id, Spend::Influence),
+                    tech_specialties: specialties_now(state, content, sources, &planet_id),
                 },
             );
         }
@@ -1387,5 +1408,35 @@ mod tests {
                 .home_system_lost
                 .contains_key(&xxcha)
         );
+    }
+
+    #[test]
+    fn a_planet_has_the_technology_specialty_that_an_attachment_gave_it() {
+        let player = PlayerId::new("a");
+        let mut state =
+            GameState::new(std::slice::from_ref(&player), &[], BTreeMap::new(), None, 1);
+        // Archon Tau has no specialty printed; Archon Ren keeps what is printed.
+        let system = state.system_mut(&SystemId::new("14"));
+        system.set_control(PlanetId::new("archontau"), player.clone());
+        system.set_control(PlanetId::new("archonren"), player.clone());
+        state
+            .planet_attachments
+            .insert(PlanetId::new("archontau"), vec!["warfare".to_owned()]);
+        let board = project_board_view_full(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::DEFAULT,
+            &[],
+            None,
+            &[],
+            None,
+        );
+        let planets = &board.systems[&SystemId::new("14")].planets;
+        assert_eq!(
+            planets[&PlanetId::new("archontau")].tech_specialties,
+            Some(vec!["warfare".to_owned()])
+        );
+        // A planet as printed sends none.
+        assert_eq!(planets[&PlanetId::new("archonren")].tech_specialties, None);
     }
 }
