@@ -66,9 +66,14 @@ async function warfare() {
       transport.submitPlan(pending.nonce, { destination: "71", steps: stepsOf(facts, draft) });
       continue;
     }
+    const stay = options.find((id) => id === "71" && pending.choice.prompt.includes("without"));
+    const land = !stay && landed < 2 && options.includes("commit|0|bakal");
+    if (land) {
+      landed++;
+    }
     const pick =
-      options.find((id) => id === "71" && pending.choice.prompt.includes("without")) ??
-      (landed < 2 && options.includes("commit|0|bakal") ? (landed++, "commit|0|bakal") : null) ??
+      stay ??
+      (land ? "commit|0|bakal" : null) ??
       options.find((id) => id === "strategic" || id === "end_turn") ??
       options[0];
     transport.submitChoice(pending.nonce, pick);
