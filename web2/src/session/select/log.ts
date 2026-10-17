@@ -25,6 +25,7 @@ import type {
   TokenPool,
   TurnAction,
 } from "../wire";
+import { type ExploredView, exploredCard } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
 import {
   byUnitOrder,
@@ -56,6 +57,8 @@ interface Names {
   leader(id: string): string;
   relic(id: string): string;
   explore(id: string): string;
+  /** An exploration of the events: its card as printed and what came of it. */
+  explored(fact: Extract<PublicFact, { kind: "explored" }>): ExploredView;
   ability(id: string): string;
   /** A vote: "For", "Against", or what is elected. */
   outcome(id: string): string;
@@ -107,6 +110,7 @@ function namesOf(update: SessionUpdate, printed: Catalog | null): Names {
     leader: (id) => byId(id, components?.leaders, records?.leaders) ?? humanizeId(id),
     relic: (id) => byId(id, components?.relics, records?.relics) ?? humanizeId(id),
     explore: (id) => byId(id, printed?.exploration.cards, records?.explores) ?? humanizeId(id),
+    explored: (fact) => exploredCard(update, printed?.exploration ?? null, fact),
     ability: (id) => byId(id, components?.abilities, records?.abilities) ?? humanizeId(id),
     agenda: (id) => byId(id, components?.agendas) ?? humanizeId(id),
     outcome: (id) =>
@@ -769,10 +773,11 @@ function detailsOf(
           : fact.system
             ? names.system(fact.system)
             : null;
+        const { effect } = names.explored(fact);
         groups.text(
           own("Exploration", fact.seat),
           fact.seat,
-          `Explored${place ? ` ${place}` : ""}: ${names.explore(fact.card)}`,
+          `Explored${place ? ` ${place}` : ""}: ${names.explore(fact.card)}${effect ? ` · ${effect}` : ""}`,
         );
         break;
       }
@@ -1358,6 +1363,8 @@ function summaryOf(
   let followed = 0;
   let replenished = 0;
   const other: string[] = [];
+  /** The explorations of the seat: "Primor: Demilitarized Zone". */
+  const explored: string[] = [];
   for (const { seat, fact } of facts) {
     const own = seat === turn.seat;
     switch (fact.kind) {
@@ -1462,6 +1469,16 @@ function summaryOf(
           other.push("removed the custodians");
         }
         break;
+      case "explored":
+        if (own) {
+          const place = fact.planet
+            ? names.planet(fact.planet)
+            : fact.system
+              ? names.system(fact.system)
+              : null;
+          explored.push(`${place ? `${place}: ` : ""}${names.explore(fact.card)}`);
+        }
+        break;
       default:
         break;
     }
@@ -1490,6 +1507,11 @@ function summaryOf(
     );
   }
   parts.push(...planets);
+  if (explored.length) {
+    parts.push(
+      `explored ${explored.slice(0, 2).join(", ")}${explored.length > 2 ? ` +${explored.length - 2}` : ""}`,
+    );
+  }
   // A planet that the seat took, or lost the fight for, is said once.
   const rest = landed.filter((planet) => ![...told].some((id) => names.planet(id) === planet));
   if (rest.length) {

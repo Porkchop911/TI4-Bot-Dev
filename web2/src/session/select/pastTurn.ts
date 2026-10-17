@@ -7,6 +7,7 @@
 import type {
   ActivationView,
   BattleRecordView,
+  BlockView,
   BattleRowView,
   BattleTableView,
   CombatView,
@@ -38,7 +39,7 @@ import type {
   SpaceRoundView,
 } from "../wire";
 import { roundTable, sideRows } from "./combat";
-import { NO_TRAITS, planetTraits } from "./exploration";
+import { NO_TRAITS, exploredCard, planetTraits } from "./exploration";
 import { turnEvents } from "./log";
 import { systemLabel, tilesOf } from "./movement";
 import { cannonTable, removedUnits, riftRows } from "./movementRolls";
@@ -593,6 +594,19 @@ export function selectPastTurn(
     status: "done",
     caption: caption(index),
   }));
+  // An exploration is shown with the step that it came in (the frontier token after the
+  // movement, a planet after the invasion), as Live showed its card: printed, and what came of it.
+  const explored = facts("explored")
+    .filter(({ at }) => (steps.find((index) => cursors[index] > at) ?? steps.at(-1)) === step)
+    .flatMap(({ fact }): BlockView[] => {
+      const card = exploredCard(update, catalog, fact);
+      return [
+        { kind: "source", name: card.name, type: card.type, text: card.text },
+        ...(card.effect
+          ? [{ kind: "note" as const, tone: "quiet" as const, text: card.effect }]
+          : []),
+      ];
+    });
   const playedNow = live && shown === steps.length - 1;
   const note =
     step === 4
@@ -612,7 +626,7 @@ export function selectPastTurn(
       current: null,
       contentKey: `past:${inspect.turn}:${step}`,
       interrupt: null,
-      closing: [],
+      closing: explored,
       task: {
         step: shown,
         title: STEPS[step],
