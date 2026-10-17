@@ -1,0 +1,86 @@
+{
+  "title": "web2: card effect previews and effects in force",
+  "description": "web2 (not web/) on a desktop of 1920x1080 and at the width of a Pixel 9 (412x923). A reaction row says under the card name what playing it would do now (the engine's EffectPreview.phrase); a window over a played action card says what that card will do when it resolves (DecisionContext.pending_effect), or still \"Not resolved yet.\" when the engine has no preview of it; the lingering effects in force are chips in the toolbar (GameView.active_effects title, summary, expiry). Shots 1 to 8 are a real game of the engine in the page (the late-game scenario, every seat played here, the wasm build of web2/scripts/build-wasm.sh): nothing is mocked. Shots 9 and 10 add three effects to the engine's active_effects of the next update (War Machine x2, Solar Flare, the Shields Holding / Maneuvering Jets pool), worded as ti4_host::view::effects words them. Regenerate with web2/scripts/build-wasm.sh, then cd web && npm run screenshots -- FJ (the captures start web2's own vite).",
+  "tag": "web/e2e/screenshots/FJ-web2-effects",
+  "shots": [
+    {
+      "group": "Reaction rows with the engine's preview",
+      "heading": "Coup d'Etat over Sol's Leadership (real game)",
+      "caption": "Sol takes the Leadership strategic action; Sardakk N'orr is asked. The row says: \"Cancels Sol's Leadership strategic action: it is not resolved, the card is not exhausted and their turn ends.\", above the printed window and text.",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/2-coup-preview-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/2-coup-preview-phone.png" }
+      ]
+    },
+    {
+      "heading": "Reverse Engineer that would change nothing (real game)",
+      "caption": "Flank Speed is discarded after it resolved; Sardakk N'orr's Reverse Engineer row says \"Flank Speed has no component action. Playing it now would change nothing.\" The toolbar has the one effect in force: Flank Speed, +1 move for all ships, until the end of this tactical action. On the phone the chip makes the page 424 px wide (see Notes).",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/6-reverse-engineer-fizzle-one-effect-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/6-reverse-engineer-fizzle-one-effect-phone.png" }
+      ]
+    },
+    {
+      "group": "The played card in a Sabotage window",
+      "heading": "Sabotage over Coup d'Etat: the pending effect (real game)",
+      "caption": "Sardakk N'orr played Coup d'Etat; Yin is asked. The Sabotage row says \"Cancels Sardakk N'orr's Coup d'Etat. The card stays spent and its effect does not happen.\"; under the printed Coup d'Etat, the played card's result: \"Cancels Sol's Leadership strategic action: it is not resolved, the card is not exhausted and their turn ends.\" instead of \"Not resolved yet.\".",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/3-sabotage-coup-pending-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/3-sabotage-coup-pending-phone.png" }
+      ]
+    },
+    {
+      "heading": "Sabotage over Flank Speed: the pending effect (real game)",
+      "caption": "Hacan applied a drafted tactical action at Mecatol Rex (#18) with Flank Speed; Yin is asked. The played card says \"+1 to the move value of each of Hacan's ships during this tactical action.\".",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/5-sabotage-flank-speed-pending-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/5-sabotage-flank-speed-pending-phone.png" }
+      ]
+    },
+    {
+      "heading": "Sabotage over Plagiarize: no preview, \"Not resolved yet.\" (real game)",
+      "caption": "Sol plays Plagiarize, which has no preview in the engine. The Sabotage row still says what Sabotage would do (\"Cancels Sol's Plagiarize. ...\"); the played card says \"Not resolved yet.\".",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/1-sabotage-plagiarize-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/1-sabotage-plagiarize-phone.png" }
+      ]
+    },
+    {
+      "heading": "The same window in the private draft (real game)",
+      "caption": "For comparison: in Hacan's draft the game asks \"Play Flank Speed / Decline\" as a plain list, with no preview sentence and no printed text (the draft does not use the reaction window). The chip appears in the toolbar once the choice is recorded.",
+      "file": "out/4-draft-flank-speed-desktop.png"
+    },
+    {
+      "group": "Effects in force in the toolbar",
+      "heading": "One chip, whole on hover (real game)",
+      "caption": "The chip is cut with \"…\"; its native title (drawn here, Chrome does not render it into screenshots) is the whole text: \"Flank Speed: +1 move for all ships · until the end of this tactical action\".",
+      "file": "out/7-chip-hover-desktop.png"
+    },
+    {
+      "heading": "The card's \"?\" (real game)",
+      "caption": "The \"?\" of the chip opened: the printed Flank Speed.",
+      "file": "out/8-chip-rules-desktop.png"
+    },
+    {
+      "heading": "Several effects, one of two stacked cards (engine effects plus three added)",
+      "caption": "Flank Speed (real) and three added effects: War Machine \"+8 production, -1 cost (2 cards)\", Solar Flare, and the pool \"Shields Holding / Maneuvering Jets\" (no card, so no \"?\"). On the desktop the chips push the reference buttons out of the toolbar and the page wider than the window: the player table is cut at the right. On the phone they wrap to one row each, but the page is 444 px wide.",
+      "images": [
+        { "label": "Desktop 1920x1080", "file": "out/9-several-effects-desktop.png" },
+        { "label": "Phone 412x923", "file": "out/9-several-effects-phone.png" },
+        { "label": "Toolbar, desktop", "file": "out/9-several-effects-toolbar-desktop.png" },
+        { "label": "Toolbar, phone", "file": "out/9-several-effects-toolbar-phone.png" }
+      ]
+    },
+    {
+      "heading": "The stacked War Machine on hover",
+      "caption": "The whole text of the chip with copies: \"War Machine: +8 production, -1 cost (2 cards) · until the end of this tactical action\".",
+      "file": "out/10-copies-hover-desktop.png"
+    }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "How the real states are reached", "text": "?scenario=late-game&humans=255: the engine deals the late-game hands (Yin: Sabotage; Sardakk N'orr: Coup d'Etat, Reverse Engineer; Hacan: Flank Speed), and the page shows each seat that the game asks. The capture clicks through the page as a player does; web2.ts only listens to the Worker's messages (and, for shots 9 and 10, appends to active_effects)." },
+    { "title": "Phone: the chips are wider than the screen", "text": "A chip has max-w-[420px], more than a 412 px phone: with Flank Speed alone the page is 424 px wide, with four chips 444 px; the chips' \"?\", the toolbar's menu and the step sheet are cut at the right." },
+    { "title": "Desktop: many chips push the toolbar off the screen", "text": "With four chips the toolbar does not shrink them enough: the round/phase is cut, Objectives ... Dev are pushed out of view, and the page (the player table) is wider than 1920 px." }
+  ]
+}
