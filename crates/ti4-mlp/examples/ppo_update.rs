@@ -67,10 +67,16 @@ static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::n
     let mut distinct = parsed.clone();
     distinct.sort_unstable();
     distinct.dedup();
-    if distinct.len() != 6 || parsed.iter().any(|name| ti4_mlp::FactionRow::of(name).is_err()) {
+    if distinct.len() != 6
+        || parsed
+            .iter()
+            .any(|name| ti4_mlp::FactionRow::of(name).is_err())
+    {
         refuse("--factions expects six distinct roster factions, comma separated");
     }
-    parsed.try_into().unwrap_or_else(|_| refuse("--factions expects six factions"))
+    parsed
+        .try_into()
+        .unwrap_or_else(|_| refuse("--factions expects six factions"))
 });
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// `build_positive_corpus`'s map convention. Corpus replay must reproduce that generator, not PPO.
@@ -244,6 +250,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--rotations",
     "--roster",
     "--factions",
+    "--record-best",
+    "--record-vp",
     "--stage",
     "--strategy-diversity-weight",
     "--styx-bonus",
@@ -636,6 +644,8 @@ fn play_one(
     sil_margin: f64,
     focus: Option<&BTreeMap<&'static str, u32>>,
     gae_lambda: f64,
+    record: Option<&Recorder>,
+    update: usize,
 ) -> Result<Played, String> {
     // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
     // the seed (BF-22). With --faction-focus the wide draw is weighted toward trailing factions.
@@ -1068,7 +1078,25 @@ fn play_one(
             seat_qualifies.then_some(seat_number),
             recorded.len(),
         ));
+        let first = steps.len();
         steps.extend(recorded.drain(..).map(|record| record.step));
+        // --record-best: this seat's exact training records, when it reached its faction's bar.
+        if let Some(recorder) = record {
+            let points = seat.episode.final_progress.victory_points;
+            if points >= recorder.bar(seat.faction.as_str()) {
+                recorder
+                    .write(
+                        &steps[first..],
+                        seat.faction.as_str(),
+                        update,
+                        seed,
+                        rotation,
+                        &seat.player,
+                        points,
+                    )
+                    .map_err(|error| format!("--record-best: {error}"))?;
+            }
+        }
     }
     // With --hash-games: what this game did, in forms two runs can be compared by exactly.
     let record = if hash {
@@ -1111,6 +1139,69 @@ fn play_one(
         ));
     }
     Ok((steps, outcomes, wasted, tactical, record, qualifying))
+}
+
+/// `--record-best`: where a seat's training records go when its final points reach its faction's
+/// bar (`--record-vp`, e.g. `6,hacan=7`: 6 for every faction, 7 for Hacan).
+struct Recorder {
+    directory: std::path::PathBuf,
+    default_bar: i64,
+    bars: BTreeMap<String, i64>,
+}
+
+impl Recorder {
+    fn parse(directory: String, bars: &str) -> Result<Self, String> {
+        let mut default_bar = None;
+        let mut by_faction = BTreeMap::new();
+        for part in bars.split(',').map(str::trim) {
+            match part.split_once('=') {
+                Some((faction, points)) => {
+                    ti4_mlp::FactionRow::of(faction).map_err(|error| error.to_string())?;
+                    let points = points
+                        .parse()
+                        .map_err(|_| format!("--record-vp {part}: not a number of points"))?;
+                    by_faction.insert(faction.to_owned(), points);
+                }
+                None => {
+                    default_bar = Some(
+                        part.parse()
+                            .map_err(|_| format!("--record-vp {part}: not a number of points"))?,
+                    );
+                }
+            }
+        }
+        Ok(Self {
+            directory: directory.into(),
+            default_bar: default_bar.ok_or("--record-vp needs a default bar, e.g. 6,hacan=7")?,
+            bars: by_faction,
+        })
+    }
+
+    fn bar(&self, faction: &str) -> i64 {
+        self.bars.get(faction).copied().unwrap_or(self.default_bar)
+    }
+
+    /// `<dir>/<faction>/u<update>-s<seed>-r<rotation>-<seat>-vp<points>.ti4ppo.zst`, read back by
+    /// `ti4_mlp::perf::read_capture`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the record's name is these facts"
+    )]
+    fn write(
+        &self,
+        steps: &[Step],
+        faction: &str,
+        update: usize,
+        seed: u64,
+        rotation: usize,
+        player: &PlayerId,
+        points: i64,
+    ) -> std::io::Result<()> {
+        let directory = self.directory.join(faction);
+        std::fs::create_dir_all(&directory)?;
+        let name = format!("u{update:04}-s{seed}-r{rotation}-{player}-vp{points}.ti4ppo.zst");
+        ti4_mlp::perf::write_capture_zstd(steps, &directory.join(name))
+    }
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
@@ -2055,6 +2146,24 @@ fn main() {
         );
     }
 
+    let recorder = argument("--record-best").map(|directory| {
+        let bars =
+            argument("--record-vp").unwrap_or_else(|| refuse("--record-best needs --record-vp"));
+        let recorder = Recorder::parse(directory, &bars).unwrap_or_else(|error| refuse(&error));
+        println!(
+            "  record      seats at >= {} VP ({}) -> {}",
+            recorder.default_bar,
+            recorder
+                .bars
+                .iter()
+                .map(|(faction, points)| format!("{faction} >= {points}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            recorder.directory.display()
+        );
+        recorder
+    });
+
     // --separate-models: one network and optimiser per faction of the six, each from the same
     // bundle and trained only on its own seats' decisions. Otherwise one shared model.
     let separate_models = std::env::args().any(|a| a == "--separate-models");
@@ -2082,10 +2191,9 @@ fn main() {
     if separate_models {
         // Each faction starts from its own model when --bundle is a checkpoint of a separate-models
         // run that trained it, else from --bundle itself (a faction new to the set).
-        let previous =
-            ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
-                .unwrap_or_else(|error| refuse(&error))
-                .unwrap_or_default();
+        let previous = ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
+            .unwrap_or_else(|error| refuse(&error))
+            .unwrap_or_default();
         models.clear();
         for faction in FACTIONS.iter() {
             let start = previous
@@ -2100,7 +2208,10 @@ fn main() {
                 .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
             models.push((actor, adam));
         }
-        println!("  models      separate: one per faction ({})", FACTIONS.join(", "));
+        println!(
+            "  models      separate: one per faction ({})",
+            FACTIONS.join(", ")
+        );
         if self_imitation > 0.0 {
             println!(
                 "  cross-imit  every model imitates the self-imitation picks of all six factions as its own"
@@ -2164,7 +2275,12 @@ fn main() {
         let mut infer_model = None;
         let (cpu_inference, mut gpu_service) = match &rollout_backend {
             RolloutBackend::Cpu => (
-                Some(models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu)),
+                Some(
+                    models[0]
+                        .0
+                        .inference_copy()
+                        .to_device(ti4_tensor::Device::Cpu),
+                ),
                 None,
             ),
             RolloutBackend::Infer(_) => {
@@ -2348,6 +2464,8 @@ fn main() {
                             sil_margin,
                             focus_weights.as_ref(),
                             gae_lambda,
+                            recorder.as_ref(),
+                            update,
                         ),
                     ));
                 }
@@ -2725,8 +2843,8 @@ fn main() {
         for (index, ((actor, optimizer), batch)) in models.iter_mut().zip(&batches).enumerate() {
             // Separate models learn from every faction's good decisions, taken as their own: the
             // demonstration's row becomes this model's faction, so its critic judges the advantage.
-            let own_row = separate
-                .then(|| ti4_mlp::FactionRow::of(FACTIONS[index]).expect("a roster row"));
+            let own_row =
+                separate.then(|| ti4_mlp::FactionRow::of(FACTIONS[index]).expect("a roster row"));
             let stats = if auxiliary.is_empty() {
                 ti4_mlp::ppo::update(
                     actor,
@@ -2751,7 +2869,8 @@ fn main() {
                         let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
                         let selected: Vec<_> = (0..width.min(auxiliary.len()))
                             .map(|offset| {
-                                let mut demo = auxiliary[(start + offset) % auxiliary.len()].clone();
+                                let mut demo =
+                                    auxiliary[(start + offset) % auxiliary.len()].clone();
                                 if let Some(row) = own_row {
                                     demo.demo.row = row;
                                 }
@@ -2853,7 +2972,10 @@ fn main() {
             if !demonstrations.is_empty() {
                 let (reference_kl, greedy_flip) = reference_drift(
                     &replay_actor,
-                    &models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu),
+                    &models[0]
+                        .0
+                        .inference_copy()
+                        .to_device(ti4_tensor::Device::Cpu),
                     &demonstrations,
                 )
                 .unwrap_or_else(|error| refuse(&format!("measuring reference drift: {error}")));
