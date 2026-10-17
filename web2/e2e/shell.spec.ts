@@ -9,15 +9,9 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/desktop/shell";
 
-/**
- * Nothing in the Log is a control: every button that it has changes what is in view (a group, a
- * rule text, the rolls of a battle).
- */
+/** Nothing in the Log is a control. */
 const readOnly = async (log: Locator) => {
-  await expect(log.locator("input, select, textarea")).toHaveCount(0);
-  await expect(log.locator('button:not([aria-expanded]):not([aria-label="Rolls"] *)')).toHaveCount(
-    0,
-  );
+  await expect(log.locator("input, select, textarea, button")).toHaveCount(0);
 };
 
 test("desktop: the right column is the players and the log, and the open step is a sheet over the board at the width of a phone", async ({
@@ -103,7 +97,7 @@ test("desktop: the right column is the players and the log, and the open step is
   expect(errors).toEqual([]);
 });
 
-test("desktop: with no decision of the viewer open there is no step sheet, the footer keeps its buttons, and the Log has the action that is played", async ({
+test("desktop: with no decision of the viewer open there is no step sheet, the footer keeps its buttons, and the Log has the phase that is played", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -123,20 +117,18 @@ test("desktop: with no decision of the viewer open there is no step sheet, the f
   await expect(page.locator("#step-panel")).toHaveCount(0);
   // The footer alone stays over the board while it has a button: here the undo and the step.
   await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeVisible();
-  // The Log has the action that is played now, read-only, once: in the entry that is played now
-  // (the phase in play), or as an entry of its own.
+  // The Log has the phase that is played now as its last row, with "▶".
   const log = page.getByRole("region", { name: "Log" });
-  const now = log.getByRole("article", { name: "Current action" });
-  await expect(now).toHaveCount(1);
-  await expect(now.getByRole("heading").first()).toHaveText("Waiting");
-  await expect(now).toContainText("Hacan decides next.");
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  await expect(live).toContainText("▶");
+  await expect(live).toContainText("Strategy phase · Round 1");
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/waiting.png`, animations: "disabled" });
 
   expect(errors).toEqual([]);
 });
 
-test("desktop: while the other seats follow a strategy card of the viewer, the Log has it, read-only, its parts in groups", async ({
+test("desktop: while the other seats follow a strategy card of the viewer, the Log has its turn as the live row", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -169,30 +161,18 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   await expect(page.locator("header strong")).toHaveText(/^Waiting for /);
 
   const log = page.getByRole("region", { name: "Log" });
-  // The action is one entry: the turn of the viewer that is played now, its last row, open, with
-  // what was played (Primary) and the action as it is now.
-  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
-  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
-  await expect(live.getByRole("region", { name: "Primary" })).toBeVisible();
-  const now = live.getByRole("article", { name: "Current action" });
-  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
-  await expect(now.getByRole("heading").first()).toHaveText("Leadership");
-  // The seats are a group that is open, with the seats that wait in one line.
-  const seats = now.getByRole("button", { name: "Seats" });
-  await expect(seats).toHaveAttribute("aria-expanded", "true");
-  await expect(now).toContainText("Then: ");
+  // The action is the turn of the viewer that is played now: the last row, with "▶" and "You".
+  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  await expect(live).toContainText("▶");
+  await expect(live).toContainText("You");
+  await expect(live).toContainText("Strategic · Leadership");
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(0);
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/strategic.png`, animations: "disabled" });
-  await expect(now).toContainText("✓ Resolved");
-  await seats.click();
-  await expect(seats).toHaveAttribute("aria-expanded", "false");
-  await expect(now).not.toContainText("✓ Resolved");
-  await seats.click();
-  await expect(now).toContainText("✓ Resolved");
   expect(errors).toEqual([]);
 });
 
-test("desktop: while the viewer decides a secondary, the sheet has its row and its choice, and the Log the other seats, once", async ({
+test("desktop: while the viewer decides a secondary, the sheet has its row and its choice, and the Log the turn of Sol", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -221,19 +201,12 @@ test("desktop: while the viewer decides a secondary, the sheet has its row and i
   await expect(sheet).not.toContainText("Then: ");
   await expect(sheet.getByRole("button", { name: /^Rules/ })).toHaveCount(1);
 
-  // The Log: the turn of Sol is one entry, live and open, with what Sol did and the seats now.
+  // The Log: the turn of Sol is its last row, live, with no copy of the choice.
   const log = page.getByRole("region", { name: "Log" });
-  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
-  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
-  await expect(live.getByRole("region", { name: "Primary" })).toBeVisible();
-  const now = live.getByRole("article", { name: "Current action" });
-  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
-  await expect(now).toContainText("✓ Resolved");
-  await expect(now).toContainText("Then: Letnev");
-  // No copy of the choice, and no second "?" or heading of the action.
-  await expect(now).not.toContainText("Command pools");
-  await expect(now.getByRole("heading", { name: "Leadership" })).toHaveCount(0);
-  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
+  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  await expect(live).toContainText("▶");
+  await expect(live).toContainText("Strategic · Leadership");
+  await expect(log).not.toContainText("Command pools");
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/secondary.png`, animations: "disabled" });
   expect(errors).toEqual([]);
@@ -289,7 +262,7 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
   expect(errors).toEqual([]);
 });
 
-test("desktop: the Log has a row for each turn of the other seats, which opens to its details", async ({
+test("desktop: the Log has a large row for each turn of the other seats, with its outcome", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -305,9 +278,10 @@ test("desktop: the Log has a row for each turn of the other seats, which opens t
 
   const log = page.getByRole("region", { name: "Log" });
   const turns = log.getByRole("list", { name: "Turns" });
+  // The strategy phase is a row; the start of the action phase is none.
   await expect(turns).toContainText("Strategy phase · Round 1");
-  await expect(turns).toContainText("Action phase · Round 1");
-  // One row for each turn: its number, the seat and the action, closed.
+  await expect(turns).not.toContainText("Action phase");
+  // One row for each turn: the seat, the action and its outcome, with no dice.
   const rows = turns.getByRole("article");
   await expect(rows).toHaveCount(7);
   for (const turn of await rows.all()) {
@@ -315,20 +289,12 @@ test("desktop: the Log has a row for each turn of the other seats, which opens t
       "aria-label",
       /^Turn \d+ · Seat [B-H] · (Tactical|Strategic|Component|Pass|Transaction)/,
     );
+    await expect(turn).toContainText("Round 1 · turn");
+    // A row is large: the seat, the action and the outcome are lines of their own.
+    expect((await turn.boundingBox())!.height).toBeGreaterThan(40);
   }
-  const toggles = turns.locator("button[aria-expanded]");
-  await expect(toggles.first()).toHaveAttribute("aria-expanded", "false");
-  // A row opens to its details in groups, and closes again.
-  const strategic = rows.filter({ hasText: "Strategic · Trade" });
-  const open = strategic.getByRole("button");
-  await open.click();
-  await expect(open).toHaveAttribute("aria-expanded", "true");
-  await expect(strategic.getByRole("region", { name: "Secondaries" })).toContainText("Followed");
-  for (const toggle of await toggles.all()) {
-    if ((await toggle.getAttribute("aria-expanded")) === "false") {
-      await toggle.click();
-    }
-  }
+  await expect(rows.filter({ hasText: "Strategic · Trade" })).toContainText("followed");
+  await expect(log.locator("[aria-label=Rolls], .die")).toHaveCount(0);
   // Every id is named as the page names it, and nothing is cut at the side.
   const text = await log.innerText();
   expect(text).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);
@@ -337,8 +303,5 @@ test("desktop: the Log has a row for each turn of the other seats, which opens t
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/log.png`, animations: "disabled" });
-  await open.click();
-  await expect(open).toHaveAttribute("aria-expanded", "false");
-  await expect(strategic.getByRole("region", { name: "Secondaries" })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

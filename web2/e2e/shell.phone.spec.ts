@@ -8,15 +8,9 @@ test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wa
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/phone/shell";
 
-/**
- * Nothing in the Log is a control: every button that it has changes what is in view (a group, a
- * rule text, the rolls of a battle).
- */
+/** Nothing in the Log is a control. */
 const readOnly = async (log: Locator) => {
-  await expect(log.locator("input, select, textarea")).toHaveCount(0);
-  await expect(log.locator('button:not([aria-expanded]):not([aria-label="Rolls"] *)')).toHaveCount(
-    0,
-  );
+  await expect(log.locator("input, select, textarea, button")).toHaveCount(0);
 };
 
 test("phone: the panes are Map, Players and Log, and the open step is a sheet over the board", async ({
@@ -71,13 +65,12 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(0);
   await expect(log).not.toContainText("Activate a system");
   await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
-  // A row opens to its details in groups.
-  const strategic = rows.filter({ hasText: "Strategic · Trade" });
-  await strategic.getByRole("button").click();
-  await expect(strategic.getByRole("region", { name: "Secondaries" })).toContainText("Followed");
-  const tactical = rows.filter({ hasText: "Tactical · " }).first();
-  await tactical.getByRole("button").click();
-  await expect(tactical.getByRole("region", { name: "Activation" })).toBeVisible();
+  // A row is large: the seat, the action and its outcome, with no dice.
+  await expect(rows.filter({ hasText: "Strategic · Trade" })).toContainText("followed");
+  for (const turn of await rows.all()) {
+    expect((await turn.boundingBox())!.height).toBeGreaterThan(40);
+  }
+  await expect(log.locator("[aria-label=Rolls], .die")).toHaveCount(0);
   expect(await log.innerText()).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);
   await readOnly(log);
   await fits();
@@ -108,7 +101,7 @@ test("phone: with no decision of the viewer open there is no step sheet", async 
   expect(errors).toEqual([]);
 });
 
-test("phone: the Log pane has the strategic action that the other seats follow, read-only, its parts in groups", async ({
+test("phone: the Log pane has the strategic action that the other seats follow as its live row", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -145,27 +138,20 @@ test("phone: the Log pane has the strategic action that the other seats follow, 
     .getByRole("button", { name: "Log" })
     .click();
   const log = page.getByRole("region", { name: "Log" });
-  // The action is one entry: the turn of the viewer that is played now, open.
-  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
-  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
-  const now = live.getByRole("article", { name: "Current action" });
-  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
-  await expect(now.getByRole("heading").first()).toHaveText("Leadership");
-  const seats = now.getByRole("button", { name: "Seats" });
-  await expect(seats).toHaveAttribute("aria-expanded", "true");
-  await expect(now).toContainText("✓ Resolved");
+  // The action is the turn of the viewer that is played now: the last row, with "▶" and "You".
+  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  await expect(live).toContainText("▶");
+  await expect(live).toContainText("You");
+  await expect(live).toContainText("Strategic · Leadership");
   await readOnly(log);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     page.viewportSize()!.width,
   );
   await page.screenshot({ path: `${SHOTS}/strategic.png`, animations: "disabled" });
-  await seats.click();
-  await expect(seats).toHaveAttribute("aria-expanded", "false");
-  await expect(now).not.toContainText("✓ Resolved");
   expect(errors).toEqual([]);
 });
 
-test("phone: while the viewer decides a secondary, the sheet on the map has its row and its choice, and the Log pane the other seats, once", async ({
+test("phone: while the viewer decides a secondary, the sheet on the map has its row and its choice, and the Log pane the turn of Sol", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -196,14 +182,10 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     .getByRole("button", { name: "Log" })
     .click();
   const log = page.getByRole("region", { name: "Log" });
-  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
-  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
-  const now = live.getByRole("article", { name: "Current action" });
-  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
-  await expect(now).toContainText("✓ Resolved");
-  await expect(now).toContainText("Then: Letnev");
-  await expect(now).not.toContainText("Command pools");
-  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
+  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  await expect(live).toContainText("▶");
+  await expect(live).toContainText("Strategic · Leadership");
+  await expect(log).not.toContainText("Command pools");
   await readOnly(log);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     page.viewportSize()!.width,

@@ -476,6 +476,21 @@ describe("the scope of the Log", () => {
     });
   });
 
+  it("is not cut by a secondary or a vote of the viewer: only a turn of the viewer cuts it", () => {
+    const events = [
+      ...pass("action_20", "a"),
+      ...technology("action_21", "c", "a"),
+      transition("agenda", 3),
+      inPhase("agenda", 3, "a", { kind: "voted", outcome: "for" }),
+    ];
+    const log = selectLog(update({ round: 3, phase: "agenda" }), eventsOf(events), printed);
+    expect(labels(log.entries)).toEqual([
+      "a Pass",
+      "c Strategic · Technology",
+      "Agenda phase · Round 3",
+    ]);
+  });
+
   it("does not end at the turn of the viewer that is played now: that is last", () => {
     const events = [...game().slice(0, -1), decided("action_40", "a", "a", started("tactical"))];
     const log = selectLog(update({ round: 4 }), eventsOf(events), printed);
