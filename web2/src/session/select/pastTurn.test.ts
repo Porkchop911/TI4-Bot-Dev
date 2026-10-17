@@ -5,7 +5,7 @@ import { boardAt } from "../history";
 import type { TransportEvent } from "../transport";
 import { type Engine, createWasmTransport } from "../wasmTransport";
 import type { LocalState } from "./action";
-import { selectPastTurn } from "./pastTurn";
+import { pastTactical, selectPastTurn } from "./pastTurn";
 import { selectShell } from "./shell";
 
 // The real engine, built by `scripts/build-wasm.sh` (it is not in the repository).
@@ -76,7 +76,7 @@ it.skipIf(!built)(
   async () => {
     const { update, events = [] } = await game("ongoing_combat");
     const open = (step: number | null) =>
-      selectPastTurn(update, events, { turn: "action_1", step })!;
+      pastTactical(selectPastTurn(update, events, { turn: "action_1", step }));
     const past = open(null);
     expect(past.system).toBe("29");
     expect(past.action.tabs.map((tab) => tab.name)).toEqual([
@@ -139,7 +139,7 @@ it.skipIf(!built)(
   "an invasion turn has what landed on each planet, and a table for the space cannon defense and each ground round",
   async () => {
     const { update, events = [] } = await game("ongoing_invasion_coexistence");
-    const past = selectPastTurn(update, events, { turn: "action_1", step: null })!;
+    const past = pastTactical(selectPastTurn(update, events, { turn: "action_1", step: null }));
     expect(past.action.tabs.map((tab) => tab.name)).toEqual(["Activation", "Invasion"]);
     const invasion = past.action.task.content;
     if (invasion.kind !== "invasion") {

@@ -7,7 +7,7 @@
 import type { BlockView, FlowActionView, MenuRowView, SeatRowView } from "../../model";
 import type { EventLog } from "../events";
 import { type PublicBoard, boardAt, withBoard } from "../history";
-import type { Catalog, SecondaryFacts, SeatPools, SessionUpdate } from "../wire";
+import type { Catalog, GameEvent, SecondaryFacts, SeatPools, SessionUpdate } from "../wire";
 import { type SeatPart, turnEvents, turnParts } from "./log";
 import { seatLabel, strategyCard } from "./names";
 import { planetNames } from "./payment";
@@ -34,8 +34,10 @@ export function selectPastFlow(
   events: EventLog,
   turn: string,
   printed: Catalog | null = null,
+  /** The events of the tactical action of the turn, which its steps show (`selectPastTurn`). */
+  shownElsewhere: ReadonlySet<GameEvent> | null = null,
 ): PastFlow | null {
-  const parts = turnParts(update, events, turn, printed);
+  const parts = turnParts(update, events, turn, printed, shownElsewhere);
   const action = parts?.action;
   if (!parts || (action?.type !== "strategic" && action?.type !== "component")) {
     return null;

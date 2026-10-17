@@ -62,10 +62,13 @@ export function ActivationStep({ view }: { view: ActivationView }) {
           eyebrow="Active system"
           title={view.active ? `#${view.active.system} ${view.active.name}` : "No system chosen"}
         />
-        <SummaryStat eyebrow="Cost" title="1 tactic token">
-          {view.draft
-            ? "Planned · Not spent until you apply"
-            : `Spent · Tactic pool ${view.tacticPool[0]} → ${view.tacticPool[1]}`}
+        {/* An activation that places no command token (Warfare) spends none. */}
+        <SummaryStat eyebrow="Cost" title={view.costsToken ? "1 tactic token" : "No command token"}>
+          {!view.costsToken
+            ? null
+            : view.draft
+              ? "Planned · Not spent until you apply"
+              : `Spent · Tactic pool ${view.tacticPool[0]} → ${view.tacticPool[1]}`}
         </SummaryStat>
       </SummaryGrid>
     );

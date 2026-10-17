@@ -573,6 +573,46 @@ test("desktop: a strategic turn of the Log opens to its card and a row for each 
   expect(errors).toEqual([]);
 });
 
+test("desktop: a strategic turn with a tactical action opens to its card, then the steps of its tactical action as a tactical turn has them", async ({
+  page,
+}) => {
+  test.setTimeout(15_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  // Hacan is played here: Sol plays Warfare of Thunder's Edge, a tactical action in any system.
+  await page.goto("/?scenario=strategy_warfare_te&humans=2");
+  const log = page.getByRole("region", { name: "Log" });
+  const row = log.getByRole("button", { name: /· Strategic · Warfare/ });
+  await row.click();
+  const turn = page.getByRole("region", { name: "Turn" });
+  const tabs = turn.getByRole("tab");
+  await expect(tabs.first()).toHaveText(/Warfare/);
+  await expect(tabs.nth(1)).toHaveText(/Activation/);
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  // The tab names the card: no heading says it again.
+  await expect(turn.getByRole("heading", { name: "Warfare" })).toHaveCount(0);
+  await expect(turn).toContainText("Strategic action · ");
+  // The card's seats; the primary does not say the steps of its tactical action again.
+  const primary = turn.locator("ul[aria-label=Seats] > li").first();
+  await expect(primary).toContainText("P");
+  await expect(primary).not.toContainText("Activated");
+  await expect(primary).not.toContainText("Round");
+  // The activation is a step of its own, over the board of that step.
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("region", { name: "Galaxy board" }).getByRole("status", { name: "Board shows" }),
+  ).toContainText("after Activation");
+  await expect(turn.locator("input, select, textarea, footer button")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/warfare-turn.png`, animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
 test("desktop: a phase of the Log opens what the seats did in it, and the live row opens what is played now", async ({
   page,
 }) => {

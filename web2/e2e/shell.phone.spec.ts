@@ -465,6 +465,42 @@ test("phone: a strategic turn of the Log opens on Map, with its seats, and the m
   expect(errors).toEqual([]);
 });
 
+test("phone: a strategic turn with a tactical action opens on Map to its card, then the steps of its tactical action", async ({
+  page,
+}) => {
+  test.setTimeout(15_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  // Hacan is played here: Sol plays Warfare of Thunder's Edge, a tactical action in any system.
+  await page.goto("/?scenario=strategy_warfare_te&humans=2");
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Log" })
+    .click();
+  await page
+    .getByRole("region", { name: "Log" })
+    .getByRole("button", { name: /· Strategic · Warfare/ })
+    .click();
+  const turn = page.getByRole("region", { name: "Turn" });
+  const tabs = turn.getByRole("tab");
+  await expect(tabs.first()).toHaveText(/Warfare/);
+  await expect(tabs.nth(1)).toHaveText(/Activation/);
+  await expect(turn.getByRole("heading", { name: "Warfare" })).toHaveCount(0);
+  await expect(turn.locator("ul[aria-label=Seats] > li").first()).not.toContainText("Activated");
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: `${SHOTS}/warfare-turn.png`, animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
 test("phone: a phase of the Log opens on Map with what the seats did in it", async ({ page }) => {
   test.setTimeout(10_000);
   const errors: string[] = [];

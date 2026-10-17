@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import type { TransportEvent } from "../transport";
 import { type Engine, createWasmTransport, engineQuery } from "../wasmTransport";
 import { selectLog } from "./log";
-import { selectPastTurn } from "./pastTurn";
+import { pastTactical, selectPastTurn } from "./pastTurn";
 
 // The real engine, built by `scripts/build-wasm.sh` (it is not in the repository).
 const WASM = fileURLToPath(new URL("../ti4.wasm", import.meta.url));
@@ -73,13 +73,9 @@ it.skipIf(!built)(
     expect(row?.kind === "turn" && row.summary).toContain("explored Primor: Demilitarized Zone");
 
     // The opened turn has the card in the step of the invasion, as printed, and what came of it.
-    const past = selectPastTurn(
-      update,
-      events,
-      { turn, step: null },
-      catalog.exploration,
-      catalog,
-    )!;
+    const past = pastTactical(
+      selectPastTurn(update, events, { turn, step: null }, catalog.exploration, catalog),
+    );
     expect(past.action.task.title).toBe("Invasion");
     expect(past.action.closing).toEqual([
       {

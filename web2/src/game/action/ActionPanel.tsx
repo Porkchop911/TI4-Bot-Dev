@@ -282,11 +282,11 @@ function TaskPanel({
   );
 }
 
-/** The heading of a tactical action: none where the selected step tab says it already. */
-export const tacticalHeading = (view: Extract<ActionView, { kind: "tactical" }>): string | null =>
-  view.tabs.length > 0 && view.tabs[view.selected]?.name === view.task.title
-    ? null
-    : view.task.title;
+/** The heading of an action: none where the selected step tab says it already. */
+export const headingOf = (view: ActionView): string | null => {
+  const heading = view.kind === "tactical" ? view.task.title : view.heading;
+  return view.tabs.length > 0 && view.tabs[view.selected]?.name === heading ? null : heading;
+};
 
 /**
  * The action panel: one frame for every action. A tactical action has five steps, a strategic action
@@ -315,7 +315,7 @@ export function ActionPanel({
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
       {view.kind === "tactical" ? (
         <HeadingRow
-          heading={tacticalHeading(view)}
+          heading={headingOf(view)}
           context={view.context}
           pill={pillBeyond(view.task.pill, status)}
           badge={view.badge}
@@ -326,7 +326,7 @@ export function ActionPanel({
         />
       ) : (
         <HeadingRow
-          heading={view.heading}
+          heading={headingOf(view)}
           context={view.context}
           pill={pillBeyond(view.pill, status)}
           badge={view.badge}

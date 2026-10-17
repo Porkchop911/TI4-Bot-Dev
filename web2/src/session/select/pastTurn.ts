@@ -11,6 +11,7 @@ import type {
   BattleRowView,
   BattleTableView,
   CombatView,
+  FlowActionView,
   InvasionView,
   LandingPlanetView,
   MoveShipView,
@@ -41,6 +42,7 @@ import type {
 import { roundTable, sideRows } from "./combat";
 import { NO_TRAITS, exploredCard, planetTraits } from "./exploration";
 import { turnEvents } from "./log";
+import { selectPastFlow } from "./pastFlow";
 import { systemLabel, tilesOf } from "./movement";
 import { cannonTable, removedUnits, riftRows } from "./movementRolls";
 import { byUnitOrder, factionName, forceOf, unitKey, unitLabel, unitType } from "./names";
@@ -53,10 +55,24 @@ export interface PastTurn {
   update: SessionUpdate;
   /** The active system of the action. */
   system: string | null;
-  action: TacticalActionView;
+  /** The active system by its name: "Ixth - Mahact · #52". */
+  label?: string;
+  /** A tactical action; a strategic or a component action that has one, with its card first. */
+  action: TacticalActionView | FlowActionView;
 }
 
 type Fact<K extends PublicFact["kind"]> = Extract<PublicFact, { kind: K }>;
+
+/** The tactical action of a turn, opened. */
+type PastTactical = PastTurn & { action: TacticalActionView; label: string };
+
+/** The opened turn as a tactical action: it has steps. Throws for another action. */
+export function pastTactical(past: PastTurn | null): PastTurn & { action: TacticalActionView } {
+  if (past?.action.kind !== "tactical") {
+    throw new Error("the turn is no tactical action");
+  }
+  return past as PastTurn & { action: TacticalActionView };
+}
 
 /** An event of the turn, with its place in the events of the game. */
 interface At {
@@ -121,10 +137,159 @@ export function selectPastTurn(
   }
   const { seat } = turn;
   const entries: At[] = turn.at.map((at) => ({ at, entry: events[at] }));
-  const tactical = entries.some(
-    ({ entry }) => entry.fact?.kind === "action_started" && entry.fact.action.type === "tactical",
+  const started = entries.flatMap(({ entry }) =>
+    entry.fact?.kind === "action_started" && (entry.actor ?? seat) === seat
+      ? [entry.fact.action.type]
+      : [],
+  );
+  const live =
+    !entries.some(
+      ({ entry }) => entry.fact?.kind === "turn_ended" && (entry.actor ?? seat) === seat,
+    ) && !started.includes("pass");
+  if (started.includes("tactical")) {
+    return tacticalOf(update, events, inspect, entries, seat, live, catalog, printed);
+  }
+  return withTactical(update, events, inspect, entries, seat, live, catalog, printed);
+}
+
+/**
+ * The facts of a tactical action that its steps show: what moves, fights, lands, is produced and
+ * explored, and what pays for it. Another action in a turn (the primary of a strategy card) shows
+ * the rest.
+ */
+const STEP_FACTS = new Set<PublicFact["kind"]>([
+  "activated",
+  "free_tactical",
+  "moved",
+  "loaded",
+  "unit_removed",
+  "retreat_announced",
+  "retreated",
+  "casualty",
+  "destroyed",
+  "sustained",
+  "sustain_declined",
+  "combat_ended",
+  "bombardment_targeted",
+  "ground_combat_started",
+  "ground_combat_round",
+  "landed",
+  "control_gained",
+  "explored",
+  "produced",
+  "paid",
+]);
+
+/**
+ * A strategic or a component turn whose action has a tactical action in it (the primary of
+ * Warfare of Thunder's Edge, a card that activates a system): the action as its seats did it, the
+ * first tab named after its card, and the steps of its tactical action after it, as an opened
+ * tactical turn has them. The events of the tactical action are from its activation to its last
+ * step, before the secondaries; the lines of the card leave them out. Null for any other turn.
+ */
+function withTactical(
+  update: SessionUpdate,
+  events: EventLog,
+  inspect: { turn: string; step: number | null },
+  entries: At[],
+  seat: string,
+  live: boolean,
+  catalog: ExplorationCatalog | null,
+  printed: Catalog | null,
+): PastTurn | null {
+  const begins = entries.findIndex(
+    ({ entry }) =>
+      (entry.fact?.kind === "activated" || entry.fact?.kind === "free_tactical") &&
+      (entry.actor ?? seat) === seat,
+  );
+  if (begins < 0) {
+    return selectPastFlow(update, events, inspect.turn, printed);
+  }
+  // The tactical action ends with its last step: the secondaries of the card come after it.
+  const secondaries = entries.findIndex(
+    ({ entry }, index) => index > begins && entry.fact?.kind === "secondary_followed",
+  );
+  const before = secondaries < 0 ? entries.length : secondaries;
+  let ends = begins;
+  for (let index = begins; index < before; index += 1) {
+    const { entry } = entries[index];
+    if (entry.roll || (entry.fact && STEP_FACTS.has(entry.fact.kind))) {
+      ends = index;
+    }
+  }
+  // The change of the board of its last step is in it too: the last event of that step.
+  const change = entries.findIndex(
+    ({ entry }, index) => index > ends && index < before && entry.event.kind === "board_changed",
+  );
+  if (change >= 0) {
+    ends = change;
+  }
+  const span = entries.slice(begins, ends + 1);
+  const shown = new Set(
+    span
+      .filter(({ entry }) => entry.roll || (entry.fact && STEP_FACTS.has(entry.fact.kind)))
+      .map(({ entry }) => entry),
+  );
+  const flow = selectPastFlow(update, events, inspect.turn, printed, shown);
+  if (!flow) {
+    return null;
+  }
+  // The steps of the tactical action are the tabs after the card: tab 0 is the card.
+  const step = inspect.step ?? 0;
+  const tactical = tacticalOf(
+    update,
+    events,
+    { turn: inspect.turn, step: step > 0 ? step - 1 : null },
+    span,
+    seat,
+    live && ends === entries.length - 1,
+    catalog,
+    printed,
   );
   if (!tactical) {
+    return flow;
+  }
+  const context = `${flow.action.context} · ${tactical.label}`;
+  const tabs: StepTabView[] = [
+    { name: flow.action.heading, status: "done", caption: "" },
+    ...tactical.action.tabs,
+  ];
+  if (step === 0) {
+    return {
+      update: flow.update,
+      system: tactical.system,
+      label: tactical.label,
+      action: { ...flow.action, context, tabs, selected: 0 },
+    };
+  }
+  const selected = tactical.action.selected + 1;
+  return {
+    ...tactical,
+    action: {
+      ...tactical.action,
+      context,
+      tabs,
+      selected,
+      task: { ...tactical.action.task, step: selected, help: flow.action.help },
+    },
+  };
+}
+
+/**
+ * The tactical action of a turn: its steps (`entries`, the events of the action) with the step
+ * `inspect.step` open, by default the last that it came to.
+ */
+function tacticalOf(
+  update: SessionUpdate,
+  events: EventLog,
+  inspect: { turn: string; step: number | null },
+  entries: At[],
+  seat: string,
+  live: boolean,
+  catalog: ExplorationCatalog | null,
+  printed: Catalog | null,
+): PastTactical | null {
+  if (!entries.length) {
     return null;
   }
   const facts = <K extends PublicFact["kind"]>(kind: K, of: string | null = seat) =>
@@ -147,8 +312,8 @@ export function selectPastTurn(
     }
     return events.length;
   };
-  const start = turn.at[0];
-  const last = turn.at[turn.at.length - 1];
+  const start = entries[0].at;
+  const last = entries[entries.length - 1].at;
   const view = update.view;
   const board = (cursor: number) => boardAt(view, events, cursor);
   const tiles = tilesOf(update);
@@ -156,7 +321,10 @@ export function selectPastTurn(
   const name = (id: string) =>
     factionName(view.players.find((player) => player.id === id)?.faction ?? id, printed);
 
-  const activated = facts("activated")[0];
+  // A system activated, or one that the action takes for its tactical action (Warfare).
+  const activated = [...facts("activated"), ...facts("free_tactical")].sort(
+    (a, b) => a.at - b.at,
+  )[0];
   const system = activated?.fact.system ?? null;
   const label = system ? systemLabel(tiles, system) : "No system";
 
@@ -208,9 +376,6 @@ export function selectPastTurn(
   ];
   const cursors = [activationAt, movementAt, combatAt, invasionAt, productionAt];
   const steps = STEPS.map((_, step) => step).filter((step) => happened[step]);
-  const live =
-    !facts("turn_ended").length &&
-    !facts("action_started").some(({ fact }) => fact.action.type === "pass");
   const shown = Math.min(inspect.step ?? steps.length - 1, steps.length - 1);
   const step = steps[shown];
   const then = {
@@ -617,6 +782,7 @@ export function selectPastTurn(
   return {
     update: then,
     system,
+    label,
     action: {
       kind: "tactical",
       context: `Tactical action · ${label}`,

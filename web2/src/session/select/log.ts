@@ -1190,6 +1190,11 @@ export function turnParts(
   events: EventLog,
   id: string,
   printed: Catalog | null = null,
+  /**
+   * Events whose lines another view of the turn shows (the tactical action of a strategic
+   * action, in its own steps). They still count for the summaries.
+   */
+  shownElsewhere: ReadonlySet<GameEvent> | null = null,
 ): TurnParts | null {
   const names = namesOf(update, printed);
   const turn = entriesOf(events).raw.find((item) => item.kind === "turn" && item.id === id);
@@ -1199,12 +1204,20 @@ export function turnParts(
   const action = actionOf(turn);
   const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
   const view = turnView(turn, 0, false, viewer, names, update.view.round);
-  const { groups, facts } = detailsOf(turn.events, names, {
+  const scope = {
     actor: turn.seat,
     strategic: action?.type === "strategic",
-    phase: "action",
+    phase: "action" as const,
     action,
-  });
+  };
+  const { groups: all, facts } = detailsOf(turn.events, names, scope);
+  const groups = shownElsewhere
+    ? detailsOf(
+        turn.events.filter((entry) => !shownElsewhere.has(entry)),
+        names,
+        scope,
+      ).groups
+    : all;
   const tiles = update.view.board.map_tiles ?? [];
   const systemOf = (planet: string) =>
     tiles.find((tile) => (tile.planets ?? []).some((item) => item.id === planet))?.system_id ??
@@ -1222,8 +1235,11 @@ export function turnParts(
       if (!order.includes(seat)) {
         order.push(seat);
       }
-      if (line.text !== FOLLOWED && line.text !== DECLINED) {
-        lines.set(seat, [...(lines.get(seat) ?? []), line.text]);
+      const said = lines.get(seat) ?? [];
+      // A line that says again what the line before it said tells nothing new (a redistribution
+      // before and after the tactical action of Warfare that changed nothing).
+      if (line.text !== FOLLOWED && line.text !== DECLINED && said.at(-1) !== line.text) {
+        lines.set(seat, [...said, line.text]);
       }
     }
   }
