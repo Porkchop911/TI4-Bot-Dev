@@ -119,11 +119,14 @@ enum PendingSave {
     As,
 }
 
-/// A power report and the map it was computed on, for one branch's frame.
+/// A power report for one branch's frame of one session.
 struct PowerCached {
     branch: String,
     frame: usize,
-    galaxy: Option<ti4_content::galaxy::Galaxy>,
+    /// With `map`, tells a newly opened session apart from the last one at the same branch and
+    /// frame index.
+    engine_step: usize,
+    map: Vec<String>,
     report: Option<ti4_review::power::PowerReport>,
 }
 
@@ -1735,21 +1738,29 @@ impl Replayer {
         branch: &str,
         index: usize,
     ) {
+        let map: Vec<&str> = session
+            .board
+            .iter()
+            .map(|tile| tile.system.as_str())
+            .collect();
         let stale = self.power.as_ref().is_none_or(|cached| {
-            cached.branch != branch || cached.frame != index || cached.report.is_none()
+            cached.branch != branch
+                || cached.frame != index
+                || cached.engine_step != frame.engine_step
+                || cached.map != map
+                || cached.report.is_none()
         });
         if stale {
-            let galaxy = match self.power.take() {
-                Some(cached) if cached.branch == branch && cached.galaxy.is_some() => cached.galaxy,
-                _ => ti4_review::power::galaxy_of(session, ContentStore::embedded()),
-            };
-            let report = galaxy
-                .as_ref()
-                .map(|galaxy| ti4_review::power::report(galaxy, frame));
+            // The map is rebuilt from this session every time: a galaxy cached by branch name
+            // outlived the table it came from, so a newly opened session was measured on the old
+            // map and only hexes whose ids both maps share got any power.
+            let report = ti4_review::power::galaxy_of(session, ContentStore::embedded())
+                .map(|galaxy| ti4_review::power::report(&galaxy, frame));
             self.power = Some(PowerCached {
                 branch: branch.to_owned(),
                 frame: index,
-                galaxy,
+                engine_step: frame.engine_step,
+                map: map.into_iter().map(str::to_owned).collect(),
                 report,
             });
         }

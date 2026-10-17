@@ -193,11 +193,16 @@ pub struct Reward {
     /// `projection_weight` becomes an objective instead of pure shaping. Off keeps the reference.
     #[serde(default)]
     pub keep_terminal_projection: bool,
-    /// Per-round bonus on the seat's projection rank at the table: `weight * (below - above) /
-    /// (seats - 1)`, credited at the seat's last decision of the round. Applied by the trainer,
+    /// Per-round bonus on the seat's rank at the table: `weight * (below - above) / (seats - 1)`,
+    /// averaged over two ranks (projection, and planets held outside home), credited at the seat's
+    /// last decision of the round. Applied by the trainer,
     /// which sees every seat. Off by default.
     #[serde(default)]
     pub projection_rank_weight: f64,
+    /// Reward `-penalty` at every diplomacy-head decision, so haggling is not free. Applied by the
+    /// trainer, which sees each decision's head. Off by default.
+    #[serde(default)]
+    pub negotiation_step_penalty: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -261,6 +266,7 @@ impl Default for Reward {
             home_loss_weight: 0.0,
             keep_terminal_projection: false,
             projection_rank_weight: 0.0,
+            negotiation_step_penalty: 0.0,
         }
     }
 }
@@ -315,7 +321,10 @@ impl Reward {
             reason = "permille opportunity stays small"
         )]
         let projection = progress.projection_permille as f64 / 1000.0;
-        #[expect(clippy::cast_precision_loss, reason = "home planet counts are single digits")]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "home planet counts are single digits"
+        )]
         let home_lost = progress.home_planets_lost as f64;
         self.projection_weight * projection - self.home_loss_weight * home_lost
             + self.vp_weight * points
@@ -423,7 +432,10 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     // Projection is pure shaping unless kept: then the final snapshot (which never measures it)
     // stands at the last measured value.
     last.projection_permille = if reward.keep_terminal_projection {
-        episode.steps.last().map_or(0, |step| step.projection_permille)
+        episode
+            .steps
+            .last()
+            .map_or(0, |step| step.projection_permille)
     } else {
         0
     };

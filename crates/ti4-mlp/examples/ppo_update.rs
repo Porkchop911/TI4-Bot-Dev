@@ -204,6 +204,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--phase-lock",
     "--keep-terminal-projection",
     "--projection-rank-weight",
+    "--negotiation-step-penalty",
     "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
@@ -623,10 +624,9 @@ fn play_one(
         )?,
         Some(weights) => {
             let weight = |entry: &str| weights.get(entry).copied().unwrap_or(FOCUS_SCALE);
-            let drawn = ti4_engine::seating::seat_wide_weighted(
-                content, players, DEFAULT, seed, &weight,
-            )
-            .map_err(|error| format!("weighted wide roster for seed {seed}: {error}"))?;
+            let drawn =
+                ti4_engine::seating::seat_wide_weighted(content, players, DEFAULT, seed, &weight)
+                    .map_err(|error| format!("weighted wide roster for seed {seed}: {error}"))?;
             players
                 .iter()
                 .map(|player| {
@@ -809,18 +809,30 @@ fn play_one(
         .map(|seat| seat.episode.final_progress.victory_points as f64)
         .sum::<f64>()
         / rollout.seats.len().max(1) as f64;
-    // Projection rank per round: each seat's projection at its last recorded decision of the round.
+    // Projection rank per round: each seat's projection and non-home planets held at its last
+    // recorded decision of the round.
     // shortcut: seats are measured at their own last decision, not one shared state; measure every
     // seat at the round boundary if rank timing turns out to matter.
-    let mut round_projection: BTreeMap<u32, Vec<(PlayerId, i64)>> = BTreeMap::new();
+    let mut round_projection: BTreeMap<u32, Vec<(PlayerId, i64, i64)>> = BTreeMap::new();
     if reward.projection_rank_weight != 0.0 {
         for (player, handle) in &handles {
-            let mut last: BTreeMap<u32, i64> = BTreeMap::new();
+            let mut last: BTreeMap<u32, (i64, i64)> = BTreeMap::new();
             for record in handle.borrow().iter() {
-                last.insert(record.progress.round_number, record.progress.projection_permille);
+                let progress = &record.progress;
+                // Planets beyond the setup baseline, plus home planets lost: the planets held
+                // outside home.
+                let non_home = progress.planets_gained + progress.home_planets_lost;
+                last.insert(
+                    progress.round_number,
+                    (progress.projection_permille, non_home),
+                );
             }
-            for (round, projection) in last {
-                round_projection.entry(round).or_default().push((player.clone(), projection));
+            for (round, (projection, non_home)) in last {
+                round_projection.entry(round).or_default().push((
+                    player.clone(),
+                    projection,
+                    non_home,
+                ));
             }
         }
     }
@@ -891,15 +903,21 @@ fn play_one(
             record.step.return_to_go = *value;
         }
         // The projection rank bonus, injected at the seat's last decision of each round like the
-        // waste charge below: every return up to that decision carries it, discounted.
+        // waste charge below: every return up to that decision carries it, discounted. The mean of
+        // the projection rank and the non-home planet rank, so neither needs a scale.
         for (round, table) in &round_projection {
-            let Some(mine) = table.iter().find(|(player, _)| *player == seat.player) else {
+            let Some(mine) = table.iter().find(|(player, ..)| *player == seat.player) else {
                 continue;
             };
-            let Some(end) = recorded.iter().rposition(|r| r.progress.round_number == *round) else {
+            let Some(end) = recorded
+                .iter()
+                .rposition(|r| r.progress.round_number == *round)
+            else {
                 continue;
             };
-            let bonus = projection_rank_bonus(mine.1, table.iter().map(|(_, p)| *p))
+            let bonus = 0.5
+                * (projection_rank_bonus(mine.1, table.iter().map(|(_, p, _)| *p))
+                    + projection_rank_bonus(mine.2, table.iter().map(|(_, _, n)| *n)))
                 * reward.projection_rank_weight;
             for (index, record) in recorded.iter_mut().enumerate().take(end + 1) {
                 let steps_away = i32::try_from(end - index).unwrap_or(i32::MAX);
@@ -927,7 +945,11 @@ fn play_one(
             if std::env::var_os("TI4_DIPLOMACY_CENSUS").is_some() {
                 let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
                 for note in notes.iter().filter(|note| note.head == "diplomacy") {
-                    let kind: String = note.chosen.chars().filter(|c| !c.is_ascii_digit()).collect();
+                    let kind: String = note
+                        .chosen
+                        .chars()
+                        .filter(|c| !c.is_ascii_digit())
+                        .collect();
                     *kinds.entry(kind).or_default() += 1;
                 }
                 eprintln!("DIPLOMACY_CENSUS {}", serde_json::json!(kinds));
@@ -949,6 +971,17 @@ fn play_one(
                         && note.chosen == ti4_mlp::positive_corpus::TACTICAL_ACTION_ID
                 })
                 .count();
+            // A reward of `-penalty` at every diplomacy decision, as one reverse pass: the same
+            // discounted injection as the waste charge below, without its per-end loop (a haggling
+            // seat makes thousands of these).
+            if reward.negotiation_step_penalty != 0.0 {
+                let flags: Vec<bool> = notes.iter().map(|note| note.head == "diplomacy").collect();
+                let charges =
+                    discounted_charges(&flags, reward.negotiation_step_penalty, reward.discount);
+                for (record, charge) in recorded.iter_mut().zip(charges) {
+                    record.step.return_to_go -= charge;
+                }
+            }
             let ends = ti4_mlp::positive_corpus::wasted_segment_ends(&notes);
             wasted += ends.len();
 
@@ -991,7 +1024,8 @@ fn play_one(
                 .iter()
                 .map(|r| r.step.behaviour_value.unwrap_or(0.0))
                 .collect();
-            let targets = ti4_mlp::ppo::lambda_returns(&returns, &values, reward.discount, gae_lambda);
+            let targets =
+                ti4_mlp::ppo::lambda_returns(&returns, &values, reward.discount, gae_lambda);
             for (record, target) in recorded.iter_mut().zip(targets) {
                 record.step.return_to_go = target;
             }
@@ -1752,6 +1786,10 @@ fn main() {
     if reward.projection_rank_weight != 0.0 {
         ti4_policy::progress::MEASURE_PROJECTION.store(true, std::sync::atomic::Ordering::Relaxed);
     }
+    reward.negotiation_step_penalty = weight(
+        "--negotiation-step-penalty",
+        reward.negotiation_step_penalty,
+    );
     // Nonzero turns it on, so the PowerShell launcher's name/value pairs can carry it.
     reward.zero_terminal_objectives = weight("--zero-terminal-objectives", 0.0) != 0.0;
     reward.strategy_diversity_weight = weight(
@@ -1865,11 +1903,12 @@ fn main() {
             reward.home_loss_weight
         );
         println!(
-            "  shaping     fleet {} | projection {} (kept at horizon {}, rank per round {}) | tech {} | strategy diversity {}",
+            "  shaping     fleet {} | projection {} (kept at horizon {}, rank per round {}) | negotiation step {} | tech {} | strategy diversity {}",
             reward.fleet_weight,
             reward.projection_weight,
             reward.keep_terminal_projection,
             reward.projection_rank_weight,
+            -reward.negotiation_step_penalty,
             reward.tech_weight,
             reward.strategy_diversity_weight
         );
@@ -2244,7 +2283,9 @@ fn main() {
             // An engine no-progress guard (a rare decision loop) drops that one game, logged, so a
             // long run survives it; anything else, or more than a tenth of the update, still refuses.
             let (game, outcomes, wasted, tactical, record, qualifying) = match played {
-                Err(error) if error.contains("without progress") && stalled_games < jobs.len() / 10 => {
+                Err(error)
+                    if error.contains("without progress") && stalled_games < jobs.len() / 10 =>
+                {
                     stalled_games += 1;
                     eprintln!("SKIPPED (no-progress guard, update {update}): {error}");
                     continue;
@@ -2291,7 +2332,10 @@ fn main() {
         // --faction-focus: fold this update's per-faction mean VP into the smoothed means. Integer
         // sums in BTreeMap order, so the next update's weights are the same on every run.
         for (faction, (points, games)) in &update_vp {
-            #[expect(clippy::cast_precision_loss, reason = "victory points and game counts are tiny")]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "victory points and game counts are tiny"
+            )]
             let mean = *points as f64 / *games as f64;
             smoothed_vp
                 .entry(faction.clone())
@@ -2767,6 +2811,30 @@ fn projection_rank_bonus(mine: i64, table: impl Iterator<Item = i64>) -> f64 {
         return 0.0;
     }
     f64::from(below - above) / f64::from(seats - 1)
+}
+
+/// For each decision, the discounted sum of `penalty` over every flagged decision at or after it.
+fn discounted_charges(flags: &[bool], penalty: f64, gamma: f64) -> Vec<f64> {
+    let mut carried = 0.0;
+    let mut out: Vec<f64> = flags
+        .iter()
+        .rev()
+        .map(|flagged| {
+            carried = carried * gamma + if *flagged { penalty } else { 0.0 };
+            carried
+        })
+        .collect();
+    out.reverse();
+    out
+}
+
+#[cfg(test)]
+mod discounted_charges_tests {
+    #[test]
+    fn each_flag_charges_itself_and_earlier_decisions_discounted() {
+        let charges = super::discounted_charges(&[false, true, false, true], 1.0, 0.5);
+        assert_eq!(charges, vec![0.5 + 0.125, 1.0 + 0.25, 0.5, 1.0]);
+    }
 }
 
 #[cfg(test)]
