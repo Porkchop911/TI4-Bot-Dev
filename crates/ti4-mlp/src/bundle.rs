@@ -524,6 +524,62 @@ pub fn migrate_v10_to_v11(mut loaded: Loaded) -> Result<Loaded, BundleError> {
     loaded.vocabulary = vocabulary;
     Ok(loaded)
 }
+/// The training updates a bundle's provenance names ("M10-034 PPO, 300 update(s) from ...").
+#[must_use]
+pub fn trained_updates(bundle: &Path) -> Option<u64> {
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).ok()?).ok()?;
+    let source = manifest.get("source")?.as_str()?;
+    let before = &source[..source.find(" update(s)")?];
+    before.rsplit(' ').next()?.parse().ok()
+}
+
+/// A separate-models run (`ppo_update --separate-models`) writes `<out>/<faction>/checkpoint-N`,
+/// one directory per faction in `factions`. Given one faction's bundle there, every faction's
+/// bundle trained for the same number of updates (folder numbers are each model's own optimiser
+/// steps, so they differ). `Ok(None)` when the bundle is not in that layout.
+///
+/// # Errors
+/// The layout is there but a faction has no bundle at that update count.
+pub fn separate_model_bundles(
+    directory: &Path,
+    factions: &[&str],
+) -> Result<Option<BTreeMap<String, PathBuf>>, String> {
+    let Some(faction_directory) = directory.parent() else {
+        return Ok(None);
+    };
+    let is_faction = faction_directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| factions.contains(&name));
+    let Some(run) = faction_directory.parent().filter(|_| is_faction) else {
+        return Ok(None);
+    };
+    if !factions.iter().all(|faction| run.join(faction).is_dir()) {
+        return Ok(None);
+    }
+    let wanted = trained_updates(directory).ok_or_else(|| {
+        format!(
+            "separate models: {} does not name its training updates",
+            directory.display()
+        )
+    })?;
+    let mut bundles = BTreeMap::new();
+    for faction in factions {
+        let entries = std::fs::read_dir(run.join(faction))
+            .map_err(|error| format!("separate models {faction}: {error}"))?;
+        let bundle = entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .find(|path| {
+                path.join("manifest.json").is_file() && trained_updates(path) == Some(wanted)
+            })
+            .ok_or_else(|| {
+                format!("separate models: no {faction} checkpoint at {wanted} update(s)")
+            })?;
+        bundles.insert((*faction).to_owned(), bundle);
+    }
+    Ok(Some(bundles))
+}
 
 /// Read and fully validate one bundle.
 ///

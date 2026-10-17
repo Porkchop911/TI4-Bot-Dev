@@ -1,3 +1,5 @@
+**Current review status (2026-10-11):** independent frontier review found arena repair timing and omitted/context combatant defects. Scoped fixes and regressions are recorded in [the current review](BF-22B-REVIEW-2026-10-11.md); independent gpt-6.1-sol final source re-review passed, workspace finished 4066 passed/1 failed/6 ignored (only retained reviewer golden); subsequent timing-capable probe regressions/panels pass separately. Retained version-8 train/export/swap/evaluation artifacts predate the corrected labels and do not qualify the corrected source. Wide ground prediction and broader corrected-label qualification remain OPEN. Historical evidence below is retained.
+
 # BF-22b evidence: battle arena and predictor for the wide roster (version 8)
 
 Status: **open** (author: Claude Opus 5.5, BF unification session, 2026-10-08). Tier-C frontier
@@ -23,8 +25,8 @@ things"; scope chosen: **full modelling** (every faction's space-combat effects)
 | Quetzecoatl (Argent flagship) | no space cannon against its owner's ships | combat hook | yes |
 | Arvicon Rex (Mahact flagship) | +2 while the opponent's token is not in the Mahact fleet pool | direct in combat | yes (default board) |
 | Bastion flagship | +1 per non-home system with a controlled planet | direct in combat | yes (0 conquests) |
-| Van Hauge (Yin flagship) | when destroyed, every ship in the system is destroyed | **timing window** | no: the probe's `combat::resolve` runs without a timing resolver; covered by the engine's own `van_hauge_takes_every_ship_in_the_system_with_it` and the arena's `the_van_hauge_takes_every_ship_with_it` |
-| Heaven's Eye (Firmament flagship) | repaired every round while the opponent holds a token on one of its plots | timing window | no (fixture only) |
+| Van Hauge (Yin flagship) | when destroyed, every ship in the system is destroyed | **timing window** | yes after 2026-10-11 timing seam repair; real probe regression plus bounded matched panel, broader calibration open |
+| Heaven's Eye (Firmament flagship) | repaired at round end while units of a puppeted player remain in the system | timing window | yes after 2026-10-11 timing seam repair, bounded plot/no-plot probe regression; broader calibration open |
 
 - Declared policy (like the casualty order): optional sacrifices and payments are declined
   (Yin Devotion and Impulse Core, Exotrireme II, Empyrean repair for influence). Hacan's flagship
@@ -163,8 +165,10 @@ the faction heads populate with something."
   Stop` (cargo's stderr progress is raised as an error); the pilot ran with `Build = $false` on a
   trainer built from the same commit.
 
-## Open
+## Completed follow-up
 
-- Train predictor v8, export, swap into the migrated checkpoint, evaluate.
+Version 8 training, export, checkpoint swap and evaluation are recorded above. The earlier Open item requesting them is superseded (status reconciled 2026-10-11).
+
+## Open
 - Ground predictor for the wide roster (phase 2): mechs and ground abilities of the new factions.
 - Frontier review.

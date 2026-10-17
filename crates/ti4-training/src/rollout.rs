@@ -357,7 +357,14 @@ fn save54_board(
     }
     let mut owned: Vec<(String, Hex)> = SAVE54_NEUTRAL
         .iter()
-        .map(|(id, q, r)| ((*id).to_owned(), Hex::new(*q, *r)))
+        .map(|(id, q, r)| {
+            let id = if *id == ti4_engine::seating::MECATOL {
+                ti4_engine::seating::mecatol_for(content, sources)
+            } else {
+                id
+            };
+            (id.to_owned(), Hex::new(*q, *r))
+        })
         .collect();
     for ((player, hex), _) in players.iter().zip(SAVE54_HOMES).zip(0..) {
         let faction = factions

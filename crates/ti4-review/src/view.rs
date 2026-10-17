@@ -1264,6 +1264,30 @@ pub fn board_view(
         if state.thunders_edge_system.as_ref() == Some(&system_id) {
             token_labels.push("Thunder's Edge".to_owned());
         }
+        // Faction-written marks tied to this system or one of its planets (Titans sleeper tokens,
+        // Nekro's threat/ts marks, ...): only keys led by a seated faction, so the generic
+        // `paid:`/`private:` bookkeeping that happens to end in an id never labels a tile.
+        for key in state.faction_marks.keys() {
+            let mut parts = key.split(':');
+            let lead = parts.next().unwrap_or_default();
+            if !state.players.iter().any(|p| p.faction.as_str() == lead) {
+                continue;
+            }
+            let rest: Vec<&str> = parts.collect();
+            let here = rest.last().is_some_and(|last| {
+                *last == system_id.as_str() || tile_planets.iter().any(|p| p.id == *last)
+            });
+            if here {
+                let what = rest[..rest.len() - 1].join(" ");
+                let at = rest.last().copied().unwrap_or_default();
+                let shown = if at == system_id.as_str() {
+                    String::new()
+                } else {
+                    format!(" @{at}")
+                };
+                token_labels.push(format!("{lead} {what}{shown}"));
+            }
+        }
 
         let planets = tile_planets
             .iter()

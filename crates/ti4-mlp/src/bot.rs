@@ -117,6 +117,19 @@ pub struct MlpBot {
     notes: std::rc::Rc<std::cell::RefCell<Vec<crate::positive_corpus::Note>>>,
     /// What the fleet decisions and plans did, for a reviewer.
     trace: std::rc::Rc<std::cell::RefCell<Vec<PlanTrace>>>,
+    /// Opt-in diagnostics of ordinary decisions ([`Self::decision_trace`]).
+    diagnostic: Option<std::rc::Rc<std::cell::RefCell<Vec<DecisionTrace>>>>,
+}
+
+/// One ordinary actor decision as scored, for offline diagnostics (the Sol pilot's teacher
+/// labels). Fleet-package and plan-executed decisions are not included. Seat-visible inputs only.
+#[derive(Debug, Clone)]
+pub struct DecisionTrace {
+    pub choice: Choice,
+    pub head: String,
+    pub options: Vec<SparseOption>,
+    pub probabilities: Vec<f64>,
+    pub chosen: usize,
 }
 
 /// The model behind a bot.
@@ -259,6 +272,7 @@ impl MlpBot {
             ppo_mode: None,
             notes: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             trace: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            diagnostic: None,
         }
     }
 
@@ -275,6 +289,12 @@ impl MlpBot {
         stream: u64,
     ) -> Self {
         Self::with_inference(Inference::Gpu(gpu), vocabulary, row, stream)
+    }
+
+    /// Enable diagnostics of ordinary actor decisions. Drain the returned buffer after each
+    /// choice. Synthetic fleet menus and choices executed by a fleet plan are not captured.
+    pub fn decision_trace(&mut self) -> std::rc::Rc<std::cell::RefCell<Vec<DecisionTrace>>> {
+        std::rc::Rc::clone(self.diagnostic.get_or_insert_with(Default::default))
     }
 
     /// Hand the bot to a table and keep the status that must be consumed.
@@ -799,6 +819,15 @@ impl MlpBot {
                 )
             })?;
         self.counters.decisions.fetch_add(1, Ordering::Relaxed);
+        if let Some(trace) = &self.diagnostic {
+            trace.borrow_mut().push(DecisionTrace {
+                choice: choice.clone(),
+                head: head.to_owned(),
+                options: sparse(),
+                probabilities: picked.probabilities.clone(),
+                chosen: picked.index,
+            });
+        }
 
         lap.mark(crate::perf::Stage::Sampling);
 

@@ -233,6 +233,8 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                     session.manifest.checkpoint_path,
                     if policy.format == "MLP inference bundle" {
                         "shared actor with faction rows"
+                    } else if policy.format == crate::SEPARATE_MODELS_FORMAT {
+                        "one model per faction"
                     } else {
                         session.manifest.profile_table.label()
                     },
@@ -586,6 +588,13 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                         }
                     }
                     item_section(ui, "●", "Planets", controlled_planets, color);
+                    item_section(
+                        ui,
+                        "✨",
+                        "Special effects",
+                        crate::novelty::standing(frame, &player.id),
+                        color,
+                    );
                     ui.label(
                         egui::RichText::new(crate::view::negotiation_budget(frame, &player.id))
                             .color(crate::view::PANEL_TEXT),

@@ -107,10 +107,28 @@ pub fn galaxy_from_board(board: &[crate::BoardTile], content: &ContentStore) -> 
         })
         .collect();
     let mut galaxy = Galaxy::placed(content, &placed, FULL).ok()?;
-    for tile in board.iter().filter(|tile| tile.special_area.is_some()) {
+    // The board lists both Nexus faces; the engine places only the locked one and opens it from
+    // the state (`laws::apply_to_galaxy`). Placing `82b` too linked every alpha and beta wormhole
+    // through a Nexus that was still locked.
+    for tile in board
+        .iter()
+        .filter(|tile| tile.special_area.is_some() && tile.system != "82b")
+    {
         let _ = galaxy.place_off_map(content, &tile.system, FULL);
     }
     Some(galaxy)
+}
+
+/// The setup map brought to `state` the way the engine does every step: laws, wormhole tokens,
+/// the opened Nexus, spatial conduits, and tile edits (Creuss and Muaat heroes, Nova Seed).
+#[must_use]
+pub fn galaxy_at(setup: &Galaxy, state: &ti4_model::state::GameState) -> Galaxy {
+    let mut galaxy = setup.clone();
+    ti4_engine::laws::apply_to_galaxy(state, &mut galaxy);
+    // An edit that no longer fits leaves the earlier ones applied; the board drawn shows the same.
+    let _ =
+        ti4_engine::movement::replay_map_edits(state, &mut galaxy, ContentStore::embedded(), FULL);
+    galaxy
 }
 
 fn win(attacker: &Descriptors, defender: &Descriptors, calibration: (f64, f64)) -> f64 {
@@ -151,6 +169,7 @@ fn take_chance(attacker: &SystemPower, defender: &SystemPower) -> f64 {
 #[must_use]
 pub fn report(galaxy: &Galaxy, frame: &ReviewFrame) -> PowerReport {
     let content = ContentStore::embedded();
+    let galaxy = &galaxy_at(galaxy, &frame.state);
     let seen = Observed::new(&frame.state, content, FULL, Some(galaxy));
     let players: Vec<PlayerId> = seen.players().into_iter().cloned().collect();
     let maps: BTreeMap<PlayerId, BTreeMap<SystemId, SystemPower>> = players
@@ -740,6 +759,66 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Played forward, the map the report uses must stay the engine's: the Nexus opening, wormhole
+    /// tokens and tile edits all change adjacency after setup.
+    #[test]
+    fn the_rebuilt_galaxy_follows_the_game() {
+        let content = ContentStore::embedded();
+        let names = ["sol", "ghost", "xxcha", "hacan", "jolnar", "muaat"];
+        let players: Vec<PlayerId> = (0..6).map(|i| PlayerId::new(format!("seat{i}"))).collect();
+        let factions: BTreeMap<PlayerId, FactionId> = players
+            .iter()
+            .zip(names)
+            .map(|(p, f)| (p.clone(), FactionId::new(f)))
+            .collect();
+        let mut game = ti4_training::rollout::setup_game_with_capabilities_and_decider_factory(
+            content,
+            &players,
+            &factions,
+            FULL,
+            11,
+            &ti4_training::rollout::OpeningMap::RustVaried,
+            ti4_training::rollout::SimulationCapabilities::default(),
+            |_| {
+                Ok(players
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.clone(),
+                            Box::new(ti4_engine::choice::FirstOption) as Box<dyn Decider>,
+                        )
+                    })
+                    .collect())
+            },
+        )
+        .expect("seated");
+        let board = crate::board_metadata(content, game.galaxy().expect("map"));
+        let rebuilt = galaxy_from_board(&board, content).expect("rebuilt");
+        let mut checked = 0;
+        for step in 0..6_000 {
+            let result = game.step();
+            if result.finished || result.error.is_some() {
+                break;
+            }
+            if step % 40 != 0 {
+                continue;
+            }
+            let live = game.galaxy().expect("map");
+            let shown = galaxy_at(&rebuilt, &game.state);
+            let mut ids = live.system_ids();
+            ids.extend(live.wormhole_systems());
+            for id in ids {
+                assert_eq!(
+                    live.adjacent(id),
+                    shown.adjacent(id),
+                    "step {step} system {id}"
+                );
+            }
+            checked += 1;
+        }
+        assert!(checked > 3, "the game ended before it could be compared");
     }
 
     /// The actor's power facts on a real activation choice: one list per option, every activation

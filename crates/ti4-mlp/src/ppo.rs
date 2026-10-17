@@ -303,7 +303,24 @@ impl Batch {
                         || option.values.iter().any(|value| !value.is_finite())
                 })
             {
-                return Err(format!("PPO step {index} is malformed or non-finite"));
+                // Name the failing field: "malformed or non-finite" alone cannot be acted on.
+                let bad_option = step.options.iter().position(|option| {
+                    option.columns.is_empty()
+                        || option.columns.len() != option.values.len()
+                        || option.columns.iter().any(|column| *column < 0)
+                        || option.values.iter().any(|value| !value.is_finite())
+                });
+                return Err(format!(
+                    "PPO step {index} is malformed or non-finite: head {} options {} chosen {}                      behaviour_log_prob {:e} return_to_go {:e} temperature {} value {:?} bad option {:?}",
+                    step.head,
+                    step.options.len(),
+                    step.chosen,
+                    step.behaviour_log_prob,
+                    step.return_to_go,
+                    step.temperature,
+                    step.behaviour_value,
+                    bad_option.map(|i| (i, &step.options[i].columns, &step.options[i].values)),
+                ));
             }
             match mode {
                 CriticMode::Shared | CriticMode::Separate => {
@@ -1286,6 +1303,33 @@ fn parameters(actor: &Actor, mode: CriticMode) -> Result<Vec<Tensor>, String> {
     Ok(parameters)
 }
 
+/// GAE(λ) value targets for one seat's decisions, in decision order.
+///
+/// `returns` are the seat's returns-to-go G_t (shaping and penalties included) and `values` the
+/// behaviour critic's V(s_t). Rewards are recovered as `r_t = G_t − γ·G_{t+1}`, the episode ends
+/// after the last decision (`G_T = V_T = 0`), and the result is the λ-return `A_t + V_t` with
+/// `A_t = Σ_k (γλ)^k δ_{t+k}`, `δ_t = r_t + γ·V_{t+1} − V_t`. Feeding it to [`Batch::freeze`] as
+/// the return makes the frozen advantage GAE(λ) and the critic target the λ-return. At λ = 1 it
+/// is `returns` again, up to rounding.
+#[must_use]
+pub fn lambda_returns(returns: &[f64], values: &[f64], gamma: f64, lambda: f64) -> Vec<f64> {
+    let n = returns.len().min(values.len());
+    let mut targets = vec![0.0; n];
+    let mut advantage = 0.0;
+    for t in (0..n).rev() {
+        let (next_return, next_value) = if t + 1 < n {
+            (returns[t + 1], values[t + 1])
+        } else {
+            (0.0, 0.0)
+        };
+        let reward = gamma.mul_add(-next_return, returns[t]);
+        let delta = gamma.mul_add(next_value, reward) - values[t];
+        advantage = (gamma * lambda).mul_add(advantage, delta);
+        targets[t] = advantage + values[t];
+    }
+    targets
+}
+
 /// Exact trainable-parameter fingerprint for deterministic-update tests and evidence.
 ///
 /// # Errors
@@ -1627,6 +1671,34 @@ fn update_inner(
 mod tests {
     use super::*;
     use crate::Width;
+
+    #[test]
+    fn lambda_returns_span_monte_carlo_to_one_step_bootstrap() {
+        // Rewards 1, 0, 2 at γ = 1: G = [3, 2, 2]; critic V = [2.5, 1.0, 1.5].
+        let returns = [3.0, 2.0, 2.0];
+        let values = [2.5, 1.0, 1.5];
+        // λ = 1 is the Monte-Carlo return.
+        for (got, want) in lambda_returns(&returns, &values, 1.0, 1.0)
+            .iter()
+            .zip(returns)
+        {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+        // λ = 0 is r_t + V_{t+1}: [1 + 1.0, 0 + 1.5, 2 + 0].
+        for (got, want) in lambda_returns(&returns, &values, 1.0, 0.0)
+            .iter()
+            .zip([2.0, 1.5, 2.0])
+        {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+        // λ = 0.5: A_2 = 0.5, A_1 = 0.5 + 0.25 = 0.75, A_0 = -0.5 + 0.375 = -0.125.
+        for (got, want) in lambda_returns(&returns, &values, 1.0, 0.5)
+            .iter()
+            .zip([2.375, 1.75, 2.0])
+        {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+    }
 
     /// The canonical-input shortcut returns exactly what the sort would have produced.
     ///

@@ -894,7 +894,9 @@ pub(crate) fn landable_planets(
                 .filter(|planet| planet.in_sources(sources))
                 .map(|_| PlanetId::new(name))
         })
-        .filter(|planet| planet.as_str() != "mr" || state.custodians_removed)
+        .filter(|planet| {
+            !crate::seating::is_mecatol_planet(planet.as_str()) || state.custodians_removed
+        })
         // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
         // a space station." They are listed in the system's `planets` array because they carry a
         // planet card, so without this they were offered to every invasion like any other planet --
@@ -3886,6 +3888,39 @@ impl InvasionWindow {
     ) {
         while index < planets.len() {
             let planet = planets[index].clone();
+            // 35.1: a planet nobody controls is explored first, and control follows only if the
+            // invader still has a ground force there (a card can cost the last infantry).
+            let unowned = !state
+                .system_state(&self.system)
+                .planet_control
+                .contains_key(&planet);
+            let holds_ground = || {
+                let types = catalogue(ctx.content, ctx.sources);
+                state
+                    .system_state(&self.system)
+                    .on_planet_of(&planet, &self.invader)
+                    .into_iter()
+                    .any(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(UnitType::is_ground_force)
+                    })
+            };
+            if unowned
+                && holds_ground()
+                && !crate::coexistence::is_coexisting(state, &self.system, &planet, &self.invader)
+                && let Some(deck) =
+                    crate::exploration::choose_deck(ctx, state, &self.invader, &planet)
+                && let Some(outcome) = crate::exploration::explore_with(
+                    state,
+                    ctx,
+                    &self.invader,
+                    &deck,
+                    Some(&planet),
+                )
+            {
+                self.report.explored.push((planet.clone(), outcome));
+            }
             let Some((planet, previous)) = establish_control(
                 state,
                 ctx.content,
@@ -4054,13 +4089,7 @@ impl InvasionWindow {
         // `choose_deck` rather than `trait_of`: a planet with two printed traits (several
         // Thunder's Edge worlds do) is the invader's choice of deck, not a fixed pick of
         // whichever trait happens to sort first.
-        if previous.is_none()
-            && let Some(deck) = crate::exploration::choose_deck(ctx, state, &self.invader, planet)
-            && let Some(outcome) =
-                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
-        {
-            self.report.explored.push((planet.clone(), outcome));
-        }
+        // (The exploration itself now resolves in `advance_control`, before control is gained.)
     }
 }
 

@@ -113,9 +113,10 @@ delivery, "... sent". Operators read these like any other report (`tools/public/
 ## What is disabled offline
 
 Everything that needs a server or other people: lobby, invitations, other seats, spectators,
-presence, takeovers, the access password. The map picker is available (see "Using it"). Also hidden in v1: the map splice preview and turn redo
-(undo, rewind to an earlier decision and redo of undone decisions stay). The combat odds come from
-the engine of the page. The replay download of an offline game is its save file, not the server's replay
+presence, takeovers, the access password. The map picker is available (see "Using it"). Also hidden
+in v1: the map splice preview and turn redo (undo, rewind to an earlier decision and redo of undone
+decisions stay). The combat odds come from the engine of the page. The replay download of an
+offline game is its save file, not the server's replay
 format. The UI hides these through the transport capabilities rather than showing broken buttons.
 Known engine gaps apply (7 and 8 players are not offered; Creuss and Antimass limits as in the
 engine).

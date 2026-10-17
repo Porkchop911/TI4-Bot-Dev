@@ -264,6 +264,12 @@ impl MapPool {
                     .iter()
                     .position(|slot| slot == coord)
                     .map_or_else(|| system.clone(), |index| home_systems[index].to_owned());
+                // Captured arrangements carry the base Mecatol; the board uses the printing in scope.
+                let system = if system == ti4_engine::seating::MECATOL {
+                    ti4_engine::seating::mecatol_for(content, sources).to_owned()
+                } else {
+                    system
+                };
                 (system, *coord)
             })
             .collect();
@@ -352,5 +358,38 @@ mod tests {
                 system,
             }) if system == "nonesuch"
         ));
+    }
+
+    #[test]
+    fn captured_mecatol_is_normalized_per_scope_without_mutating_the_pool() {
+        let json = payload(r#"[["18","10","12","16"]]"#);
+        let pool = MapPool::from_reader(json.as_bytes()).unwrap();
+        let homes = ["10", "12", "16"];
+        let homes_before = homes;
+        let raw_before = pool.draw(777).to_vec();
+
+        let pok = pool
+            .galaxy(
+                ContentStore::embedded(),
+                ti4_model::content_types::POK,
+                777,
+                &homes,
+            )
+            .unwrap();
+        assert_eq!(pok.coord_of("18"), Some(Hex::new(0, 0)));
+        assert_eq!(pok.coord_of("112"), None);
+
+        let default = pool
+            .galaxy(
+                ContentStore::embedded(),
+                ti4_model::content_types::DEFAULT,
+                777,
+                &homes,
+            )
+            .unwrap();
+        assert_eq!(default.coord_of("112"), Some(Hex::new(0, 0)));
+        assert_eq!(default.coord_of("18"), None);
+        assert_eq!(pool.draw(777), raw_before.as_slice());
+        assert_eq!(homes, homes_before);
     }
 }

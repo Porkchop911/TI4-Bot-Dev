@@ -44,14 +44,27 @@ fn a_vocabulary_that_is_not_the_accepted_generation_is_refused() {
 #[test]
 fn a_pool_without_an_allowed_manifest_role_is_refused() {
     let scratch = std::env::temp_dir().join(format!("ti4-smoke-pool-{}", std::process::id()));
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root");
+    let accepted_slots = root
+        .join("examples/reviewer/checkpoint-473312/slots.json")
+        .canonicalize()
+        .expect("accepted vocabulary fixture");
     std::fs::write(
         &scratch,
         b"{\"schema\":\"ti4-map-pool-v1\",\"effort\":1,\"coords\":[[0,0]],\"slots\":[[0,0]],\"arrangements\":[[\"18\"]]}",
     )
     .expect("write pool");
     let output = smoke()
-        .args(["--map-pool", scratch.to_str().expect("path")])
-        .current_dir(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .args([
+            "--slots",
+            accepted_slots.to_str().expect("absolute fixture path"),
+            "--map-pool",
+            scratch.to_str().expect("path"),
+        ])
+        .current_dir(root)
         .output()
         .expect("the smoke runs");
     let _ = std::fs::remove_file(&scratch);

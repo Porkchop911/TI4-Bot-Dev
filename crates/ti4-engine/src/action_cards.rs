@@ -2638,12 +2638,20 @@ fn asked_rider_payoff(
                     player,
                     "spacedock",
                 );
-                state
-                    .system_mut(&ti4_model::id::SystemId::new(system))
-                    .planet_units
-                    .entry(ti4_model::id::PlanetId::new(planet))
-                    .or_default()
-                    .push(Unit::new(dock, player.clone()));
+                // Floating Factory: "placed in the space area instead of on a planet".
+                let space_only = ti4_content::units::catalogue(content, sources)
+                    .get(dock.as_str())
+                    .is_some_and(|record| record.is_space_only_structure());
+                let system = state.system_mut(&ti4_model::id::SystemId::new(system));
+                if space_only {
+                    system.units.push(Unit::new(dock, player.clone()));
+                } else {
+                    system
+                        .planet_units
+                        .entry(ti4_model::id::PlanetId::new(planet))
+                        .or_default()
+                        .push(Unit::new(dock, player.clone()));
+                }
             }
             true
         }

@@ -137,6 +137,11 @@ describe("command token panel (redistribute)", () => {
     expect(screen.getByTestId("token-blocker")).toBeInTheDocument();
   });
 
+  it("has no gained split without a gain", () => {
+    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId("token-gained-split")).not.toBeInTheDocument();
+  });
+
   it("lets a faction whose engine offers a small fleet pool take it to zero, and names the floor otherwise", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const letnev = redistributeChoice();
@@ -180,11 +185,6 @@ describe("command token panel (redistribute)", () => {
     await click("token-plus-tactic");
     await click("token-plus-strategic");
     expect(screen.getByTestId("token-blocker")).toHaveTextContent("at least 4");
-  });
-
-  it("has no gained split without a gain", () => {
-    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
-    expect(screen.queryByTestId("token-gained-split")).not.toBeInTheDocument();
   });
 });
 

@@ -395,7 +395,27 @@ impl Setting<'_, '_> {
                 .iter()
                 .map(|(id, hurt)| (id.as_str(), *hurt))
                 .collect();
-            match battle::fleet_query(self.seen, self.player, &self.system, &refs, version) {
+            let query = if ground
+                .iter()
+                .any(|id| matches!(id.as_str(), "naaz_mech" | "naaz_voltron"))
+            {
+                BattleQuery::Unsupported(battle::Unsupported::Context("naaz space combat cargo"))
+            } else if ground
+                .iter()
+                .any(|id| self.unit(id).is_some_and(|k| k.is_ground_force()))
+                && (arriving.iter().any(|(id, _)| id == "nekro_flagship")
+                    || self
+                        .present
+                        .iter()
+                        .any(|(id, n)| id == "nekro_flagship" && *n > 0))
+            {
+                BattleQuery::Unsupported(battle::Unsupported::Context(
+                    "nekro flagship with ground forces",
+                ))
+            } else {
+                battle::fleet_query(self.seen, self.player, &self.system, &refs, version)
+            };
+            match query {
                 BattleQuery::NotApplicable => facts.fight = false,
                 BattleQuery::Unsupported(_) => {
                     facts.fight = true;
@@ -1217,6 +1237,81 @@ mod tests {
             menu.iter().all(|p| p.strategy != Strategy::Hold),
             "nothing of a's is there"
         );
+    }
+
+    #[test]
+    fn known_space_combat_cargo_is_not_silently_dropped() {
+        let layers = |input, output| {
+            vec![
+                (input, 1, vec![0.0; input], vec![0.0]),
+                (1, output, vec![0.0; output], vec![0.0; output]),
+            ]
+        };
+        let predictor = BattlePredictor::assemble(
+            8,
+            "test",
+            layers(battle::input_width(8), battle::output_width(8)),
+            layers(battle::GROUND_INPUT_WIDTH, battle::GROUND_OUTPUT_WIDTH),
+        )
+        .unwrap();
+        let (origin, planet) = fixtures::a_placed_planet();
+        let hub = fixtures::hub_with_outer(origin.as_str());
+        let home = SystemId::new(hub.outer[0].clone());
+        let centre = SystemId::new(hub.centre.clone());
+        for (faction, hull, cargo, unsupported) in [
+            ("naaz", "carrier", "naaz_mech", true),
+            ("naaz", "carrier", "naaz_voltron", true),
+            ("nekro", "nekro_flagship", "infantry", true),
+            ("nekro", "nekro_flagship", "nekro_mech", true),
+            ("naaz", "carrier", "infantry", false),
+            ("nekro", "carrier", "infantry", false),
+        ] {
+            let mut state = fixtures::game(&["a", "b"]);
+            let a = seat(&mut state, "a", faction);
+            let b = seat(&mut state, "b", "hacan");
+            fixtures::put(&mut state, &home, hull, &a, 1);
+            let cargo_planet = (cargo == "naaz_voltron").then(|| planet.clone());
+            if let Some(planet) = &cargo_planet {
+                fixtures::put_on_planet(&mut state, &home, planet, cargo, &a, 1);
+            } else {
+                fixtures::put(&mut state, &home, cargo, &a, 1);
+            }
+            fixtures::put(&mut state, &centre, "cruiser", &b, 1);
+            let seen = Observed::new(
+                &state,
+                ti4_content::ContentStore::embedded(),
+                ti4_model::content_types::FULL,
+                Some(&hub.galaxy),
+            );
+            assert!(
+                seen.loadable(&a, &home)
+                    .iter()
+                    .any(|load| load.unit.type_id.as_str() == cargo)
+            );
+            let threat = BTreeMap::new();
+            let (setting, _) = setting(&seen, &a, &centre, Some(&predictor), &threat).unwrap();
+            let moves = vec![HullMove {
+                origin: home.clone(),
+                unit: hull.to_owned(),
+                damaged: false,
+                gravity_drive: false,
+                ionian: false,
+            }];
+            let loads = vec![Load {
+                hull: 0,
+                unit: cargo.to_owned(),
+                damaged: false,
+                galvanized: false,
+                planet: cargo_planet,
+            }];
+            let facts = setting.price(Strategy::Strong, moves, loads).facts;
+            assert!(facts.fight);
+            assert_eq!(
+                facts.unsupported, unsupported,
+                "{faction}: {hull} + {cargo}"
+            );
+            assert_eq!(facts.space_win.is_none(), unsupported);
+        }
     }
 
     #[test]

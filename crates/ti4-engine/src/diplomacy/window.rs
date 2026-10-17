@@ -862,6 +862,13 @@ mod tests {
         }
         assert!(!ids(&window, &state).contains(&COUNTER_ID.to_owned()));
         assert_eq!(window.responses, MAX_COUNTERS);
+        // One counter per side (operator rule): the recipient counters first, the proposer second.
+        let authors: Vec<_> = state.diplomacy.active_deals[&DealId(1)]
+            .revisions
+            .iter()
+            .map(|revision| revision.author.clone())
+            .collect();
+        assert_eq!(authors, [pid("a"), pid("b"), pid("a")]);
     }
 
     #[test]

@@ -1,0 +1,271 @@
+# Sol round-1 plan pilot (2026-10-16)
+
+Follow-up to [SOL-STRATEGY-PROBE](SOL-STRATEGY-PROBE-2026-10-16.md). This pilot measures the direction and variance of guide-based round-1 overrides; it produces no labels and makes no claim about strength.
+The way guide knowledge would reach the MLP (labels, shaping or curriculum) is deliberately left undecided.
+
+## Design (operator-agreed)
+
+- **Setup:** checkpoint-16448, T=0.001, all six seats MLP, diplomacy ON, DEFAULT/FULL, Train pool.
+- **Origins:** 610170001–010.
+- **Dice:** 16 dice seeds per arm, the same seeds in every arm.
+  - A dice seed offsets the engine's chance streams (dice, decks, exploration) by `dice << 48` words. Map, galaxy and speaker stay fixed.
+  - Dice 0 reproduces the earlier probe's diplomacy-ON baseline state hashes exactly (smoke check on 001 and 002).
+- **Overrides:** hard overrides on the guide's crucial round-1 decisions. Every MLP is still asked at every choice, so its own stream advances as it would unforced.
+
+| Arm | Override | Claims |
+|---|---|---|
+| control | none: Sol drafts Leadership and follows secondaries itself | C18, C19 |
+| tech-elsewhere | a fixed other seat per origin is forced to draft Technology | table-change control |
+| tech-gd | as tech-elsewhere; Sol keeps 1 strategy token + 4 resources until it follows Technology, then researches Gravity Drive | C17, C23 |
+| trade | Sol drafts Trade | C21, C22 |
+| military-support | whenever Sol's strategy pool is empty, Sol offers Military Support to the richest seat for 1 trade good | C13, C15 |
+
+**Comparisons:**
+- tech-gd against tech-elsewhere: isolates Sol's own Gravity Drive choice.
+- The other three arms against control.
+
+**Shortcuts:**
+- Payment choices have no decline option, so they are logged as reserve leaks rather than blocked.
+- In the tech-gd arm, Sol never buys tokens with influence while the reserve is active.
+
+## Run
+
+- **Output:** `out/strategy-wiki/extractions/sol-round1-pilot-20261016-results-01.json` and `-summary-01.json`. Tests passed (3/3). The run took 6m33s on CPU with 16 workers.
+- **Failures:** 787 of 810 games completed. All 23 failures are the known 501-ask `AGENDA_REVEALED` engine guard; none was scored.
+- **Determinism:** 9/10 repeat checks match. The tenth, origin 004 control dice 0, hit the same agenda guard in both runs, as in the earlier campaign.
+- **Runner exit:** 2 for that reason. The report is retained.
+- **No-op arm:** at origin 002 the forced Technology seat already drafts Technology naturally, so tech-elsewhere equals control there.
+- **Formatting:** `rustfmt --check` reports formatting differences. The source was left unformatted so the report's `source_sha256` still matches it.
+
+## Results (paired by origin × dice; CI = 95% bootstrap over 10 origins)
+
+| Arm vs reference | Pairs | ΔVP | CI | Sign + / − / 0 | ΔGD by R1 | ΔResources R2 | Pair SD | Pairs for 0.3 VP |
+|---|---|---|---|---|---|---|---|---|
+| tech-gd vs tech-elsewhere | 150 | +0.05 | [−0.31, +0.45] | 43/34/73 | +0.79 | +0.27 | 1.20 | ~126 |
+| tech-elsewhere vs control | 147 | −0.22 | [−0.82, +0.23] | 28/54/65 | +0.20 | +1.00 | 1.51 | ~198 |
+| trade vs control | 154 | −0.66 | [−1.38, +0.06] | 28/86/40 | 0 | +2.32 | 1.51 | ~199 |
+| military-support vs control | 150 | −0.16 | [−0.41, +0.03] | 36/55/59 | 0 | +2.23 | 1.11 | ~108 |
+
+**Mean Sol VP at the round-4 cutoff:**
+
+| Arm | VP |
+|---|---|
+| control | 3.58 |
+| tech-elsewhere | 3.36 |
+| tech-gd | 3.41 |
+| trade | 2.89 |
+| military-support | 3.41 |
+
+**Reading:**
+- **Gravity Drive:** forcing it in round 1 works mechanically (100% by end of R1, against 0% in control). The continuing MLP does not turn it into VP; the effect is about zero with a wide CI.
+- **Trade instead of Leadership:** the largest and most consistent effect, negative (86 of 154 pairs lose). Sol scores more public objectives (+0.3) but loses more VP elsewhere. This agrees with the MLP's own Leadership preference and with C18.
+- **Military Support:** turns into trade goods but not VP; slightly negative, with the CI touching zero.
+- **Table change:** forcing another seat onto Technology costs Sol about −0.2 VP on its own. That is why tech-gd is compared with tech-elsewhere, not with control.
+
+## Limits
+
+- 10 origins; the dice seeds within an origin are dependent. Only origin-level CIs carry the inference.
+- Pair SD is 1.1–1.5 VP. Detecting 0.3 VP needs roughly 30–40 origins × 16 dice, not more dice per origin.
+- Sol's VP stays below the 5.5 VP-per-seat contention threshold, so no claim about competition is made.
+- Overrides cover a single decision family each; the MLP plays everything after them. A null result means "this MLP doesn't exploit it", not "the guide is wrong".
+
+## 40-origin confirmation (fresh Train origins 610170011–050)
+
+**Run setup:**
+- Arms: control, trade and military-support; 16 dice each; 30 workers.
+- Before this run the worker cap was raised from 16 to 32. That is the only source change since the pilot; it changes `source_sha256`.
+- The first attempt (16 workers) was stopped at game 133/1960. Its `-confirm40-results-01.log` is kept and has no report.
+- Run -02 took 9m50s.
+
+**Outcomes:**
+- 1877 of 1960 games completed. All 83 failures are engine no-progress guards (501 asks): 48 on `AGENDA_REVEALED` and 35 on `after SYSTEM_ACTIVATED`, a guard not seen in the pilot. None was scored.
+- Determinism: 38/40 repeats match. The two flagged ones (origins 046 and 049) failed identically in both runs, with the same state hash and step count. They are guard hits, not nondeterminism.
+- Output: `sol-round1-pilot-20261016-confirm40-results-02.json` and `-summary-02.json`.
+
+| Arm vs control | Origins | Pairs | ΔVP | 95% CI (origins) | Sign + / − / 0 | ΔObjectives | ΔRank |
+|---|---|---|---|---|---|---|---|
+| trade | 38 | 587 | −0.87 | [−1.22, −0.53] | 114/373/100 | −0.13 | +0.91 (worse) |
+| military-support | 38 | 597 | +0.01 | [−0.26, +0.27] | 180/196/221 | +0.17 | 0.00 |
+
+**Reading:**
+- **Trade:** the pilot's Trade-instead-of-Leadership signal holds on fresh origins, and the CI now excludes zero. For this MLP, Leadership (its natural pick and C18) beats the guide's Trade line (C21) by about 0.9 VP at the round-4 cutoff.
+- **Military Support:** forced selling (C13/C15) is neutral.
+
+Neither result is a training label. The Trade result says the MLP's existing draft choice is right here; it does not show that Trade is bad in human play.
+
+## Rerun after the timing-window fix (results-04, authoritative)
+
+**Engine change** (`crates/ti4-engine/src/timing.rs`, uncommitted; operator rule):
+- A seat that passes in two consecutive passes of a window closes it.
+- A `reaction:` slot that leaves the seat's hand unchanged (opened, then backed out of) counts as a pass.
+
+The first part alone (results-03) still left 61 loops, because the looping seat was "resolving" a no-op slot rather than passing. With both parts, all ti4-engine library tests pass (2961), including the new regression test.
+
+**Run:** 40 origins × 3 arms × 16 dice; 1960/1960 complete with 0 guard failures; 40/40 determinism checks match. Took 9m59s on 30 workers.
+- Output: `-confirm40-results-04.json` and `-summary-04.json`.
+
+| Arm vs control | Pairs | ΔVP | 95% CI (40 origins) | Sign + / − / 0 |
+|---|---|---|---|---|
+| trade | 640 | −0.79 | [−1.13, −0.46] | 141/393/106 |
+| military-support | 640 | +0.06 | [−0.19, +0.33] | 200/190/250 |
+
+These match results-02 (−0.87 / +0.01), so excluding guard-failure games had not biased the earlier read-out.
+
+## Fleet census and carrier-doctrine arm (control vs carrier-doctrine, 40 origins × 16 dice)
+
+The census now records each seat's units, breakthrough and leader status at every snapshot, plus Sol's production choices (`tools/audit_fleet_doctrine.py`).
+
+**What control Sol does:**
+- It builds 0.34 fighters per game over 4 rounds, and none in rounds 1–2.
+- It buys a dreadnought in round 1 in 62% of games, and 0.86 destroyers per game.
+- It ends round 4 with 1.6 fighters, down from 3 at the start.
+- Its hero is usable within 4 rounds in 54 of 640 games, and the MLP fired it in 21 of those.
+
+**The carrier-doctrine arm** replaces any Sol dreadnought or destroyer build with a fighter that fits (else infantry, else a carrier). If Sol stops producing while a fighter still fits, it buys another fighter.
+- The swaps fire 1.56 times per game, and fighters built rise to 2.6 per game.
+- The fill-on-stop rule never fired: Sol's carriers are rarely at the dock when it produces.
+- 1280/1280 games complete; determinism checks pass.
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| carrier-doctrine | 640 | −0.14 | [−0.38, +0.10] | 144/192/304 |
+
+**Reading:** swapping composition at the production prompt does not move VP. The MLP plays the same movement and combat around the different units. Carrier doctrine as the operator describes it needs delivery: carriers at the dock, or Bellum Gloriosum + Sling Relay to produce a carrier with its load, or a forward dock. Unit choice alone does not deliver it.
+
+## Spend-before-pass arm (control vs spend-down, 40 origins × 16 dice)
+
+**Rule:** when Sol would pass while it still has at least 2 ready planet resources, it instead takes a tactical action.
+- It activates a system containing its space dock, moves nothing and builds fighters (if they fit) or infantry with the spare.
+- The spare is ready planet resources minus what a satisfied resource-spend public objective will cost at the status phase.
+
+**Run:** 1280/1280 complete; determinism checks pass. Sol is forced into a spend-down 1.52 times per game (0.18 per game aborted because no dock system was activatable). Sol builds 16.6 units per game instead of 9.5.
+
+**Waste:** ready planet resources left at the end of the action phase (control → spend-down). Every MLP seat wastes, and the waste grows each round.
+
+| Faction | R1 | R2 | R3 | R4 |
+|---|---|---|---|---|
+| sol | 1.7 → 0.9 | 1.3 → 1.1 | 2.2 → 0.9 | 6.2 → 3.4 |
+| letnev | 0.2 | 3.1 | 5.3 | 9.8 |
+| l1z1x | 1.9 | 2.1 | 5.1 | 8.1 |
+| xxcha | 2.6 | 2.2 | 4.4 | 6.0 |
+| jolnar | 0.7 | 2.0 | 3.7 | 5.6 |
+| hacan | 1.8 | 1.0 | 2.3 | 4.9 |
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| spend-down | 640 | −0.11 | [−0.29, +0.06] | 95/141/404 |
+
+**Reading:**
+- Wasting ready resources is a general MLP flaw across all six factions.
+- Forcing Sol to convert them into units nearly doubles Sol's unit count but does not raise cutoff VP. The extra units appear at the dock late in a round, and the MLP does not turn them into scoring moves before the cutoff.
+- Unit volume, like unit type earlier, is not the binding constraint on its own.
+
+## Scoring windows and no-early-pass arm (control vs no-early-pass, 40 origins × 16 dice)
+
+**Instrumentation:**
+- Each end-action snapshot now records the progress of Sol's revealed public objectives and held secrets.
+- `tools/classify_scoring_windows.py` classifies each status phase:
+  - **scored**
+  - **satisfied-missed**
+  - **near-miss:** one count short, or at least 75% of a cost objective
+  - **out-of-reach**
+
+**Control Sol, share of games:**
+
+| Status | Scored | Satisfied but missed | Near-miss | Out of reach |
+|---|---|---|---|---|
+| 1 | 0.12 | 0.00 | 0.29 | 0.58 |
+| 2 | 0.53 | 0.00 | 0.35 | 0.12 |
+| 3 | 0.66 | 0.00 | 0.30 | 0.04 |
+| 4 | 0.71 | 0.01 | 0.22 | 0.06 |
+
+- **Satisfied-missed is about zero:** the MLP always scores what it can.
+- **Near-misses are 22–35% of windows.** The most common near-miss families are mixed:
+  - tech: colours_2, tech_specialties, unit_upgrades
+  - board: notable_systems, same_trait, attached_planets, on_the_rim, ships_adjacent_to_mecatol
+  - structures: structures_away
+  - capital ships: capital_ship_systems
+- **Status 1** is mostly out of reach (58%).
+
+**No-early-pass arm:** when Sol would pass while a revealed, unscored public in a movement family is one step short, it takes one more tactical action instead. It is limited to one per objective per round, and the MLP chooses the system and moves.
+- Forced 1.05 times per game. Only 123 of 674 forced actions (18%) advanced their objective (make_history 71/184, expand_borders 22/54, corner 13/171).
+- So most forced actions were not worth the command token, as the operator warned.
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| no-early-pass | 640 | +0.07 | [−0.04, +0.19] | 84/61/495 |
+
+**Reading:**
+- This is the first arm with a positive point estimate, but the CI includes zero. The pair SD is 0.67.
+- Losses are near-misses, not missed scoring. Many near-misses need a research or a structure rather than a move.
+- Movement near-misses convert only when the action is aimed at the objective. An untargeted extra action wastes the token about 80% of the time.
+
+## Rule-bot hybrid arms for Sol (40 origins × 16 dice, paired vs control)
+
+**Setup:**
+- Sol's MLP is still asked at every choice. Within each arm's scope, `ti4_server::session::smart_bot::pick` decides instead, falling back to the MLP when it has no rule.
+- The other five seats are unchanged MLPs.
+- 3880/3880 games complete; determinism checks pass. The run took 20m17s on 30 workers.
+
+| Arm (rule bot decides…) | ΔVP | 95% CI | Sign + / − / 0 | Sol planets at cutoff | Sol units | Sol TG |
+|---|---|---|---|---|---|---|
+| control | — | — | — | 6.47 | 22.1 | 6.2 |
+| tactical: menu, activation, movement, landing | −0.40 | [−0.81, +0.01] | 206/300/134 | 6.09 | 25.2 | 4.3 |
+| production and placement | −0.21 | [−0.44, +0.01] | 168/258/214 | 6.18 | 21.0 | 5.6 |
+| research | **+0.09** | [+0.01, +0.17] | 73/22/545 | 6.41 | 22.3 | 6.4 |
+| strategy-card draft | +0.10 | [−0.13, +0.33] | 200/169/271 | 6.78 | 23.3 | 5.8 |
+| **everything (rule-bot Sol)** | **+0.89** | **[+0.54, +1.24]** | 389/119/132 | 9.08 | 34.1 | 2.6 |
+
+**Rule-bot Sol's scoring windows:** status 3 near-misses fall from 0.30 to 0.16, and status 3 scoring rises from 0.66 to 0.77. Other seats' VP: 3.42 (rule-all) against 3.62 (control).
+
+**Reading:**
+- The whole rule policy beats MLP Sol by about 0.9 VP in the MLP's own six-player, diplomacy-ON table. Rule-bot Sol holds 40% more planets, has 55% more units and spends its trade goods.
+- Split into parts, tactical and production each hurt, because they assume the rule bot's own transport and production plan. Only research gives a small, significant gain.
+- The rule bot's edge is a coherent whole: transport-first production feeding objective-valued activations. Its parts are not separable fixes.
+
+## Rule-table and distilled-Sol checks
+
+**Rule table with MLP fallback:** all six seats rule bot; diplomacy ON; train pool; 640 games.
+- 3.569 VP/seat, against MLP self-play 3.578 on the same games.
+- Historical rule self-play with random fallback scored 2.79 (holdout). MLP fallback is therefore worth about +0.8 VP/seat to the rule bot.
+- **Without Support for the Throne points:** rule-table 2.74, MLP 2.58 VP/seat. SftT supplies 0.83 and 0.99 VP/seat respectively.
+
+**Distilled Sol (behaviour cloning):**
+- **Data:** the rule bot's own Sol decisions (only where it had a rule) from rule-all games on origins 610170101–140 × 4 dice. That gives 25,956 train and 3,105 validation decisions, split by origin.
+- **Training:** one-hot targets, `distill::train` with `preserve_untrained_rows`, 3 epochs (21 steps), starting from checkpoint-16448.
+- **Benchmark:** the student plays Sol against the base MLP on eval origins 610170011–050 × 16 dice; determinism checks pass.
+
+| Student | Validation NLL (ep 1 → 3) | ΔVP vs MLP Sol | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| lr 3e-5 | 26.9 → 21.9 | −0.03 | [−0.33, +0.28] | 220/239/181 |
+| lr 3e-4 | 12.2 → 2.4 | −0.61 | [−0.97, −0.26] | 157/351/132 |
+
+**Reading:** imitating the rule bot's covered decisions alone does not reproduce rule-all's +0.89.
+- The closer fit (lr 3e-4) is clearly worse. It imitates the rule bot's choices in only part of Sol's decisions, the part the rule bot covers. The MLP's own policy for the rest no longer fits them: the same incoherence as the single-scope hybrids.
+- It is also trained only on states the rule bot visited, not on the states the student reaches itself.
+
+## DAgger distillation of rule-bot Sol
+
+**Method:**
+- Each round, the current student plays Sol for 160 games on new origins (40 × 4 dice; rounds use origins 610170101–140, 141–180, 181–220).
+- The rule bot labels each Sol decision it has a rule for (one-hot). Every other decision keeps checkpoint-16448's own distribution (soft target).
+- A fresh fine-tune of 16448 on all rounds' data (lr 3e-4, 3 epochs, `preserve_untrained_rows`) becomes the next student.
+- 37 minutes in total, including benchmarks.
+
+| Round | Sol played by (collection games) | Sol VP | Decisions (rule-labelled) | Validation loss |
+|---|---|---|---|---|
+| 1 | base | 3.40 | 88.7k (25.8k) | 0.27 |
+| 2 | student r1 | 3.39 | 91.3k (26.7k) | 0.24 |
+| 3 | student r2 | 3.03 | 99.1k (28.0k) | 0.23 |
+
+**Benchmark** on eval origins 610170011–050 × 16 dice against the base MLP; determinism checks pass:
+
+| Student | ΔVP | 95% CI | Sign + / − / 0 | ΔPlanets R2 | ΔResources R2 |
+|---|---|---|---|---|---|
+| r1 | −0.18 | [−0.60, +0.22] | 235/254/151 | +0.26 | −0.68 |
+| r3 | −0.03 | [−0.48, +0.42] | 258/250/132 | +0.62 | −2.06 |
+
+**Reading:**
+- DAgger moves the student toward the rule bot's behaviour: more planets by round 2, and resources spent instead of hoarded.
+- Cutoff VP does not improve, and paired variance rises (SD 1.87).
+- None of the distilled students reproduces the hybrid's +0.89 within these budgets.

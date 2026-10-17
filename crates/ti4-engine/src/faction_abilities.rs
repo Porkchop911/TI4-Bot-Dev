@@ -622,7 +622,9 @@ pub fn annexable(
         };
         for planet_id in system_record.strings("planets") {
             let planet = ti4_model::id::PlanetId::new(planet_id);
-            if planet.as_str() == "mr" || board.planet_control.contains_key(&planet) {
+            if crate::seating::is_mecatol_planet(planet.as_str())
+                || board.planet_control.contains_key(&planet)
+            {
                 continue; // somebody holds it
             }
             // Space Stations rule 7 keeps them out of the scoring view and rule 5 keeps
@@ -1089,16 +1091,14 @@ pub fn unimplemented_mechs(
     let known = registered_mech_abilities();
     factions
         .iter()
-        .map(|faction| format!("{faction}_mech"))
-        .filter(|id| {
-            content
-                .get(ti4_model::content_types::ContentType::Units, id)
-                .is_some_and(|record| {
-                    record.in_sources(sources)
-                        && record.text("ability").is_some_and(|text| !text.is_empty())
-                })
+        .filter_map(|faction| ti4_content::units::faction_unit(content, faction, "mech", sources))
+        .filter(|mech| {
+            mech.record()
+                .text("ability")
+                .is_some_and(|text| !text.is_empty())
         })
-        .filter(|id| !known.contains(&id.as_str()))
+        .filter(|mech| !known.contains(&mech.id()))
+        .map(|mech| mech.id().to_owned())
         .collect()
 }
 
@@ -2128,6 +2128,17 @@ mod tests {
         assert_eq!(state.player(&player).unwrap().trade_goods, 5);
     }
 
+    #[test]
+    fn the_mech_ledger_uses_the_active_printing() {
+        let content = ContentStore::embedded();
+        assert!(
+            unimplemented_mechs(content, ti4_model::content_types::DEFAULT, &["naalu"]).is_empty()
+        );
+        assert_eq!(
+            unimplemented_mechs(content, ti4_model::content_types::POK, &["naalu"]),
+            ["naalu_mech"]
+        );
+    }
     #[test]
     fn the_blocked_abilities_are_named_with_a_reason() {
         // Kept apart from merely unwritten ones: one is work, the other is a dependency, and a

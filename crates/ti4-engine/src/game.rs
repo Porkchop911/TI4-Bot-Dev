@@ -811,8 +811,17 @@ impl Window for AftermathWindow {
                     CONTINUE_ACTION_KIND,
                     if *invade {
                         "continue to the invasion"
-                    } else {
+                    } else if crate::production::capacity(
+                        state,
+                        content,
+                        sources,
+                        &self.player,
+                        &self.system,
+                    ) > 0
+                    {
                         "continue to production"
+                    } else {
+                        "finish the tactical action"
                     },
                 )];
                 options.extend(crate::diplomacy::candidates::available_contacts(
@@ -7327,6 +7336,62 @@ mod tests {
     use crate::setup::start_game;
     use crate::timing::{Ability, Relation};
     use crate::tokens::STATUS_TOKENS;
+
+    #[test]
+    fn aftermath_negotiation_names_whether_production_can_continue() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        let system = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("Saar has a home system");
+        {
+            let here = state.system_mut(&system);
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 1);
+
+        let window = |state: &GameState, invade: bool| AftermathWindow {
+            player: player.clone(),
+            system: system.clone(),
+            stage: Aftermath::Negotiating { invade },
+            log: Vec::new(),
+            before_combat: crate::combat::before_combat(state, content, sources, &system),
+            feats_noted: false,
+            pending_event_scoring: None,
+            notes_at_tactical_start: crate::combat::note_holdings(state),
+        };
+        let continue_label = |choice: Choice| {
+            choice
+                .options
+                .iter()
+                .find(|option| option.id == CONTINUE_ACTION_ID)
+                .expect("continue option")
+                .label
+                .clone()
+        };
+
+        let no_factory = window(&state, false)
+            .pending_choice(&state, content, sources)
+            .expect("negotiation choice without a factory");
+        assert_eq!(continue_label(no_factory), "finish the tactical action");
+
+        crate::fixtures::put(&mut state, &system, "saar_spacedock", &player, 1);
+        let with_factory = window(&state, false)
+            .pending_choice(&state, content, sources)
+            .expect("negotiation choice with a factory");
+        assert_eq!(continue_label(with_factory), "continue to production");
+
+        let invasion = window(&state, true)
+            .pending_choice(&state, content, sources)
+            .expect("invasion negotiation choice");
+        assert_eq!(continue_label(invasion), "continue to the invasion");
+    }
 
     #[test]
     fn fork_uses_fresh_deciders_and_callbacks_for_nested_timing_choices() {

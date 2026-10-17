@@ -1,9 +1,9 @@
 # BF-22 evidence: wide roster in the policy and trainer (part 1)
 
+**Status clarification (2026-10-11):** migration/capacity growth and the CPU smoke are implemented as recorded below; the older opening capacity blocker is superseded. Bounded independent source review and fixes are recorded in [the review](BF-22-REVIEW-2026-10-11.md); the pinned smoke fixture integration blocker is resolved (2 refusal checks and 15 affected integration tests pass); workstream exit remains OPEN on separate BF-22b/BF-24/BF-25 and workspace obligations. Fresh bounded checks and remaining gates: [baseline/review evidence](BASELINE-AND-GATES-2026-10-11.md). Historical results below are retained.
+
 Status: **open**. Part 1 (roster plumbing, battle and decomposition gates, census) is implemented
-and tested; the vocabulary migration is blocked on an operator capacity decision (below). Tier-C
-frontier review is outstanding: the author (Claude Opus 5.5, BF unification session 2026-10-08)
-is not an independent reviewer.
+and tested; vocabulary migration and capacity growth are implemented (part 2 below). Independent frontier source review completed 2026-10-11 (see review evidence); affected integration passed; workstream exit remains open. Original author: Claude Opus 5.5 (2026-10-08).
 
 ## Decision
 
@@ -16,7 +16,7 @@ checkpoint's provenance. No silent reinterpretation.
 | Surface | Faction identity | Wide-roster behaviour | Change |
 |---|---|---|---|
 | MLP actor rows (`ti4_mlp::FACTION_ROSTER`, 33 pinned rows: `delta`, `b_delta`, `embedding`) | per-faction rows | already sized for every seat; no width change | none. checkpoint-41476: the 27 non-six rows are exactly zero in all three tensors, so a new faction plays the shared model until PPO trains its row |
-| MLP vocabulary (named features, OOV per family) | faction-derived names (abilities, techs, units, homes, `state-kind` crosses) | unseen names fall into their family's OOV column | census tool widened; migration blocked on capacity (below) |
+| MLP vocabulary (named features, OOV per family) | faction-derived names (abilities, techs, units, homes, `state-kind` crosses) | unseen names fall into their family's OOV column | census widened; capacity growth and OOV-copy migration implemented (part 2) |
 | Battle predictor (`ti4_policy::battle::FACTIONS`, versions 1..=7) | dice-shift table, not a one-hot | any faction outside the six is the public `Unsupported::Faction` for every supported version | doc rule + test; widening needs a new trained feature version with a version-gated lookup |
 | Arena `Profile::CATALOGUE` (ti4-training battle_arena) | six transient profiles | unchanged | deferred: only meaningful with a new predictor version (BF-22b) |
 
@@ -123,7 +123,7 @@ is not offered again; every pass researches or shrinks the offer, so both loops 
 commander waiver: re-selecting the declined technology is now `ScriptDiverged`; another technology
 is researched). After the fix the 6 stalled seeds finish in 17-18 s each.
 
-This is a Tier-C legality change and needs frontier review together with this package.
+This Tier-C legality change was included in the completed frontier source review on 2026-10-11; see the dated review evidence.
 
 ### Checks (part 2)
 
@@ -148,7 +148,9 @@ it fine.
 
 ## Open
 
-1. Tier-C frontier review of this package by a reviewer other than the author.
-2. Done 2026-10-08: `ppo_update --bundle out/bf22-checkpoint-41476-wide-oov --roster wide --updates 1
+1. Workstream exit: BF-22b corrected-label qualification, BF-24 manual subtype coverage, BF-25 paired campaign and workspace golden disposition. The pinned smoke fixture and affected integration checks passed; see the dated review follow-up.
+## Completed CPU smoke (2026-10-08)
+
+Recorded result: `ppo_update --bundle out/bf22-checkpoint-41476-wide-oov --roster wide --updates 1
    --seeds-per-update 16 --device cpu --no-checkpoint`, 16 workers: 16 games, 45,120 decisions,
    0 failed games, parameters moved (out/bf22-ppo-wide-smoke3.log).
