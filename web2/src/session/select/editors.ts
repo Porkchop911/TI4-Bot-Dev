@@ -10,6 +10,7 @@ import { purchaseEditor } from "./purchase";
 import { readyEditor } from "./ready";
 import { recallEditor } from "./recall";
 import { replenishEditor } from "./replenish";
+import { restackEditor } from "./restack";
 import { scoringEditor } from "./scoring";
 import { structuresEditor } from "./structures";
 import { transactionEditor } from "./transaction";
@@ -69,6 +70,7 @@ const EDITORS: Opener[] = [
   opener("structures", structuresEditor),
   opener("replenish", replenishEditor),
   opener("recall", recallEditor),
+  opener("restack", restackEditor),
   opener("scoring", scoringEditor),
   opener("transaction", transactionEditor),
 ];
