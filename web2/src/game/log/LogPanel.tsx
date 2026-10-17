@@ -7,7 +7,7 @@ const AT_TOP = 24;
 
 /**
  * The log: what the others are doing and what they did, so that the viewer can decide. It is
- * one row for each turn since the viewer's last turn and each phase in between, the turn that is
+ * one row for each turn from the viewer's previous turn on and each phase in between, the turn that is
  * played now on top. Desktop has it under the player table, where it fills the column and scrolls
  * inside itself; a phone has it as the pane Log, which scrolls the same way. The newest is on top:
  * the Log starts there, and shows what is new while it is at its top; else what is new comes in

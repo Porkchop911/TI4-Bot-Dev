@@ -1625,10 +1625,10 @@ function phaseView(phase: RawPhase, names: Names, live: boolean): LogPhaseView {
 }
 
 /**
- * The Log of the viewer: the entries from its last turn on, that turn first, so that the player
- * sees what it did and what the others did after it; the turn that is played now is last. A
- * turn of the viewer that is played now is not its last turn. A spectator, and a seat before its
- * first turn, see the round in play.
+ * The Log of the viewer: the entries from its previous turn on, that turn first, so that the
+ * player sees what it did and what the others did after it; the turn that is played now is last.
+ * The current turn of the viewer (played now, or ended with no turn of another seat after it) is
+ * not its previous turn. A spectator, and a seat before its previous turn, see the round in play.
  */
 export function selectLog(
   update: SessionUpdate,
@@ -1659,16 +1659,15 @@ export function selectLog(
       (update.view.active_player ?? item.seat) === item.seat;
     return turnView(item, number, live, viewer, names, update.view.round);
   });
-  const last =
-    viewer === null
-      ? -1
-      : entries.findLastIndex(
-          (entry) =>
-            entry.kind === "turn" &&
-            entry.seat === viewer &&
-            !entry.live &&
-            entry.action !== "other",
-        );
+  const mine = (entry: LogItemView) =>
+    entry.kind === "turn" && entry.seat === viewer && entry.action !== "other";
+  const latest = viewer === null ? -1 : entries.findLastIndex(mine);
+  // The latest turn of the viewer is its current turn while no other seat had a turn after it:
+  // played now, or ended with nobody after it yet. The Log then starts at the turn before it.
+  const current =
+    latest >= 0 &&
+    !entries.slice(latest + 1).some((entry) => entry.kind === "turn" && entry.seat !== viewer);
+  const last = current ? entries.slice(0, latest).findLastIndex(mine) : latest;
   if (last >= 0) {
     return { scope: "since-last-turn", entries: entries.slice(last) };
   }

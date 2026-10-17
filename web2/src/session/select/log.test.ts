@@ -506,6 +506,53 @@ describe("the scope of the Log", () => {
     expect(log.entries.at(-1)).toMatchObject({ seat: "a", live: true, mine: true });
   });
 
+  it("starts at the previous turn of the viewer while its turn that ended has no turn after it", () => {
+    // Sol passed (action_20), the others had turns, Sol's next turn ended, and nobody has had a
+    // turn since: that turn is Sol's current turn, and the Log starts at the pass before it.
+    const ended = [
+      ...pass("action_20", "a"),
+      ...technology("action_21", "c", "b"),
+      ...tactical("action_22", "a", "b"),
+    ];
+    const log = selectLog(update({ round: 3 }), eventsOf(ended), printed);
+    expect(labels(log.entries)).toEqual([
+      "a Pass",
+      "c Strategic · Technology",
+      "a Tactical · Mecatol Rex · #18",
+    ]);
+    // Once another seat had a turn, that turn of Sol is its previous turn.
+    const later = selectLog(
+      update({ round: 3 }),
+      eventsOf([...ended, ...pass("action_30", "b")]),
+      printed,
+    );
+    expect(labels(later.entries)).toEqual(["a Tactical · Mecatol Rex · #18", "b Pass"]);
+  });
+
+  it("keeps the previous turn of the viewer when the viewer plays two turns in a row", () => {
+    const events = [
+      ...pass("action_20", "b"),
+      ...technology("action_21", "a", "c"),
+      ...pass("action_22", "c"),
+      ...tactical("action_23", "a", "b"),
+      decided("action_24", "a", "a", started("tactical")),
+    ];
+    const log = selectLog(update({ round: 3 }), eventsOf(events), printed);
+    expect(labels(log.entries)).toEqual(["a Tactical · Mecatol Rex · #18", "a Tactical"]);
+    expect(log.entries.at(-1)).toMatchObject({ live: true, mine: true });
+  });
+
+  it("is the round in play while the viewer has no turn before its current turn", () => {
+    const events = [
+      transition("action", 1),
+      decided("action_20", "b", "b", started("pass"), { round: 1 }),
+      decided("action_21", "a", "a", started("tactical"), { round: 1 }),
+    ];
+    const log = selectLog(update({ round: 1 }), eventsOf(events), printed);
+    expect(log.scope).toBe("round");
+    expect(labels(log.entries)).toEqual(["Action phase · Round 1", "b Pass", "a Tactical"]);
+  });
+
   it("has the phase in play live while it is the last entry: the action of now is its content", () => {
     // The strategy phase of round 4, before the action phase: its band is live.
     const strategy = game().slice(0, -2);

@@ -6,7 +6,7 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 - The Log answers one question: what are the others doing, and what did they do, so that I can decide. The decision of the viewer is the step sheet on the map (or a seat in the player table); the Log only reads (owner, 2026-10-16).
 - Desktop has it in the right column under the player table, where it fills the column and scrolls inside itself. A phone has it as the pane Log. Both show the same Log (`src/game/log/LogPanel.tsx`).
-- The Log is not an event log (owner, 2026-10-17): it is at most about eight large rows, the turns since the viewer's last turn and the phases in between, newest first, the turn that is played now on top (owner, 2026-10-17). A row says who did what and how it ended. What happened in a turn is the sheet of its action, read-only, through the same UI as the live game (a tactical action with its steps and the battle table, a strategic card with its seats, a card with its decision); a tactical, strategic or component turn opens it (the section "A turn, opened"); a pass and a phase do not open yet.
+- The Log is not an event log (owner, 2026-10-17): it is at most about eight large rows, the turns from the viewer's previous turn on and the phases in between, newest first, the turn that is played now on top (owner, 2026-10-17). A row says who did what and how it ended. What happened in a turn is the sheet of its action, read-only, through the same UI as the live game (a tactical action with its steps and the battle table, a strategic card with its seats, a card with its decision); a tactical, strategic or component turn opens it (the section "A turn, opened"); a pass and a phase do not open yet.
 
 ## The rows
 
@@ -85,7 +85,7 @@ Owner, 2026-10-17: the present had no place of its own; it was only in the histo
 
 ### The scope
 
-- The Log starts at the last turn of the viewer, and that turn is its first entry; a reaction, a secondary or a vote of the viewer is no turn and does not cut it, so that the player sees what it did and then what the others did after it. The entries are oldest first (the rows show them newest first); the phases in between are their entries. The turn that is played now is last and marked live; a turn that ended with no fact of its end (a tactical action that ends after its movement) is not live once another seat has the turn (`active_player`). A turn of the viewer that is played now is not its last turn: the Log starts at the turn before it.
+- The Log starts at the previous turn of the viewer, and that turn is its first entry (owner, 2026-10-17: "up to my previous turn, not until my current"); a reaction, a secondary or a vote of the viewer is no turn and does not cut it, so that the player sees what it did and then what the others did after it. The entries are oldest first (the rows show them newest first); the phases in between are their entries. The turn that is played now is last and marked live; a turn that ended with no fact of its end (a tactical action that ends after its movement) is not live once another seat has the turn (`active_player`). The current turn of the viewer is not its previous turn: the latest turn of the viewer while no other seat had a turn after it, played now or ended (two turns in a row of the viewer, after the others passed, are its previous and its current turn). The Log then starts at the turn of the viewer before it; with none before it, the Log is the round in play.
 - A spectator, and a seat before its first turn, see the round in play.
 
 ### An entry
