@@ -605,7 +605,7 @@ export function selectPastTurn(
     system,
     action: {
       kind: "tactical",
-      context: `Tactical action · ${label} · ${name(seat)}`,
+      context: `Tactical action · ${label}`,
       badge: null,
       tabs,
       selected: shown,

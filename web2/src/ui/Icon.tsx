@@ -51,6 +51,9 @@ const PATHS = {
   passed: '<circle cx="12" cy="12" r="8"/><path d="M10 9v6m4-6v6"/>',
   // A command token of the tactic or the strategy pool; `token` is the fleet pool.
   tokenDown: '<path d="M12 20 3 5h18Z"/>',
+  // The history mode: the screen shows a point of the past.
+  history:
+    '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7"/><path d="M12 8v4l3 2"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

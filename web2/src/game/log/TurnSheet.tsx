@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { ActionView, InspectView, Intent } from "../../model";
-import { Button, cx, PhoneScope, ReadOnlyScope, usePhoneScreen } from "../../ui";
+import { Button, cx, Icon, PhoneScope, ReadOnlyScope, usePhoneScreen } from "../../ui";
 import { ActionPanel } from "../action/ActionPanel";
 import { GameProvider, useDispatch, useSeats } from "../context";
 
@@ -32,10 +32,13 @@ export const decisionHeading = (view: ActionView) =>
 export function WaitingBar({
   heading,
   fresh,
+  mark,
   onBack,
   edge = true,
 }: {
   heading: string;
+  /** The colour of the live workspace: the mark is of the live decision, not of the past. */
+  mark: string;
   /** A line above it: under a pane. Not in a frame of its own. */
   edge?: boolean;
   /** The question came while the screen was in the history mode. */
@@ -56,7 +59,8 @@ export function WaitingBar({
           <span
             aria-hidden
             data-mark=""
-            className="inline-block size-2 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--accent)] animate-blink motion-reduce:animate-none"
+            style={{ background: mark, boxShadow: `0 0 6px ${mark}` }}
+            className="inline-block size-2 shrink-0 rounded-full animate-blink motion-reduce:animate-none"
           />
           <span className="sr-only">New:</span>
         </>
@@ -74,8 +78,8 @@ export function WaitingBar({
 
 /**
  * A turn or a phase of the Log, opened: its action as Live showed it, read-only, in the place of
- * the step sheet, over the board as it was then. The screen is in the history mode: the frame of
- * the board has the colour of the mode, a stamp on the board says which point it shows, and the
+ * the step sheet, over the board as it was then. The screen is in the history mode: the board is
+ * hatched, a stamp over the sheet says which point it shows, and the
  * heading row names the turn with "‹" and "›" to the rows of the Log around it. Its step tabs are
  * a view of the turn; a row and a token show what was done and are no control, the inspector of a
  * system stays. "×" closes it. The viewer's open decision is not shown: its bar says that it
@@ -85,9 +89,12 @@ export function TurnSheet({
   view,
   decision,
   fresh,
+  mark,
   status,
 }: {
   view: InspectView;
+  /** The colour of the live workspace, for the mark of a decision that came. */
+  mark: string;
   /** The viewer's open decision. Null: none. */
   decision: ActionView | null;
   /** The decision came while the screen was in the history mode. */
@@ -123,7 +130,7 @@ export function TurnSheet({
       >
         ‹
       </button>
-      <span className="min-w-0 truncate text-sm font-strong text-accent" title={view.name}>
+      <span className="min-w-0 truncate text-sm font-strong text-text" title={view.name}>
         {view.name}
       </span>
       <button
@@ -145,47 +152,63 @@ export function TurnSheet({
       </GameProvider>
     </ReadOnlyScope>
   );
-  // The frame of the board in the colour of the mode, and the point of the game that it shows.
+  // The board shows the past: it is hatched, with a dashed edge, and keeps its colours; a stamp
+  // over the sheet says which point it shows, with the sign of the mode. No colour carries it.
   const past = (
-    <>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-1 shadow-[inset_0_0_0_3px_var(--accent)]"
-      />
-      <p
-        role="status"
-        aria-label="Board shows"
-        className="pointer-events-none absolute top-11 left-2.5 z-2 max-w-[calc(100%-20px)] truncate rounded-sm border border-accent/60 bg-surface/90 px-2 py-0.5 text-xs font-strong text-accent touch:top-13"
-      >
-        {view.stamp}
-      </p>
-    </>
+    <div
+      aria-hidden
+      data-past=""
+      className="pointer-events-none absolute inset-0 z-1 border border-dashed border-line-strong bg-[repeating-linear-gradient(135deg,#ffffff0d_0_2px,transparent_2px_11px)]"
+    />
+  );
+  const stamp = (
+    <p
+      role="status"
+      aria-label="Board shows"
+      className="flex max-w-full min-w-0 items-center gap-1.5 self-start rounded-md border border-line-strong bg-surface px-2 py-0.5 text-xs font-strong text-muted shadow-[0_4px_12px_#0006]"
+    >
+      <Icon name="history" className="size-3.5" />
+      <span className="truncate">{view.stamp}</span>
+    </p>
   );
   const waiting = decision && (
-    <WaitingBar heading={decisionHeading(decision)} fresh={fresh} onBack={close} edge={false} />
+    <WaitingBar
+      heading={decisionHeading(decision)}
+      fresh={fresh}
+      mark={mark}
+      onBack={close}
+      edge={false}
+    />
   );
   if (phone) {
     // A phone has the bar of the decision in the place of the footer, under the pane.
     return (
       <>
         {past}
+        {/* The stamp is a part of what covers the board: no system is framed under it. */}
         <div
-          role="region"
-          aria-label="Turn"
           data-covers-board=""
-          className="absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col border-t border-accent/60 bg-surface"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">{panel}</div>
+          <div className="flex px-2.5">{stamp}</div>
+          <div
+            role="region"
+            aria-label="Turn"
+            className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-auto border-t border-line-strong bg-surface"
+          >
+            {panel}
+          </div>
         </div>
       </>
     );
   }
   const frame =
-    "flex w-[412px] flex-col overflow-hidden rounded-lg border border-accent/60 bg-surface shadow-[0_12px_30px_#0008]";
+    "flex w-[412px] flex-col overflow-hidden rounded-lg border border-line-strong bg-surface shadow-[0_12px_30px_#0008]";
   return (
     <>
       {past}
-      <div className="absolute right-3 bottom-3 z-2 flex max-h-[80%] flex-col gap-2">
+      <div className="absolute right-3 bottom-3 z-2 flex max-h-[80%] w-[412px] flex-col gap-2">
+        {stamp}
         <div role="region" aria-label="Turn" className={`${frame} min-h-0 flex-1`}>
           <PhoneScope className="flex min-h-0 flex-1 flex-col">{panel}</PhoneScope>
         </div>

@@ -327,6 +327,12 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
     .getByRole("status", { name: "Board shows" });
   await expect(stamp).toHaveText(/after Space combat$/);
   await expect(stamp).toBeInViewport();
+  // The stamp covers no system of the turn: the board frames the marked system above it.
+  const marked = page
+    .getByRole("region", { name: "Galaxy board" })
+    .locator('[aria-label*="the open window or turn is about this system"]');
+  const [system, mark] = [(await marked.boundingBox())!, (await stamp.boundingBox())!];
+  expect(system.y + system.height).toBeLessThanOrEqual(mark.y);
   await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toBeVisible();
   // No control of the live game: the decision is a bar in the place of the footer.
   await expect(send).toHaveCount(0);

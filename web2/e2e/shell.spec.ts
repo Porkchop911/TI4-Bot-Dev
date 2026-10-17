@@ -407,7 +407,7 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   // the game the screen shows, and the stamp on the board which step.
   const main = page.locator("main");
   expect(await main.evaluate((element) => element.style.getPropertyValue("--accent"))).toBe(
-    "var(--color-violet)",
+    "var(--color-muted)",
   );
   const header = page.locator("header");
   await expect(header).toContainText("History");
@@ -450,7 +450,7 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   await expect(row).toHaveAttribute("aria-pressed", "false");
   await expect(sheet.locator("#step-panel")).toBeVisible();
   expect(await main.evaluate((element) => element.style.getPropertyValue("--accent"))).not.toBe(
-    "var(--color-violet)",
+    "var(--color-muted)",
   );
   await expect(header.getByRole("navigation", { name: "Workspace" })).toBeVisible();
   // So does "Back" of the bar of the decision, and "Back to now" of the toolbar.
@@ -505,7 +505,7 @@ test("desktop: a strategic turn of the Log opens to its card and a row for each 
   await expect(turn).toBeVisible();
   expect((await turn.boundingBox())!.width).toBe(412);
   await expect(turn.getByRole("heading", { name: "Leadership" })).toBeVisible();
-  await expect(turn).toContainText("Strategic action · ");
+  await expect(turn).toContainText("Strategic action");
   // The primary, then a row for each other seat with its answer and what it did in short.
   const rows = turn.locator("ul[aria-label=Seats] > li");
   await expect(rows.first()).toContainText("✓ Resolved");

@@ -82,7 +82,7 @@ it.skipIf(!built)(
   () => {
     const past = selectPastFlow(played.update, events, turnOf("Strategic · Warfare").id)!;
     expect(past.action.heading).toBe("Warfare");
-    expect(past.action.context).toMatch(/^Strategic action · /);
+    expect(past.action.context).toBe("Strategic action");
     expect(past.action.pill).toEqual({ tone: "done", label: "Resolved" });
     // Nothing of it is sent: its footer has no button.
     expect(past.action.footer.actions).toEqual([]);
@@ -127,7 +127,7 @@ it.skipIf(!built)(
     const component = turns.find((turn) => turn.label === "Component · Xxchaagent")!;
     const past = selectPastFlow(played.update, events, component.id)!;
     expect(past.action.heading).toBe("Xxchaagent");
-    expect(past.action.context).toMatch(/^Component action · /);
+    expect(past.action.context).toBe("Component action");
     const menus = past.action.blocks.flatMap((block) => (block.kind === "menu" ? [block] : []));
     expect(menus.length).toBeGreaterThan(0);
     // Every row is the choice that was made: selected, and no control.

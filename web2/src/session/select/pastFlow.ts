@@ -122,7 +122,7 @@ export function selectPastFlow(
       action: {
         ...frame,
         kind: "flow",
-        context: `Strategic action · ${name(seat)}`,
+        context: "Strategic action",
         contentKey: `past:${turn}`,
         heading: now?.name ?? printedCard.name,
         pill: pill(!!now),
@@ -168,7 +168,7 @@ export function selectPastFlow(
     action: {
       ...frame,
       kind: "flow",
-      context: `Component action · ${name(seat)}`,
+      context: "Component action",
       contentKey: `past:${turn}`,
       heading: source?.name ?? label,
       pill: pill(!ended),

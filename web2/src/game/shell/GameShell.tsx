@@ -18,7 +18,7 @@ const ACCENT = {
   draft: "var(--color-gold)",
   live: "var(--color-cyan)",
   done: "var(--color-green)",
-  history: "var(--color-violet)",
+  history: "var(--color-muted)",
 };
 
 type Pane = "map" | "players" | "log";
@@ -267,6 +267,7 @@ export function GameShell({
       view={view.inspect}
       decision={view.asked ? view.action : null}
       fresh={fresh}
+      mark={ACCENT[view.accent]}
       status={view.toolbar.status}
     />
   ) : (
@@ -328,6 +329,7 @@ export function GameShell({
                   <WaitingBar
                     heading={decisionHeading(view.action)}
                     fresh={fresh}
+                    mark={ACCENT[view.accent]}
                     onBack={() => dispatch({ type: "closeTurn" })}
                   />
                 )

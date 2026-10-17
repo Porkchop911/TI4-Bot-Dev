@@ -1,5 +1,5 @@
 import type { ToolbarView, Workspace } from "../../model";
-import { Button, Menu } from "../../ui";
+import { Button, Icon, Menu } from "../../ui";
 import { useDispatch } from "../context";
 
 export const REFERENCES = [
@@ -71,9 +71,11 @@ export function Toolbar({
       {history ? (
         <>
           <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
-            <span>History</span>
+            <span className="flex items-center gap-1">
+              <Icon name="history" className="size-3.5" />
+              History
+            </span>
             <strong className="truncate text-sm font-semibold text-text" title={history}>
-              <i className="mr-1.5 mb-0.5 inline-block size-1.5 rounded-full bg-accent" />
               {history}
             </strong>
           </div>
