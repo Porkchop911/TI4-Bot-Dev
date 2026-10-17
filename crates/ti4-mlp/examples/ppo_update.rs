@@ -54,7 +54,24 @@ use ti4_mlp::ppo::{Batch, Settings, Step};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
-const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+/// The six factions a `--roster six` game seats, in rotation order: the historical six, or
+/// `--factions a,b,c,d,e,f`.
+static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
+    let Some(list) = argument("--factions") else {
+        return ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+    };
+    let parsed: Vec<&'static str> = list
+        .split(',')
+        .map(|name| &*Box::leak(name.trim().to_owned().into_boxed_str()))
+        .collect();
+    let mut distinct = parsed.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if distinct.len() != 6 || parsed.iter().any(|name| ti4_mlp::FactionRow::of(name).is_err()) {
+        refuse("--factions expects six distinct roster factions, comma separated");
+    }
+    parsed.try_into().unwrap_or_else(|_| refuse("--factions expects six factions"))
+});
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// `build_positive_corpus`'s map convention. Corpus replay must reproduce that generator, not PPO.
 const CORPUS_TILE_SEED_OFFSET: u64 = 0;
@@ -226,6 +243,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--seeds-per-update",
     "--rotations",
     "--roster",
+    "--factions",
     "--stage",
     "--strategy-diversity-weight",
     "--styx-bonus",
@@ -623,7 +641,7 @@ fn play_one(
     // the seed (BF-22). With --faction-focus the wide draw is weighted toward trailing factions.
     let factions = match focus {
         None => ti4_training::rollout::game_factions(
-            content, roster, &FACTIONS, players, DEFAULT, seed,
+            content, roster, &*FACTIONS, players, DEFAULT, seed,
         )?,
         Some(weights) => {
             let weight = |entry: &str| weights.get(entry).copied().unwrap_or(FOCUS_SCALE);
@@ -1465,7 +1483,7 @@ fn main() {
     let demo_corpus: BTreeMap<String, Vec<Trajectory>> =
         argument("--demo-corpus").map_or_else(BTreeMap::new, |directory| {
             let mut all = BTreeMap::new();
-            for faction in FACTIONS {
+            for faction in *FACTIONS {
                 let path = std::path::Path::new(&directory).join(format!("{faction}.corpus"));
                 let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
                     refuse(&format!("reading {}: {error}", path.display()))
@@ -2049,30 +2067,45 @@ fn main() {
         }
         if opponent_actor.is_some()
             || demo_per_update > 0
-            || self_imitation > 0.0
             || faction_rows_only
             || check_likelihood
             || hash_games
             || capture_path.is_some()
         {
             refuse(
-                "--separate-models does not combine with --opponent, demos, self-imitation, \
+                "--separate-models does not combine with --opponent, demos, \
                  --faction-rows-only, --check-likelihood, --hash-games or --capture-batch",
             );
         }
     }
     let mut models: Vec<(ti4_mlp::Actor, ti4_mlp::ppo::Adam)> = vec![(actor, optimizer)];
     if separate_models {
-        for _ in 1..FACTIONS.len() {
-            let mut copy = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
-                .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")))
+        // Each faction starts from its own model when --bundle is a checkpoint of a separate-models
+        // run that trained it, else from --bundle itself (a faction new to the set).
+        let previous =
+            ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
+                .unwrap_or_else(|error| refuse(&error))
+                .unwrap_or_default();
+        models.clear();
+        for faction in FACTIONS.iter() {
+            let start = previous
+                .get(*faction)
+                .map_or_else(|| bundle_path.clone(), |path| path.display().to_string());
+            println!("  model       {faction} starts from {start}");
+            let mut actor = ti4_mlp::bundle::read(std::path::Path::new(&start))
+                .unwrap_or_else(|error| refuse(&format!("reading {start}: {error}")))
                 .actor
                 .to_device(device);
-            let adam = ti4_mlp::ppo::Adam::new(&mut copy, critic_mode, settings)
+            let adam = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
                 .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
-            models.push((copy, adam));
+            models.push((actor, adam));
         }
         println!("  models      separate: one per faction ({})", FACTIONS.join(", "));
+        if self_imitation > 0.0 {
+            println!(
+                "  cross-imit  every model imitates the self-imitation picks of all six factions as its own"
+            );
+        }
     }
 
     // F-M10-034-D6. Loss telemetry is not evidence that an update happened: a broken optimiser
@@ -2491,7 +2524,7 @@ fn main() {
                 ));
             }
             let each = demo_per_update / buckets;
-            for faction in FACTIONS {
+            for faction in *FACTIONS {
                 let rows = demo_corpus
                     .get(faction)
                     .unwrap_or_else(|| refuse(&format!("demo corpus has no {faction} rows")));
@@ -2688,7 +2721,12 @@ fn main() {
             };
         // One update per model, each on its own batch with its own optimiser.
         let mut stats_by_model = Vec::with_capacity(models.len());
-        for ((actor, optimizer), batch) in models.iter_mut().zip(&batches) {
+        let separate = models.len() > 1;
+        for (index, ((actor, optimizer), batch)) in models.iter_mut().zip(&batches).enumerate() {
+            // Separate models learn from every faction's good decisions, taken as their own: the
+            // demonstration's row becomes this model's faction, so its critic judges the advantage.
+            let own_row = separate
+                .then(|| ti4_mlp::FactionRow::of(FACTIONS[index]).expect("a roster row"));
             let stats = if auxiliary.is_empty() {
                 ti4_mlp::ppo::update(
                     actor,
@@ -2712,7 +2750,13 @@ fn main() {
                         let width = 128usize;
                         let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
                         let selected: Vec<_> = (0..width.min(auxiliary.len()))
-                            .map(|offset| auxiliary[(start + offset) % auxiliary.len()].clone())
+                            .map(|offset| {
+                                let mut demo = auxiliary[(start + offset) % auxiliary.len()].clone();
+                                if let Some(row) = own_row {
+                                    demo.demo.row = row;
+                                }
+                                demo
+                            })
                             .collect();
                         ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
                     },

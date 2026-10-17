@@ -47,7 +47,24 @@ use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
 /// The six trained factions, in the fixed order every rotation is taken against.
-const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+/// The six factions a `--roster six` game seats, in rotation order: the historical six, or
+/// `--factions a,b,c,d,e,f`.
+static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
+    let Some(list) = argument("--factions") else {
+        return ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+    };
+    let parsed: Vec<&'static str> = list
+        .split(',')
+        .map(|name| &*Box::leak(name.trim().to_owned().into_boxed_str()))
+        .collect();
+    let mut distinct = parsed.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if distinct.len() != 6 || parsed.iter().any(|name| ti4_mlp::FactionRow::of(name).is_err()) {
+        refuse("--factions expects six distinct roster factions, comma separated");
+    }
+    parsed.try_into().unwrap_or_else(|_| refuse("--factions expects six factions"))
+});
 
 /// The offset `ppo_update` uses when drawing a map from the pool. Evaluation must use the same one
 /// or it is scoring a different distribution of maps.
@@ -190,7 +207,7 @@ fn main() {
     let separate = if rule_bot {
         None
     } else {
-        ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path), &FACTIONS)
+        ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
             .unwrap_or_else(|error| refuse(&error))
     };
     let actors: Vec<ti4_mlp::Actor> = match &separate {
@@ -198,7 +215,9 @@ fn main() {
         Some(bundles) => FACTIONS
             .iter()
             .map(|faction| {
-                let path = &bundles[*faction];
+                let path = bundles.get(*faction).unwrap_or_else(|| {
+                    refuse(&format!("the separate-models run has no {faction} model"))
+                });
                 println!("  model       {faction}: {}", path.display());
                 ti4_mlp::bundle::read(path)
                     .unwrap_or_else(|error| refuse(&format!("reading {}: {error}", path.display())))
@@ -271,7 +290,7 @@ fn main() {
             let mut seats = Vec::new();
             for (seed, rotation) in chunk {
                 let factions = ti4_training::rollout::game_factions(
-                    content, roster, &FACTIONS, &players, DEFAULT, seed,
+                    content, roster, &*FACTIONS, &players, DEFAULT, seed,
                 )?;
                 let seated: BTreeMap<PlayerId, FactionId> = players
                     .iter()

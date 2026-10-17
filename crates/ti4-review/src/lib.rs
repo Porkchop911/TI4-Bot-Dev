@@ -980,9 +980,13 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
-        let faction_roster: Vec<FactionId> = match &config.lineup {
-            None => FACTIONS.map(FactionId::new).to_vec(),
-            Some(lineup) => {
+        let faction_roster: Vec<FactionId> = match (&config.lineup, &policy) {
+            // A separate-models run seats the factions it trained.
+            (None, LoadedPolicy::Mlp { by_faction, .. }) if by_faction.len() == FACTIONS.len() => {
+                by_faction.keys().map(FactionId::new).collect()
+            }
+            (None, _) => FACTIONS.map(FactionId::new).to_vec(),
+            (Some(lineup), _) => {
                 check_lineup(content, lineup).map_err(ReviewError::Invalid)?;
                 lineup.iter().map(FactionId::new).collect()
             }
@@ -1968,7 +1972,7 @@ fn load_policy(
     if let Some(directory) = bundle_directory {
         ti4_tensor::configure_deterministic(20_260_821)
             .map_err(|error| ReviewError::Invalid(format!("MLP runtime: {error}")))?;
-        if let Some(bundles) = ti4_mlp::bundle::separate_model_bundles(&directory, &FACTIONS)
+        if let Some(bundles) = ti4_mlp::bundle::separate_model_bundles(&directory)
             .map_err(ReviewError::Invalid)?
         {
             return load_separate_models(directory, &bundles);
