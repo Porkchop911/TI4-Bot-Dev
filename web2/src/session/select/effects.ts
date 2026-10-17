@@ -1,5 +1,6 @@
 // What the engine says of the effects of cards, in the names of the page: what playing a reaction
-// card would do now (`previews` of the context of a question, the engine's `EffectPreview`), and
+// card would do now (`previews` of the context of a question, the engine's `EffectPreview`), what
+// the played card that a window answers will do (`pending_effect` of the context), and
 // which lingering effects of played cards are in force (`active_effects` of the view). The engine
 // words each kind; this file only names the subjects (`phraseWords`). No rule is decided here.
 import type { EffectView } from "../../model";
@@ -37,8 +38,9 @@ export function previewOf(
 }
 
 /**
- * The preview of the copy `card` of an action card, when the engine has one. By the copy, not by
- * the name: another copy of the same card is another card, of another seat.
+ * What the played copy `card` of an action card will do when it resolves, when the engine has a
+ * preview of it: the `pending_effect` of the window that answers it. By the copy, not by the name:
+ * another copy of the same card is another card, of another seat.
  */
 export function previewOfCard(
   choice: Choice | null | undefined,
@@ -46,10 +48,10 @@ export function previewOfCard(
   update: SessionUpdate,
   catalog: Catalog | null,
 ): Worded | null {
-  const preview = (choice?.context?.previews ?? []).find(
-    (item) => item.card === card && item.phrase?.text,
-  );
-  return preview ? said(phraseWords(preview.phrase, update, catalog)) : null;
+  const preview = choice?.context?.pending_effect;
+  return preview?.card === card && preview.phrase?.text
+    ? said(phraseWords(preview.phrase, update, catalog))
+    : null;
 }
 
 /** The lingering effects of played cards that are in force, as the toolbar shows them. */

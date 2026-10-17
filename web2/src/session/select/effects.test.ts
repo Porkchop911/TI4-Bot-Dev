@@ -182,30 +182,49 @@ describe("what a reaction would do now (the previews of the engine)", () => {
     expect(previewOf(window, "pass", reacting, catalog)).toBeNull();
   });
 
-  it("says a played card is not resolved yet, unless the engine has a preview of that copy", () => {
+  it("says what a played card will do from the pending effect of that copy, else not resolved yet", () => {
     const trigger = reacting.reaction!.trigger;
     const note = (choice: Choice) =>
       reactedAction(reacting, trigger, catalog, choice).blocks.find(
         (block) => block.kind === "note",
       );
     expect(note(window)).toMatchObject({ text: "Not resolved yet." });
-    const previewed = {
+    const pending = (card: string) =>
+      ({
+        ...window,
+        context: {
+          pending_effect: {
+            option: "",
+            card,
+            effect: "take_commodities",
+            amount: 3,
+            phrase: {
+              text: "{0} would gain 3 commodities, as trade goods.",
+              refs: { 0: { kind: "seat", player: "b" } },
+            },
+          },
+        },
+      }) as unknown as Choice;
+    expect(note(pending("mining1"))).toMatchObject({
+      text: "Bea would gain 3 commodities, as trade goods.",
+    });
+    // The pending effect of another copy is not this card's.
+    expect(note(pending("mining2"))).toMatchObject({ text: "Not resolved yet." });
+    // A preview of an offered card is never the played card's result.
+    const offered = {
       ...window,
       context: {
         previews: [
           {
             option: "ac|9",
             card: "mining1",
-            effect: "gain_trade_goods",
-            phrase: {
-              text: "{0} trade goods go from 1 to 4.",
-              refs: { 0: { kind: "seat_possessive", player: "b" } },
-            },
+            effect: "cancel_card",
+            phrase: { text: "Cancels it.", refs: {} },
           },
         ],
       },
     } as unknown as Choice;
-    expect(note(previewed)).toMatchObject({ text: "Bea’s trade goods go from 1 to 4." });
+    expect(note(offered)).toMatchObject({ text: "Not resolved yet." });
   });
 });
 

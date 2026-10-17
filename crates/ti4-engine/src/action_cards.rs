@@ -784,7 +784,7 @@ pub fn perform(
     }
     // `announce` reports whether the play stood. A cancelled play still discards the card,
     // but returns `false` so the caller keeps the turn instead of advancing it (22.4).
-    crate::reactions::announce(context, resolver, player, &alias)
+    crate::reactions::announce(context, resolver, player, &alias, None)
 }
 
 // -- effects (M06-016b) --------------------------------------------------------------------------
@@ -9614,7 +9614,7 @@ mod tests {
                 event_sequence: &mut sequence,
                 galaxy: None,
             };
-            crate::reactions::announce(&mut context, &mut resolver, &player, &card).unwrap();
+            crate::reactions::announce(&mut context, &mut resolver, &player, &card, None).unwrap();
         }
 
         assert!(

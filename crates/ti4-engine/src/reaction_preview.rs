@@ -143,6 +143,60 @@ pub fn preview_for(
     alias: &ActionCardId,
     option: &str,
 ) -> Option<EffectPreview> {
+    facts_for(state, content, sources, player, event, alias, option)
+        .map(|facts| phrased(facts, OFFERED))
+}
+
+/// What the action card `alias` that `player` just played in the window `event` opened will do
+/// when it resolves: its facts, with no option and no phrase yet ([`pending_preview`] words them
+/// for the seat that is asked). `event` is the window the card was played in, or its own
+/// announcement when it was played outside any window. `None` for a card with no preview.
+#[must_use]
+pub fn pending_facts(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    event: &Event,
+    alias: &ActionCardId,
+) -> Option<EffectPreview> {
+    facts_for(state, content, sources, player, event, alias, "")
+}
+
+/// The [`pending_facts`] of a card that `played_by` played, worded for `asked`: of the seat that
+/// played it ("Bob would gain …") unless `asked` is that seat.
+#[must_use]
+pub fn pending_preview(
+    facts: &EffectPreview,
+    played_by: &PlayerId,
+    asked: &PlayerId,
+) -> EffectPreview {
+    phrased(
+        facts.clone(),
+        Voice {
+            by: (played_by != asked).then_some(played_by),
+            pending: true,
+        },
+    )
+}
+
+/// `facts` with their sentence in `voice`.
+fn phrased(facts: EffectPreview, voice: Voice<'_>) -> EffectPreview {
+    let phrase = phrase_of(&facts, voice);
+    EffectPreview { phrase, ..facts }
+}
+
+/// The facts of what `alias` would do (`preview_for`), without the phrase.
+#[allow(clippy::too_many_lines)]
+fn facts_for(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    event: &Event,
+    alias: &ActionCardId,
+    option: &str,
+) -> Option<EffectPreview> {
     let name = crate::action_cards::name_of(content, alias);
     let preview = |effect: &str| blank(option, alias, effect);
     // Only the cards that look at unit kinds need the catalogue.
@@ -554,8 +608,7 @@ pub fn preview_for(
         }
         _ => return None,
     };
-    let phrase = phrase_of(&result);
-    Some(EffectPreview { phrase, ..result })
+    Some(result)
 }
 
 /// "1 hit", "2 hits".
@@ -563,15 +616,32 @@ fn plural(count: i64, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
 }
 
-/// What `preview` would do, as one or two sentences: its facts in words.
+/// Whom a preview speaks of, and when.
+#[derive(Clone, Copy)]
+struct Voice<'a> {
+    /// The seat the effect is for, when it is not the reader: the seat that played the card.
+    /// `None` speaks to the reader ("You would gain …").
+    by: Option<&'a PlayerId>,
+    /// The card is played already and waits to resolve; else the window offers it.
+    pending: bool,
+}
+
+/// A card that the window offers, to the seat that would play it.
+const OFFERED: Voice<'static> = Voice {
+    by: None,
+    pending: false,
+};
+
+/// What `preview` would do, as one or two sentences: its facts in words, in `voice`.
 #[allow(clippy::too_many_lines)]
-fn phrase_of(preview: &EffectPreview) -> Phrase {
+fn phrase_of(preview: &EffectPreview, voice: Voice<'_>) -> Phrase {
     let new = Phrase::default;
     let system = preview.system.as_ref();
     let unit = preview.units.first();
     let seat = preview.seats.first();
     let planet = preview.planets.first();
     let amount = preview.amount.unwrap_or(0);
+    let by = voice.by;
     // The printed size when the facts have none.
     let or = |default: i64| {
         preview
@@ -580,7 +650,32 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
             .unwrap_or(default)
     };
     let fizzles = preview.fizzles.is_some();
-    let nothing = |phrase: Phrase| phrase.say(" Playing it now would change nothing.");
+    let nothing = |phrase: Phrase| {
+        phrase.say(if voice.pending {
+            " It would change nothing when it resolves."
+        } else {
+            " Playing it now would change nothing."
+        })
+    };
+    // The seat the effect is for, at the start of a sentence, then its verb: "You gain", "Bob gains".
+    let you = |phrase: Phrase, second: &str, third: &str| match by {
+        Some(seat) => phrase.name(Subject::seat(seat)).say(third),
+        None => phrase.say("You").say(second),
+    };
+    // The same inside a sentence: "after this action you perform".
+    let you_in = |phrase: Phrase, second: &str, third: &str| match by {
+        Some(seat) => phrase.name(Subject::seat(seat)).say(third),
+        None => phrase.say("you").say(second),
+    };
+    // Its possessive: "your", "Bob's"; `Your` at the start of a sentence.
+    let your = |phrase: Phrase| match by {
+        Some(seat) => phrase.name(Subject::possessive(seat)),
+        None => phrase.say("your"),
+    };
+    let your_first = |phrase: Phrase| match by {
+        Some(seat) => phrase.name(Subject::possessive(seat)),
+        None => phrase.say("Your"),
+    };
     let the_planet = |phrase: Phrase, none: &str| match planet {
         Some(planet) => phrase.name(Subject::planet(planet)),
         None => phrase.say(none),
@@ -665,10 +760,8 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
                         .say(" hold no commodities."),
                 )
             } else {
-                let gain = new().say(&format!(
-                    "You would gain {}",
-                    plural(amount, "commodity", "commodities")
-                ));
+                let gain = you(new(), " would gain ", " would gain ")
+                    .say(&plural(amount, "commodity", "commodities"));
                 let gain = if preview.seats.is_empty() {
                     gain
                 } else {
@@ -683,10 +776,21 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
             .say("; it does not land."),
         "replace_structures" => {
             if fizzles {
-                nothing(the_planet(new().say("You have no PDS or space dock on "), "that planet").say("."))
+                nothing(
+                    the_planet(
+                        you(
+                            new(),
+                            " have no PDS or space dock on ",
+                            " has no PDS or space dock on ",
+                        ),
+                        "that planet",
+                    )
+                    .say("."),
+                )
             } else {
-                the_planet(new().say("Replaces your ").units(&preview.units).say(" on "), "that planet")
-                    .say(" with matching units from your reinforcements.")
+                let replaces = your(new().say("Replaces ")).say(" ").units(&preview.units).say(" on ");
+                your(the_planet(replaces, "that planet").say(" with matching units from "))
+                    .say(" reinforcements.")
             }
         }
         "discard_agenda" => {
@@ -697,18 +801,22 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
                 }),
                 None => discards.say("the agenda"),
             };
-            discards.say(&format!(
-                " with no effect and no replacement, then exhausts {} of yours.",
-                plural(amount, "ready planet", "ready planets")
-            ))
+            let discards = discards.say(" with no effect and no replacement, then exhausts ");
+            let planets = plural(amount, "ready planet", "ready planets");
+            match by {
+                Some(seat) => discards
+                    .name(Subject::possessive(seat))
+                    .say(&format!(" {planets}.")),
+                None => discards.say(&format!("{planets} of yours.")),
+            }
         }
         "return_command_token" => {
-            let phrase = new().say("Returns your command token in ");
-            match system {
+            let phrase = your(new().say("Returns ")).say(" command token in ");
+            let phrase = match system {
                 Some(system) => phrase.name(Subject::system(system)),
                 None => phrase.say("that system"),
-            }
-            .say(" to your tactic pool.")
+            };
+            your(phrase.say(" to ")).say(" tactic pool.")
         }
         "force_retreat" => new()
             .seats(&preview.seats, "an opponent")
@@ -720,20 +828,20 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
             .say(" cannot retreat")
             .in_system(system)
             .say(" this combat round."),
-        "barrage_hits_all_ships" => new().say(
-            "The hits of your anti-fighter barrage roll are produced against all ships, not just fighters.",
+        "barrage_hits_all_ships" => your(new().say("The hits of ")).say(
+            " anti-fighter barrage roll are produced against all ships, not just fighters.",
         ),
         "repair_units" => {
             if fizzles {
                 nothing(
-                    new()
-                        .say("None of your units")
+                    your(new().say("None of "))
+                        .say(" units")
                         .in_system(system)
                         .say(" has sustained damage."),
                 )
             } else {
-                new()
-                    .say("Repairs your ")
+                your(new().say("Repairs "))
+                    .say(" ")
                     .units(&preview.units)
                     .in_system(system)
                     .say(".")
@@ -754,7 +862,7 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
         "bombardment_penalty" => {
             let phrase = new().say(&format!("Applies {amount} to every bombardment roll against "));
             let phrase = if preview.planets.is_empty() {
-                phrase.say("your planets")
+                your(phrase).say(" planets")
             } else {
                 preview
                     .planets
@@ -770,14 +878,17 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
         "grant_bombardment" => {
             if fizzles {
                 nothing(
-                    new()
-                        .say("You have no non-fighter ship without bombardment")
-                        .in_system(system)
-                        .say("."),
+                    you(
+                        new(),
+                        " have no non-fighter ship without bombardment",
+                        " has no non-fighter ship without bombardment",
+                    )
+                    .in_system(system)
+                    .say("."),
                 )
             } else {
-                new()
-                    .say("Your ")
+                your_first(new())
+                    .say(" ")
                     .units(&preview.units)
                     .in_system(system)
                     .say(&format!(
@@ -788,19 +899,24 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
         }
         "fighter_bonus" => {
             if fizzles {
-                nothing(new().say("You have no fighters").in_system(system).say("."))
+                nothing(
+                    you(new(), " have no fighters", " has no fighters")
+                        .in_system(system)
+                        .say("."),
+                )
             } else {
-                new()
-                    .say(&format!("+{} to each of your ", or(2)))
+                your(new().say(&format!("+{} to each of ", or(2))))
+                    .say(" ")
                     .units(&preview.units)
                     .say("' combat rolls this combat round.")
             }
         }
         "gain_fleet_tokens" => {
-            let phrase = new().say(&format!(
-                "You gain {} in your fleet pool (",
+            let phrase = you(new(), " gain ", " gains ").say(&format!(
+                "{} in ",
                 plural(or(2), "command token", "command tokens")
             ));
+            let phrase = your(phrase).say(" fleet pool (");
             let phrase = if seat.is_some() {
                 phrase
                     .seats(&preview.seats, "")
@@ -816,24 +932,32 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
         }
         "replenish_commodities" => {
             if amount == 0 {
-                nothing(new().say("Your commodities are already full."))
+                nothing(your_first(new()).say(" commodities are already full."))
             } else {
                 let to = match preview.of {
                     Some(of) if of != 0 => format!(" (to {of})"),
                     _ => String::new(),
                 };
-                new().say(&format!("Replenishes your commodities: +{amount}{to}."))
+                your(new().say("Replenishes ")).say(&format!(" commodities: +{amount}{to}."))
             }
         }
-        "vote_last" => new().say("You vote last on this agenda, after the speaker."),
-        "extra_votes" => new().say(&format!(
-            "Casts {} additional votes for the outcome you just chose.",
-            or(5)
-        )),
+        "vote_last" => you(
+            new(),
+            " vote last on this agenda, after the speaker.",
+            " votes last on this agenda, after the speaker.",
+        ),
+        "extra_votes" => you_in(
+            new().say(&format!(
+                "Casts {} additional votes for the outcome ",
+                or(5)
+            )),
+            " just chose.",
+            " just chose.",
+        ),
         "keep_strategy_cards" => {
-            let phrase = new().say("You keep ");
+            let phrase = you(new(), " keep ", " keeps ");
             let phrase = if preview.refs.is_empty() {
-                phrase.say("your strategy cards")
+                your(phrase).say(" strategy cards")
             } else {
                 preview
                     .refs
@@ -845,8 +969,13 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
                     })
             };
             phrase.say(&format!(
-                " instead of returning {}, and you do not choose a strategy card next strategy phase.",
-                if preview.refs.len() == 1 { "it" } else { "them" }
+                " instead of returning {}, and {} a strategy card next strategy phase.",
+                if preview.refs.len() == 1 { "it" } else { "them" },
+                if by.is_some() {
+                    "does not choose"
+                } else {
+                    "you do not choose"
+                }
             ))
         }
         "cancel_strategic_action" => {
@@ -858,19 +987,27 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
             .say(" strategic action: it is not resolved, the card is not exhausted and their turn ends.")
         }
         "become_elected" => {
-            let phrase = new().say("You are the elected player instead");
+            let phrase = you(
+                new(),
+                " are the elected player instead",
+                " is the elected player instead",
+            );
             match seat {
                 Some(seat) => phrase.say(" of ").name(Subject::seat(seat)),
                 None => phrase,
             }
-            .say(", and the agenda's effect applies to you.")
+            .say(if by.is_some() {
+                ", and the agenda's effect applies to them."
+            } else {
+                ", and the agenda's effect applies to you."
+            })
         }
         "take_discarded_card" => {
             if fizzles {
                 nothing(action_card(new(), "that card").say(" has no component action."))
             } else {
-                action_card(new().say("Takes "), "that card")
-                    .say(" from the discard pile into your hand.")
+                your(action_card(new().say("Takes "), "that card").say(" from the discard pile into "))
+                    .say(" hand.")
             }
         }
         "reroll_all_dice" => seat_or(new(), "That player")
@@ -878,41 +1015,55 @@ fn phrase_of(preview: &EffectPreview) -> Phrase {
         "replace_agenda" => new().say(
             "Discards the revealed agenda and reveals the next one from the deck; players vote on that one instead.",
         ),
-        "combat_roll_bonus" => new().say(&format!(
-            "+{} to the result of each of your combat rolls during this combat round.",
+        "combat_roll_bonus" => your(new().say(&format!(
+            "+{} to the result of each of ",
             or(1)
-        )),
-        "move_bonus" => new().say(&format!(
-            "+{} to the move value of each of your ships during this tactical action.",
-            or(1)
-        )),
+        )))
+        .say(" combat rolls during this combat round."),
+        "move_bonus" => your(new().say(&format!("+{} to the move value of each of ", or(1))))
+            .say(" ships during this tactical action."),
         "wormholes_adjacent" => new().say(
             "Systems with alpha and beta wormholes count as adjacent to each other during this tactical action.",
         ),
-        "ignore_anomalies" => {
-            new().say("You ignore the effects of anomalies while moving during this tactical action.")
-        }
-        "no_space_cannon" => new()
-            .say("Other players cannot use Space Cannon against your ships during the movement step")
+        "ignore_anomalies" => you(
+            new(),
+            " ignore the effects of anomalies while moving during this tactical action.",
+            " ignores the effects of anomalies while moving during this tactical action.",
+        ),
+        "no_space_cannon" => your(new().say("Other players cannot use Space Cannon against "))
+            .say(" ships during the movement step")
             .in_system(system)
             .say("."),
-        "production_boost" => new().say(&format!(
-            "+{} to the total PRODUCTION value of your units and -1 to the combined cost of the units you produce.",
+        "production_boost" => your(new().say(&format!(
+            "+{} to the total PRODUCTION value of ",
             or(4)
-        )),
-        "extra_action" => {
-            new().say("After this action you perform one additional action before the turn passes.")
+        )))
+        .say(if by.is_some() {
+            " units and -1 to the combined cost of the units they produce."
+        } else {
+            " units and -1 to the combined cost of the units you produce."
+        }),
+        "extra_action" => you_in(
+            new().say("After this action "),
+            " perform one additional action before the turn passes.",
+            " performs one additional action before the turn passes.",
+        ),
+        "puppet_action" => you(
+            new(),
+            " perform one more action even though you have passed.",
+            " performs one more action even though they have passed.",
+        ),
+        "duress" => {
+            let phrase = new()
+                .say("If ")
+                .possessive(seat, "that player's")
+                .say(" next action is not a strategic action, they discard all action cards, give ");
+            let phrase = you_in(phrase, " all trade goods and show ", " all trade goods and show ");
+            you_in(phrase, " their secret objectives.", " their secret objectives.")
         }
-        "puppet_action" => new().say("You perform one more action even though you have passed."),
-        "duress" => new()
-            .say("If ")
-            .possessive(seat, "that player's")
-            .say(
-                " next action is not a strategic action, they discard all action cards, give you all trade goods and show you their secret objectives.",
-            ),
         "skip_next_turn" => new().say("The next player's turn is skipped."),
         "black_market" => {
-            let phrase = new().say("Your transaction");
+            let phrase = your_first(new()).say(" transaction");
             match seat {
                 Some(seat) => phrase.say(" with ").name(Subject::seat(seat)),
                 None => phrase,
@@ -993,7 +1144,7 @@ mod tests {
     fn facts(effect: &str, edit: impl FnOnce(&mut EffectPreview)) -> String {
         let mut preview = blank("x", &ActionCardId::new("sabo1"), effect);
         edit(&mut preview);
-        crate::phrases::said(&phrase_of(&preview), "a")
+        crate::phrases::said(&phrase_of(&preview, OFFERED), "a")
     }
 
     fn owned(owner: &str, unit_type: &str, count: u32) -> TriggerUnits {
@@ -1002,6 +1153,33 @@ mod tests {
             unit_type: unit_type.to_owned(),
             count,
         }
+    }
+
+    #[test]
+    fn a_pending_card_speaks_of_the_seat_that_played_it() {
+        let mut salvage = blank("", &ActionCardId::new("salvage"), "take_commodities");
+        salvage.seats = vec![PlayerId::new("b")];
+        salvage.amount = Some(3);
+        let said = |facts: &EffectPreview, asked: &str, viewer: &str| {
+            let preview = pending_preview(facts, &PlayerId::new("a"), &PlayerId::new(asked));
+            assert_eq!(preview.option, "");
+            crate::phrases::said(&preview.phrase, viewer)
+        };
+        assert_eq!(
+            said(&salvage, "c", "c"),
+            "a would gain 3 commodities (b), as trade goods."
+        );
+        // The seat that played it reads it as an offered card says it.
+        assert_eq!(
+            said(&salvage, "a", "a"),
+            "You would gain 3 commodities (b), as trade goods."
+        );
+        let mut full = blank("", &ActionCardId::new("harness"), "replenish_commodities");
+        full.amount = Some(0);
+        assert_eq!(
+            said(&full, "b", "b"),
+            "a's commodities are already full. It would change nothing when it resolves."
+        );
     }
 
     #[test]
@@ -1118,7 +1296,7 @@ mod tests {
     fn units_are_counted_subjects_in_a_list() {
         let mut preview = blank("x", &ActionCardId::new("emergency"), "repair_units");
         preview.units = vec![owned("a", "cruiser", 2), owned("a", "dreadnought", 1)];
-        let phrase = phrase_of(&preview);
+        let phrase = phrase_of(&preview, OFFERED);
         assert_eq!(phrase.text, "Repairs your {0}, {1}.");
         assert_eq!(
             phrase.refs["0"],

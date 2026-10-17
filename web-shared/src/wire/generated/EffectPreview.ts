@@ -15,7 +15,8 @@ import type { TriggerUnits } from "./TriggerUnits.ts";
  */
 export type EffectPreview = { 
 /**
- * The id of the option of this decision the preview belongs to.
+ * The id of the option of this decision the preview belongs to; empty in
+ * [`DecisionContext::pending_effect`], which belongs to no option.
  */
 option: string, 
 /**
@@ -54,6 +55,8 @@ fizzles?: string,
 /**
  * What playing it would do, as one or two sentences: "Cancels {0} {1}. The card stays spent
  * and its effect does not happen." When it would change nothing, the sentence says why and
- * ends with "Playing it now would change nothing."
+ * ends with "Playing it now would change nothing." The pending effect of a played card speaks
+ * of the seat that played it ("Bob would gain …"), and when it would change nothing it ends
+ * with "It would change nothing when it resolves."
  */
 phrase: Phrase, };

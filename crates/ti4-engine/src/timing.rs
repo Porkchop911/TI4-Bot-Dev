@@ -357,6 +357,11 @@ pub struct Resolver {
     round_number: u64,
     turn_number: u64,
     participation: Option<Participation>,
+    /// What each action card being announced will do when it resolves, by the id of its
+    /// `ACTION_CARD_PLAYED` event, while that event's windows are open (display only: the
+    /// `pending_effect` of their questions). Not rules state, so neither a fork nor a snapshot
+    /// carries it.
+    pending_effects: BTreeMap<u64, crate::decision_context::EffectPreview>,
 }
 
 /// Everything a [`Resolver`] needs to continue identically, minus its decider input, so it can
@@ -421,6 +426,7 @@ impl ResolverSnapshot {
             turn_number: *turn_number,
             // A fork starts without the participation binding.
             participation: None,
+            pending_effects: BTreeMap::new(),
         }
     }
 
@@ -459,6 +465,7 @@ impl ResolverSnapshot {
             round_number,
             turn_number,
             participation: None,
+            pending_effects: BTreeMap::new(),
         }
     }
 }
@@ -486,6 +493,7 @@ impl Resolver {
             round_number,
             turn_number,
             participation: _,
+            pending_effects: _,
         } = self;
         ResolverSnapshot {
             registry: registry.clone(),
@@ -572,6 +580,7 @@ impl Resolver {
             round_number: 1,
             turn_number: 1,
             participation: None,
+            pending_effects: BTreeMap::new(),
         }
     }
 
@@ -595,6 +604,7 @@ impl Resolver {
             round_number: self.round_number,
             turn_number: self.turn_number,
             participation: None,
+            pending_effects: BTreeMap::new(),
         }
     }
 
@@ -617,6 +627,7 @@ impl Resolver {
             round_number,
             turn_number,
             participation: _,
+            pending_effects: _,
         } = self;
         move || Self {
             registry,
@@ -635,6 +646,7 @@ impl Resolver {
             round_number,
             turn_number,
             participation: None,
+            pending_effects: BTreeMap::new(),
         }
     }
 
@@ -1044,7 +1056,7 @@ impl Resolver {
         let result = result.and_then(|()| {
             let declared = std::mem::take(&mut context.state.declared_card_plays);
             for (player, alias) in declared {
-                crate::reactions::announce(context, self, &player, &alias)?;
+                crate::reactions::announce(context, self, &player, &alias, Some(event))?;
             }
             Ok(())
         });
@@ -1266,6 +1278,7 @@ impl Resolver {
             .optional(declinable)
             .about_battle(context.state)
             .with_previews(previews)
+            .with_pending_effect(self.pending_effect(event, player))
             .with_trigger(crate::decision_context::DecisionTrigger::from_event(
                 event,
                 relation_name(relation),
@@ -1284,6 +1297,34 @@ impl Resolver {
             return Ok(None);
         }
         Ok(eligible.into_iter().find(|ability| ability.id == chosen.id))
+    }
+
+    /// Hold what the action card announced by the event `id` will do when it resolves, while
+    /// that event's windows are open (display only; see [`Resolver::pending_effect`]).
+    pub(crate) fn hold_pending_effect(
+        &mut self,
+        id: u64,
+        facts: crate::decision_context::EffectPreview,
+    ) {
+        self.pending_effects.insert(id, facts);
+    }
+
+    /// Forget what [`Resolver::hold_pending_effect`] held for the event `id`.
+    pub(crate) fn release_pending_effect(&mut self, id: u64) {
+        self.pending_effects.remove(&id);
+    }
+
+    /// What the played action card that `event` announces will do when it resolves, worded for
+    /// `asked` (display only): `None` when `event` announces no card that the engine previews.
+    #[must_use]
+    pub fn pending_effect(
+        &self,
+        event: &Event,
+        asked: &PlayerId,
+    ) -> Option<crate::decision_context::EffectPreview> {
+        let facts = self.pending_effects.get(&event.id)?;
+        let by = PlayerId::new(event.text("player")?);
+        Some(crate::reaction_preview::pending_preview(facts, &by, asked))
     }
 
     /// Ids of the events being resolved right now, outermost first, `event` itself excluded: what
