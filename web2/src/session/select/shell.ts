@@ -13,6 +13,7 @@ import { selectBoard } from "./board";
 import { NO_EVENTS } from "../events";
 import { selectLog } from "./log";
 import { selectPastFlow } from "./pastFlow";
+import { selectPastPhase } from "./pastPhase";
 import { selectPastTurn } from "./pastTurn";
 import { selectTokens } from "./tokens";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
@@ -185,7 +186,8 @@ export function selectShell(
   // system marked, and nothing on it is a control.
   const past = local.inspect
     ? (selectPastTurn(update, local.events ?? NO_EVENTS, local.inspect, catalog, printed) ??
-      selectPastFlow(update, local.events ?? NO_EVENTS, local.inspect.turn, printed))
+      selectPastFlow(update, local.events ?? NO_EVENTS, local.inspect.turn, printed) ??
+      selectPastPhase(update, local.events ?? NO_EVENTS, local.inspect.turn, printed))
     : null;
   return {
     seats: selectSeats(update, printed),

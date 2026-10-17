@@ -17,7 +17,7 @@ const built = existsSync(WASM);
 type Update = Extract<TransportEvent, { kind: "update" }>;
 
 /** A game of six seats on seed 3, seat a played here with the first option of 80 questions. */
-async function game(): Promise<Update> {
+async function game(): Promise<Update[]> {
   const engine: Engine = {
     module: await WebAssembly.compile(readFileSync(WASM)),
     hash: "test",
@@ -47,10 +47,12 @@ async function game(): Promise<Update> {
       transport.submitChoice(pending.nonce, pending.choice.options[0].id);
     }
   }
-  return seen.at(-1)!;
+  return seen;
 }
 
 let played: Update;
+/** Every update of the game, in order. */
+let updates: Update[];
 let events: EventLog;
 /** Every turn of round 1, as a spectator sees the Log of the round. */
 let turns: LogTurnView[];
@@ -58,7 +60,8 @@ beforeAll(async () => {
   if (!built) {
     return;
   }
-  played = await game();
+  updates = await game();
+  played = updates.at(-1)!;
   events = played.events ?? [];
   const round = {
     ...played.update,
@@ -182,5 +185,31 @@ it.skipIf(!built)(
     expect(view.board.taskSystems).toContain(system);
     expect(view.board.taskSystems.length).toBeGreaterThan(1);
     expect(view.board.fitKey).toBe(`turn:${turn.id}:${system}`);
+  },
+);
+
+it.skipIf(!built)(
+  "the strategic turn of another seat that is played now opens with who decides and who waits, and stays open as resolved",
+  () => {
+    // The viewer is asked a secondary while another seat plays its strategic card.
+    const at = updates.findIndex((update) => {
+      const live = selectLog(update.update, update.events ?? []).entries.find(
+        (entry) => entry.live,
+      );
+      return live?.kind === "turn" && live.action === "strategic" && live.seat !== "a";
+    });
+    const now = updates[at];
+    const live = selectLog(now.update, now.events ?? []).entries.find((entry) => entry.live)!;
+    const past = selectPastFlow(now.update, now.events ?? [], live.id)!;
+    expect(past.action.pill).toEqual({ tone: "live", label: "Played now" });
+    const rows = seatsOf(past.action.blocks);
+    expect(rows.find((row) => row.seat === "a")?.status.label).toBe("Deciding");
+    // Later the same turn is resolved, and it opens the same way.
+    const later = updates.at(-1)!;
+    const resolved = selectPastFlow(later.update, later.events ?? [], live.id)!;
+    expect(resolved.action.pill).toEqual({ tone: "done", label: "Resolved" });
+    expect(seatsOf(resolved.action.blocks).find((row) => row.seat === "a")?.status.label).toMatch(
+      /^(Followed|Passed)$/,
+    );
   },
 );

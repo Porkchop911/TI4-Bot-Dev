@@ -16,12 +16,16 @@ export interface LogLineView {
   text: string;
   /** The dice of a roll. */
   dice?: LogDiceView;
+  /** A vote of the agenda phase: its outcome (null: abstained), its votes and the planets. */
+  vote?: { outcome: string | null; votes: number; planets: string[] };
 }
 
 /** The details of an entry, in groups: "Movement", "Space combat", "Secondaries". */
 export interface LogGroupView {
   title: string;
   lines: LogLineView[];
+  /** The group of one agenda of the agenda phase. */
+  agenda?: true;
 }
 
 /** The action that a turn took. "other" is a part of the turn menu that started no action (a transaction). */

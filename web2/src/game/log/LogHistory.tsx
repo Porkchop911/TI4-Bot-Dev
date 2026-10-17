@@ -6,7 +6,7 @@ import { SeatSymbol, useDispatch, useSeats } from "../context";
  * The turns since the viewer's last turn, oldest first: one large row for each turn and each
  * phase that is no action phase, the turn that is played now last. A row says who did what and
  * how it ended; what happened in it is the sheet of its action, read-only: a tactical, strategic
- * or component turn opens it over the board.
+ * or component turn, and a phase, open it over the board.
  */
 export function LogHistory({ view, open = null }: { view: LogView; open?: string | null }) {
   // The start of an action phase has nothing to say: the turns that follow say their round.
@@ -25,7 +25,7 @@ export function LogHistory({ view, open = null }: { view: LogView; open?: string
           {entry.kind === "turn" ? (
             <TurnRow view={entry} open={entry.id === open} />
           ) : (
-            <PhaseRow view={entry} />
+            <PhaseRow view={entry} open={entry.id === open} />
           )}
         </li>
       ))}
@@ -112,22 +112,40 @@ function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
   );
 }
 
-/** A strategy, status or agenda phase: its name and what happened in it. */
-function PhaseRow({ view }: { view: LogPhaseView }) {
+/**
+ * A strategy, status or agenda phase: its name and what happened in it. It is a control: it opens
+ * what the seats did in it over the board, read-only ("Open" while it is open).
+ */
+function PhaseRow({ view, open }: { view: LogPhaseView; open: boolean }) {
+  const dispatch = useDispatch();
   return (
-    <section
+    <button
+      type="button"
       aria-label={view.label}
-      className={cx(ROW, view.live ? "border-accent/60 bg-accent/[.06]" : "bg-well/60")}
+      aria-pressed={open}
+      className={cx(
+        ROW,
+        "block w-full text-left hover:bg-raised",
+        open
+          ? "border-accent bg-accent/[.1]"
+          : view.live
+            ? "border-accent/60 bg-accent/[.06]"
+            : "bg-well/60",
+      )}
+      onClick={() =>
+        dispatch(open ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.id })
+      }
     >
-      <div className="flex min-w-0 items-baseline gap-2">
+      <span className="flex min-w-0 items-baseline gap-2">
         {view.live && <Live />}
         <span className="shrink-0 font-strong">{view.label}</span>
-      </div>
+        {open && <span className="ml-auto shrink-0 text-xs font-strong text-accent">Open</span>}
+      </span>
       {view.summary && (
-        <div className="mt-0.5 line-clamp-2 text-sm text-muted" title={view.summary}>
+        <span className="mt-0.5 line-clamp-2 block text-sm text-muted" title={view.summary}>
           {view.summary}
-        </div>
+        </span>
       )}
-    </section>
+    </button>
   );
 }

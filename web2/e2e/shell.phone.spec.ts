@@ -8,11 +8,14 @@ test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wa
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/phone/shell";
 
-/** Nothing in the Log is a control but the rows of the turns that open their action. */
+/** Nothing in the Log is a control but the rows of the turns and the phases that open. */
 const readOnly = async (log: Locator) => {
   await expect(log.locator("input, select, textarea, button:not([aria-pressed])")).toHaveCount(0);
   for (const row of await log.locator("button[aria-pressed]").all()) {
-    await expect(row).toHaveAttribute("aria-label", /· (Tactical|Strategic|Component)/);
+    await expect(row).toHaveAttribute(
+      "aria-label",
+      /· (Tactical|Strategic|Component)|^(Strategy|Status|Agenda) phase · Round \d+$/,
+    );
   }
 };
 
@@ -67,7 +70,9 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   // The Log has a row for each turn of the other seats, before the first turn of the viewer.
   await pane("Log").click();
   const log = page.getByRole("region", { name: "Log" });
-  const rows = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button");
+  const rows = log
+    .getByRole("list", { name: "Turns" })
+    .locator("li > article, li > button[aria-label^='Turn ']");
   await expect(rows).toHaveCount(7);
   // The staged action of the picker is the viewer's decision: the Log has no copy of it, and no
   // second "?".
@@ -372,6 +377,41 @@ test("phone: a strategic turn of the Log opens on Map, with its seats, and the m
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/strategic-turn.png`, animations: "disabled" });
+  await turn.getByRole("button", { name: "Close" }).click();
+  await expect(turn).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("phone: a phase of the Log opens on Map with what the seats did in it", async ({ page }) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  await page.goto("/?local=3&players=8&humans=1");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const pane = (name: string) => panes.getByRole("button", { name });
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  await row(/^8\. Imperial$/).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(row(/^Activate a system$/)).toBeVisible();
+
+  await pane("Log").click();
+  const log = page.getByRole("region", { name: "Log" });
+  await readOnly(log);
+  await log.getByRole("button", { name: "Strategy phase · Round 1" }).click();
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  const turn = page.getByRole("region", { name: "Turn" });
+  await expect(turn.getByRole("heading", { name: "Strategy phase" })).toBeVisible();
+  await expect(turn.locator("ul[aria-label=Picks] > li")).toHaveCount(8);
+  const width = page.viewportSize()!.width;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  await page.screenshot({ path: `${SHOTS}/phase.png`, animations: "disabled" });
   await turn.getByRole("button", { name: "Close" }).click();
   await expect(turn).toHaveCount(0);
   expect(errors).toEqual([]);

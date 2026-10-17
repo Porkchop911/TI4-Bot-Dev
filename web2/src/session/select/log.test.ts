@@ -110,6 +110,15 @@ const printed = {
   exploration: { cards: [{ id: "vfs2", name: "Volatile Fuel Source" }] },
 } as unknown as Catalog;
 
+/** An entry with the title and the text of its lines only (no agenda mark, no vote). */
+const plainEntry = (entry: LogItemView) => ({
+  ...entry,
+  groups: entry.groups.map((group) => ({
+    title: group.title,
+    lines: group.lines.map(({ seat, text, dice }) => ({ seat, text, ...(dice ? { dice } : {}) })),
+  })),
+});
+
 let counter = 0;
 /** A public decision of the action phase: `seat` decides in the action of `actor`. */
 const decided = (
@@ -612,7 +621,14 @@ describe("what the Log reads", () => {
       ]),
       printed,
     );
-    expect(log.entries).toEqual([
+    const [entry] = log.entries;
+    expect(entry.kind === "phase" && entry.groups.every((group) => group.agenda)).toBe(true);
+    expect(entry.kind === "phase" && entry.groups[0].lines[0].vote).toEqual({
+      outcome: "For",
+      votes: 0,
+      planets: ["Abyz", "Fria"],
+    });
+    expect(log.entries.map(plainEntry)).toEqual([
       expect.objectContaining({
         label: "Agenda phase · Round 3",
         summary: "2 agendas voted",
@@ -1225,7 +1241,7 @@ describe("what the state tells of a phase", () => {
     );
     const [phase] = log.entries;
     expect(phase.summary).toBe("Mutiny: For · Shared Research: For");
-    expect(phase.groups).toEqual([
+    expect(plainEntry(phase).groups).toEqual([
       {
         title: "Mutiny · For (For 5 · Against 2)",
         lines: [

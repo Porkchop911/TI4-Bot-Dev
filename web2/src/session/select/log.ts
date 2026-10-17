@@ -261,7 +261,11 @@ class Groups {
       .sort(([a], [b]) => rank(a) - rank(b))
       .map(([key, group]) => {
         const views = [...group.lines.values()].map((line) => this.lineView(line));
-        return { title: group.title, lines: key === "Secondaries" ? bySeat(views) : views };
+        return {
+          title: group.title,
+          lines: key === "Secondaries" ? bySeat(views) : views,
+          ...(key.startsWith("Agenda|") ? { agenda: true as const } : {}),
+        };
       });
   }
 
@@ -286,14 +290,15 @@ class Groups {
         return { seat: line.seat, text: `Gained ${pools.join(", ")}` };
       }
       case "vote": {
+        const vote = { outcome: line.outcome, votes: line.votes, planets: line.planets };
         if (line.outcome === null) {
-          return { seat: line.seat, text: "Abstained" };
+          return { seat: line.seat, text: "Abstained", vote };
         }
         const votes = line.votes ? ` · ${plural(line.votes, "vote")}` : "";
         const planets = line.planets.length ? `: ${line.planets.join(", ")}` : "";
         // "Voted" tells a vote from a card played in the same agenda, and an elected planet
         // from the planets that voted.
-        return { seat: line.seat, text: `Voted ${line.outcome}${votes}${planets}` };
+        return { seat: line.seat, text: `Voted ${line.outcome}${votes}${planets}`, vote };
       }
     }
   }
@@ -1113,6 +1118,46 @@ export function turnEvents(events: EventLog, id: string): { seat: string; at: nu
   return { seat: turn.seat, at: turn.events.map((entry) => places.get(entry)!) };
 }
 
+/** A phase of the Log by its id, with its facts and the places of its events in `events`. */
+export interface PhaseParts {
+  view: LogPhaseView;
+  facts: { seat: string | null; fact: PublicFact }[];
+  at: number[];
+}
+
+/**
+ * A strategy, status or agenda phase of the Log (`LogPhaseView.id`), as the Log has it, with its
+ * facts in order and its events by their places in `events`. Null when the events have no such
+ * phase.
+ */
+export function phaseParts(
+  update: SessionUpdate,
+  events: EventLog,
+  id: string,
+  printed: Catalog | null = null,
+): PhaseParts | null {
+  const names = namesOf(update, printed);
+  const { raw, finished } = entriesOf(events);
+  const phase = raw.find(
+    (item): item is RawPhase => item.kind === "phase" && `${item.phase}-${item.round}` === id,
+  );
+  if (!phase || phase.phase === "action") {
+    return null;
+  }
+  const live = phaseLive(raw, finished, phase, update);
+  const { facts } = detailsOf(phase.events, names, {
+    actor: null,
+    strategic: false,
+    phase: phase.phase,
+  });
+  const places = new Map(events.map((entry, at) => [entry, at]));
+  return {
+    view: withGivenCards(phaseView(phase, names, live), update),
+    facts,
+    at: phase.events.map((entry) => places.get(entry)!),
+  };
+}
+
 /** What one seat did in a turn: its answer to a secondary, its lines, and their summary. */
 export interface SeatPart {
   seat: string;
@@ -1474,6 +1519,30 @@ function summaryOf(
   return parts.slice(0, 3).join(" · ");
 }
 
+/**
+ * A strategy card that the game gave with no choice (the last card of the phase) is no fact: in
+ * the round in play the seats hold the cards of the phase that ended, and the summary counts them.
+ */
+function withGivenCards(view: LogPhaseView, update: SessionUpdate): LogPhaseView {
+  if (view.phase !== "strategy" || view.live || view.round !== update.view.round) {
+    return view;
+  }
+  const held = update.view.players.reduce(
+    (sum, player) => sum + (player.strategy_cards ?? []).length,
+    0,
+  );
+  const picked = view.groups.find((group) => group.title === "Picks")?.lines.length ?? 0;
+  return held > picked ? { ...view, summary: `${plural(held, "strategy card")} picked` } : view;
+}
+
+/** A phase that is no action phase is played now while it is the last entry of the game. */
+const phaseLive = (raw: Raw[], finished: boolean, phase: RawPhase, update: SessionUpdate) =>
+  raw.at(-1) === phase &&
+  !finished &&
+  phase.phase !== "action" &&
+  phase.phase === update.view.phase &&
+  phase.round === update.view.round;
+
 function phaseView(phase: RawPhase, names: Names, live: boolean): LogPhaseView {
   const { groups, facts } = detailsOf(phase.events, names, {
     actor: null,
@@ -1541,13 +1610,7 @@ export function selectLog(
     if (item.kind === "phase") {
       // A phase that is no action phase is played now while it is the last entry; the turns
       // of an action phase are its entries.
-      const live =
-        raw.at(-1) === item &&
-        !finished &&
-        item.phase !== "action" &&
-        item.phase === update.view.phase &&
-        item.round === update.view.round;
-      return phaseView(item, names, live);
+      return withGivenCards(phaseView(item, names, phaseLive(raw, finished, item, update)), update);
     }
     const round = item.round ?? update.view.round;
     const number = (counts.get(round) ?? 0) + 1;

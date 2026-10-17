@@ -441,13 +441,25 @@ const STATUS_TONE: Record<SeatRowView["status"]["tone"], string> = {
  * The row of the viewer opens into the editor in place. The sign of a state carries it, not only
  * the colour.
  */
-function SeatList({ rows }: { rows: SeatRowView[] }) {
-  return (
-    <ul aria-label="Seats" className="rounded-lg border border-line bg-surface/40">
-      {rows.map((row) => (
-        <SeatRow key={row.order} row={row} />
+function SeatList({ title, rows }: { title?: string; rows: SeatRowView[] }) {
+  const list = (
+    <ul
+      aria-label={title ?? "Seats"}
+      className={title ? undefined : "rounded-lg border border-line bg-surface/40"}
+    >
+      {rows.map((row, at) => (
+        <SeatRow key={`${row.order}|${row.seat}|${at}`} row={row} />
       ))}
     </ul>
+  );
+  // A list of a phase of the Log has a title: one of its parts ("Picks", "Votes").
+  return title ? (
+    <Card>
+      <CardHeading title={title} />
+      {list}
+    </Card>
+  ) : (
+    list
   );
 }
 
@@ -617,7 +629,7 @@ export function Blocks({ blocks }: { blocks: BlockView[] }) {
               </Gauges>
             );
           case "seats":
-            return <SeatList key={index} rows={block.rows} />;
+            return <SeatList key={index} title={block.title} rows={block.rows} />;
           case "techs":
             return (
               <Card key={index} className="space-y-1.5 p-2">

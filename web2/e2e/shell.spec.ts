@@ -9,11 +9,14 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/desktop/shell";
 
-/** Nothing in the Log is a control but the rows of the turns that open their action. */
+/** Nothing in the Log is a control but the rows of the turns and the phases that open. */
 const readOnly = async (log: Locator) => {
   await expect(log.locator("input, select, textarea, button:not([aria-pressed])")).toHaveCount(0);
   for (const row of await log.locator("button[aria-pressed]").all()) {
-    await expect(row).toHaveAttribute("aria-label", /· (Tactical|Strategic|Component)/);
+    await expect(row).toHaveAttribute(
+      "aria-label",
+      /· (Tactical|Strategic|Component)|^(Strategy|Status|Agenda) phase · Round \d+$/,
+    );
   }
 };
 
@@ -323,7 +326,7 @@ test("desktop: the Log has a large row for each turn of the other seats, with it
   await expect(turns).toContainText("Strategy phase · Round 1");
   await expect(turns).not.toContainText("Action phase");
   // One row for each turn: the seat, the action and its outcome, with no dice.
-  const rows = turns.locator("li > article, li > button");
+  const rows = turns.locator("li > article, li > button[aria-label^='Turn ']");
   await expect(rows).toHaveCount(7);
   for (const turn of await rows.all()) {
     await expect(turn).toHaveAttribute(
@@ -493,5 +496,72 @@ test("desktop: a strategic turn of the Log opens to its card and a row for each 
   // "×" closes it.
   await turn.getByRole("button", { name: "Close" }).click();
   await expect(turn).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("desktop: a phase of the Log opens what the seats did in it, and the live row opens what is played now", async ({
+  page,
+}) => {
+  test.setTimeout(15_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  await page.goto("/?local=3&players=8&humans=1");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const pick = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  await pick(/^8\. Imperial$/).click();
+  await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(pick(/^Activate a system$/)).toBeVisible();
+
+  // The strategy phase opens to the picks in their order, read-only, in the place of the sheet.
+  const log = page.getByRole("region", { name: "Log" });
+  await readOnly(log);
+  const phase = log.getByRole("button", { name: "Strategy phase · Round 1" });
+  await phase.click();
+  await expect(phase).toHaveAttribute("aria-pressed", "true");
+  const turn = page.getByRole("region", { name: "Turn" });
+  expect((await turn.boundingBox())!.width).toBe(412);
+  await expect(turn.getByRole("heading", { name: "Strategy phase" })).toBeVisible();
+  await expect(turn).toContainText("Resolved");
+  const picks = turn.locator("ul[aria-label=Picks] > li");
+  await expect(picks).toHaveCount(8);
+  await expect(picks.filter({ hasText: "You" })).toContainText("Imperial");
+  await expect(turn.locator("input, select, textarea, footer button")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
+  await page.screenshot({ path: `${SHOTS}/phase.png`, animations: "disabled" });
+  await turn.getByRole("button", { name: "Close" }).click();
+  await expect(turn).toHaveCount(0);
+
+  // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.
+  await page.goto("/?scenario=strategy_leadership&humans=3");
+  await sheet
+    .locator("#step-panel")
+    .getByRole("button", { name: /Leadership/ })
+    .first()
+    .click();
+  await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  for (let at = 0; at < 3; at++) {
+    await sheet.getByRole("button", { name: "Add tactic pool token" }).click();
+  }
+  await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
+  // The live row is the turn of Sol: it opens what is played now, who decides and who waits.
+  const live = log.getByRole("button", { name: /· Strategic · Leadership/ });
+  await expect(live).toContainText("▶");
+  await live.click();
+  await expect(turn).toContainText("Played now");
+  const you = turn.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" });
+  await expect(you).toContainText("▶ Deciding");
+  // The viewer's decision is its line under the turn; a tap on it gives the decision back.
+  const decision = page.getByRole("region", { name: "Open step" });
+  await expect(decision).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/live-turn.png`, animations: "disabled" });
+  await decision.getByRole("button", { name: /Restore/ }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
   expect(errors).toEqual([]);
 });

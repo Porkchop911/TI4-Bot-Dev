@@ -259,7 +259,7 @@ const POOLS: [keyof SeatPools, string][] = [
  * What the board says of an action that no fact tells, by seat, in game values: a pool that
  * changed ("Trade goods 2 → 5"), a planet that was readied.
  */
-function boardEffects(
+export function boardEffects(
   update: SessionUpdate,
   before: PublicBoard,
   after: PublicBoard,

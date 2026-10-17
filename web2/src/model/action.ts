@@ -697,8 +697,11 @@ export type BlockView = (
       /** Rows under the columns: the unit upgrades, and the faction technologies if there are any. */
       bands: { label: string; cells: TechCellView[] }[];
     }
-  /** The seat order of a strategy card: the primary, then the secondaries, with what each did. */
-  | { kind: "seats"; rows: SeatRowView[] }
+  /**
+   * The seat order of a strategy card: the primary, then the secondaries, with what each did. A
+   * phase of the Log has several, each with its title ("Picks", "Scored", "Votes").
+   */
+  | { kind: "seats"; title?: string; rows: SeatRowView[] }
   | {
       kind: "card";
       title: string;
