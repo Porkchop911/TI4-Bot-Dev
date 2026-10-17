@@ -20,6 +20,26 @@ const readOnly = async (log: Locator) => {
   }
 };
 
+/** The children of the heading row of a sheet are one line: their middles are at one height. */
+async function headingIsOneLine(sheet: Locator) {
+  const row = sheet.locator("h2").first().locator("xpath=..");
+  const middles = await row.evaluate((element) =>
+    Array.from(element.children)
+      .map((child) => child.getBoundingClientRect())
+      .filter((box) => box.height > 0)
+      .map((box) => box.top + box.height / 2),
+  );
+  expect(middles.length).toBeGreaterThan(1);
+  expect(Math.max(...middles) - Math.min(...middles)).toBeLessThan(6);
+  // The heading itself is one line.
+  const heading = sheet.locator("h2").first();
+  const lines = await heading.evaluate(
+    (element) =>
+      element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight),
+  );
+  expect(lines).toBeLessThan(1.6);
+}
+
 /** The board has one sheet over it: the decision, Watch or an opened turn, never two. */
 async function oneSheet(page: Page, name: "Open step" | "Watch" | "Turn") {
   const board = page.getByRole("region", { name: "Galaxy board" });
@@ -740,5 +760,42 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   await page.keyboard.press("Escape");
   await expect(watch).toHaveCount(0);
   await oneSheet(page, "Open step");
+  expect(errors).toEqual([]);
+});
+
+test('desktop: the heading row of the sheet is one line with a long name of a player: the context gives way with "…", the pill, "Not sent" and "?" stay on it', async ({
+  page,
+}) => {
+  test.setTimeout(20_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(
+    (name) => localStorage.setItem("ti4.nickname", name),
+    "Maximiliane von Hohenzollern-Sigmaringen",
+  );
+  // Single player: a table, so the seats have the names of their players.
+  await page.goto("/?single&seed=3&players=8");
+  await page
+    .getByRole("button", { name: /^Start/ })
+    .last()
+    .click();
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const options = sheet.locator("#step-panel").getByRole("button", { pressed: false });
+  await expect(options.first()).toBeVisible({ timeout: 15_000 });
+  // A staged strategy card: the heading, its context, "Not sent" and "?" on one line.
+  await options.first().click();
+  await expect(sheet).toContainText("Not sent");
+  await headingIsOneLine(sheet);
+  await send.click();
+  // The action picker of the turn of the viewer with its strategy card staged: "Your turn" and
+  // "Not sent".
+  const card = sheet.locator("#step-panel").getByRole("button", { name: /^\d+ / }).first();
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await card.click();
+  await expect(sheet).toContainText("Not sent");
+  await expect(sheet).toContainText("Your turn");
+  await headingIsOneLine(sheet);
+  await page.screenshot({ path: `${SHOTS}/heading-line.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });

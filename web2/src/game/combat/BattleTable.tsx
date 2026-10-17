@@ -102,8 +102,13 @@ export function BattleTable({ view, odds }: { view: BattleTableView; odds?: Odds
   return (
     <div className="overflow-hidden rounded-lg border border-line">
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 border-b border-line bg-white/[.016] px-3 py-1.5 text-sm">
-        <strong>{view.label}</strong>
-        <span className="text-muted">{view.score}</span>
+        {/* The label and the score are one line: the label is cut with "…" first. */}
+        <span className="flex min-w-0 max-w-full items-baseline gap-x-3.5">
+          <strong className="min-w-0 truncate" title={view.label}>
+            {view.label}
+          </strong>
+          {view.score && <span className="shrink-0 text-muted">{view.score}</span>}
+        </span>
         {odds && (
           <span className="inline-flex items-center gap-2 text-muted">
             Avg {odds.rounds} rounds{draw > 0 ? ` · ${draw}% both destroyed` : ""}

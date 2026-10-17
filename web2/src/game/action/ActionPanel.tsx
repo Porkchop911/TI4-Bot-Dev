@@ -182,26 +182,21 @@ function HeadingRow({
   const lead = heading ?? context ?? "";
   return (
     <div className="flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
-      {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
-      {/* The context of a tactical action gives way with "…": its pill stays on the line. */}
-      <span
-        className={cx(
-          "flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5",
-          heading && "phone:flex-wrap",
-        )}
-      >
+      {/* One line on both layouts: the context gives way with "…" first, then the heading; the
+          toggle, the pill, "Not sent" and "?" keep their place on the line. */}
+      <span className="flex min-w-0 max-w-full items-center gap-x-2.5">
         {onMinimize && <SheetToggle open onToggle={onMinimize} />}
         <h2
           className={cx(
             "min-w-0 truncate font-semibold tracking-[-.2px]",
-            heading ? "text-lg phone:whitespace-normal" : "text-base",
+            heading ? "text-lg" : "text-base",
           )}
           title={lead}
         >
           {lead}
         </h2>
         {heading && context && (
-          <span className="min-w-0 shrink-[2] truncate text-sm text-muted" title={context}>
+          <span className="min-w-0 shrink-[100000] truncate text-sm text-muted" title={context}>
             {context}
           </span>
         )}

@@ -108,7 +108,7 @@ export function Toolbar({
         <>
           {/* A status can name a player: on a phone it has the room that is left, whatever its length. */}
           <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
-            <span>
+            <span className="truncate">
               Round {view.round} · {view.phase}
               {view.turn > 0 && ` · Turn ${view.turn}`}
             </span>

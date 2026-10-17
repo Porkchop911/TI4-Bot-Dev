@@ -25,7 +25,7 @@ export function MinimizedLine({ view, onRestore }: { view: ActionView; onRestore
         {heading}
       </strong>
       {view.context && (
-        <span className="min-w-0 shrink-[2] truncate text-sm text-muted">{view.context}</span>
+        <span className="min-w-0 shrink-[100000] truncate text-sm text-muted">{view.context}</span>
       )}
     </button>
   );
