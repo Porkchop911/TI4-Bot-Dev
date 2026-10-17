@@ -152,6 +152,20 @@ fn main() {
         residual_blocks,
         ti4_mlp::distill::INIT_SEED ^ 0x5245_5349_4455_414C,
     );
+    // The diplomacy head and the frozen battle predictor, for a blank twin of a schema-11/12
+    // bundle whose slots already carry diplomacy and battle names (so no vocabulary migration).
+    if std::env::args().any(|a| a == "--diplomacy") {
+        actor = actor.with_diplomacy_head();
+        println!("  diplomacy   head added");
+    }
+    if let Some(path) = argument("--predictor") {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| refuse(&format!("{path}: {error}")));
+        let predictor = ti4_policy::battle::BattlePredictor::from_json(&text)
+            .unwrap_or_else(|error| refuse(&format!("{path}: {error}")));
+        actor.set_battle_predictor(Some(std::sync::Arc::new(predictor)));
+        println!("  predictor   {path}");
+    }
 
     // Non-vacuity: an initialisation that produced a constant model would make every downstream
     // comparison against it meaningless, and would look exactly like a working one from outside.

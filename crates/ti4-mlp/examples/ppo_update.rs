@@ -257,6 +257,7 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--diag-sync",
     "--hash-games",
     "--diplomacy",
+    "--separate-models",
 ];
 
 fn check_flags() {
@@ -595,7 +596,8 @@ impl Decider for Watching {
     reason = "a game's inputs; bundling them into a struct would move the list, not shorten it"
 )]
 fn play_one(
-    inference: &WorkerScopedInference,
+    // One per model: the shared model alone, or one per faction of FACTIONS (--separate-models).
+    inference: &[WorkerScopedInference],
     opponent: Option<&FrozenInference>,
     learner_faction: usize,
     content: &ContentStore,
@@ -730,7 +732,17 @@ fn play_one(
                         .at_temperature(OPPONENT_TEMPERATURE)
                         .from_setup(baseline)
                     } else {
-                        match inference {
+                        let model = if inference.len() == 1 {
+                            0
+                        } else {
+                            FACTIONS
+                                .iter()
+                                .position(|faction| *faction == seated[player].as_str())
+                                .ok_or_else(|| {
+                                    format!("{player}: no model for {}", seated[player])
+                                })?
+                        };
+                        match &inference[model] {
                             WorkerScopedInference::Cpu(actor) => ti4_mlp::bot::MlpBot::sharing(
                                 actor,
                                 vocabulary.clone(),
@@ -2025,15 +2037,64 @@ fn main() {
         );
     }
 
+    // --separate-models: one network and optimiser per faction of the six, each from the same
+    // bundle and trained only on its own seats' decisions. Otherwise one shared model.
+    let separate_models = std::env::args().any(|a| a == "--separate-models");
+    if separate_models {
+        if roster != ti4_engine::seating::FactionRoster::InScope {
+            refuse("--separate-models needs the six factions (no --roster wide)");
+        }
+        if !matches!(rollout_backend, RolloutBackend::Infer(_)) {
+            refuse("--separate-models needs --rollout-backend infer");
+        }
+        if opponent_actor.is_some()
+            || demo_per_update > 0
+            || self_imitation > 0.0
+            || faction_rows_only
+            || check_likelihood
+            || hash_games
+            || capture_path.is_some()
+        {
+            refuse(
+                "--separate-models does not combine with --opponent, demos, self-imitation, \
+                 --faction-rows-only, --check-likelihood, --hash-games or --capture-batch",
+            );
+        }
+    }
+    let mut models: Vec<(ti4_mlp::Actor, ti4_mlp::ppo::Adam)> = vec![(actor, optimizer)];
+    if separate_models {
+        for _ in 1..FACTIONS.len() {
+            let mut copy = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
+                .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")))
+                .actor
+                .to_device(device);
+            let adam = ti4_mlp::ppo::Adam::new(&mut copy, critic_mode, settings)
+                .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
+            models.push((copy, adam));
+        }
+        println!("  models      separate: one per faction ({})", FACTIONS.join(", "));
+    }
+
     // F-M10-034-D6. Loss telemetry is not evidence that an update happened: a broken optimiser
     // still produces a full, plausible table of losses, and the vacuous tests this milestone kept
     // producing failed in exactly that way. Parameters and Adam state are fingerprinted before and
     // after, and the run refuses if either stayed put.
-    let before_parameters = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
-        .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
-    let before_state = optimizer
-        .state_fingerprint()
-        .unwrap_or_else(|error| refuse(&format!("fingerprinting Adam: {error}")));
+    let fingerprints = |models: &[(ti4_mlp::Actor, ti4_mlp::ppo::Adam)]| {
+        models
+            .iter()
+            .map(|(actor, optimizer)| {
+                (
+                    ti4_mlp::ppo::parameter_fingerprint(actor, critic_mode).unwrap_or_else(
+                        |error| refuse(&format!("fingerprinting parameters: {error}")),
+                    ),
+                    optimizer
+                        .state_fingerprint()
+                        .unwrap_or_else(|error| refuse(&format!("fingerprinting Adam: {error}"))),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = fingerprints(&models);
 
     // §4.4: weights are stored on CPU, so a checkpoint from a CUDA run loads on a CPU-only machine.
     // Read once here rather than per publish: it is 1.1 MB of JSON and does not change.
@@ -2070,24 +2131,36 @@ fn main() {
         let mut infer_model = None;
         let (cpu_inference, mut gpu_service) = match &rollout_backend {
             RolloutBackend::Cpu => (
-                Some(actor.inference_copy().to_device(ti4_tensor::Device::Cpu)),
+                Some(models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu)),
                 None,
             ),
             RolloutBackend::Infer(_) => {
-                // The weights of this update, packed once and shared by every worker.
-                infer_model = Some(Arc::new(
-                    ti4_mlp::infer::InferModel::from_actor(&actor, &slots_text, infer_backend)
-                        .unwrap_or_else(|error| {
-                            refuse(&format!("packing the actor for ti4-infer: {error}"))
-                        }),
-                ));
+                // The weights of this update, packed once per model and shared by every worker.
+                infer_model = Some(
+                    models
+                        .iter()
+                        .map(|(actor, _)| {
+                            Arc::new(
+                                ti4_mlp::infer::InferModel::from_actor(
+                                    actor,
+                                    &slots_text,
+                                    infer_backend,
+                                )
+                                .unwrap_or_else(|error| {
+                                    refuse(&format!("packing the actor for ti4-infer: {error}"))
+                                }),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                );
                 (None, None)
             }
             RolloutBackend::GpuBatched { batch_size, flush } => (
                 None,
                 Some(
                     ti4_mlp::gpu_batch::GpuInferenceService::spawn(
-                        actor
+                        models[0]
+                            .0
                             .inference_copy()
                             .to_device(ti4_tensor::Device::Cuda(0)),
                         *batch_size,
@@ -2129,7 +2202,7 @@ fn main() {
             .flat_map(|seed| (0..rotations).map(move |rotation| (seed, rotation)))
             .collect();
         let workers = rayon::current_num_threads().max(1).min(jobs.len());
-        let locals: Vec<(WorkerInference, Option<ti4_mlp::Actor>)> = match &rollout_backend {
+        let locals: Vec<(Vec<WorkerInference>, Option<ti4_mlp::Actor>)> = match &rollout_backend {
             RolloutBackend::Cpu => {
                 let inference = cpu_inference
                     .as_ref()
@@ -2137,7 +2210,7 @@ fn main() {
                 (0..workers)
                     .map(|_| {
                         (
-                            WorkerInference::Cpu(inference.inference_copy()),
+                            vec![WorkerInference::Cpu(inference.inference_copy())],
                             opponent_actor.as_ref().map(|(_, frozen)| {
                                 frozen.inference_copy().to_device(ti4_tensor::Device::Cpu)
                             }),
@@ -2146,11 +2219,19 @@ fn main() {
                     .collect()
             }
             RolloutBackend::Infer(_) => {
-                let model = infer_model
+                let packed = infer_model
                     .as_ref()
                     .unwrap_or_else(|| refuse("ti4-infer rollout has no model"));
                 (0..workers)
-                    .map(|_| (WorkerInference::Infer(Arc::clone(model)), None))
+                    .map(|_| {
+                        (
+                            packed
+                                .iter()
+                                .map(|model| WorkerInference::Infer(Arc::clone(model)))
+                                .collect(),
+                            None,
+                        )
+                    })
                     .collect()
             }
             RolloutBackend::GpuBatched { .. } => {
@@ -2159,7 +2240,7 @@ fn main() {
                     .map(ti4_mlp::gpu_batch::GpuInferenceService::client)
                     .unwrap_or_else(|| refuse("GPU rollout has no inference service"));
                 (0..workers)
-                    .map(|_| (WorkerInference::Gpu(client.clone()), None))
+                    .map(|_| (vec![WorkerInference::Gpu(client.clone())], None))
                     .collect()
             }
         };
@@ -2187,11 +2268,14 @@ fn main() {
                 let worker_started = Instant::now();
                 let _ = ti4_mlp::perf::take_stages();
                 // One CPU actor or one GPU-service client per worker, shared by every game it plays.
-                let local = match local {
-                    WorkerInference::Cpu(actor) => WorkerScopedInference::Cpu(Rc::new(actor)),
-                    WorkerInference::Infer(model) => WorkerScopedInference::Infer(model),
-                    WorkerInference::Gpu(client) => WorkerScopedInference::Gpu(client),
-                };
+                let local: Vec<WorkerScopedInference> = local
+                    .into_iter()
+                    .map(|local| match local {
+                        WorkerInference::Cpu(actor) => WorkerScopedInference::Cpu(Rc::new(actor)),
+                        WorkerInference::Infer(model) => WorkerScopedInference::Infer(model),
+                        WorkerInference::Gpu(client) => WorkerScopedInference::Gpu(client),
+                    })
+                    .collect();
                 let frozen = match (frozen, &frozen_infer) {
                     (Some(actor), _) => Some(FrozenInference::Cpu(Rc::new(actor))),
                     (None, Some(model)) => Some(FrozenInference::Infer(Arc::clone(model))),
@@ -2464,6 +2548,7 @@ fn main() {
         if check_likelihood && update == 0 {
             // Rollouts score on a CPU inference copy; rescore on the same kind of copy, so the check
             // compares the recorded numbers with the same arithmetic rather than with the device's.
+            let actor = &models[0].0;
             let scorer = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
             let mut worst = 0.0f64;
             // On ti4-infer the recorded probabilities are those of its kernels, whose logits are
@@ -2516,8 +2601,33 @@ fn main() {
             }
         }
         let freeze_started = Instant::now();
-        let batch = Batch::freeze(steps, critic_mode)
-            .unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
+        // One batch per model: everything for the shared model, else each faction's own seats
+        // (a step's faction row names the faction that took it).
+        let grouped: Vec<Vec<Step>> = if models.len() == 1 {
+            vec![steps]
+        } else {
+            let rows: Vec<ti4_mlp::FactionRow> = FACTIONS
+                .iter()
+                .map(|faction| ti4_mlp::FactionRow::of(faction).expect("a roster row"))
+                .collect();
+            let mut grouped: Vec<Vec<Step>> = rows.iter().map(|_| Vec::new()).collect();
+            for step in steps {
+                let model = rows
+                    .iter()
+                    .position(|row| *row == step.row)
+                    .unwrap_or_else(|| refuse("a decision from a faction outside the six"));
+                grouped[model].push(step);
+            }
+            grouped
+        };
+        let batches: Vec<Batch> = grouped
+            .into_iter()
+            .map(|steps| {
+                Batch::freeze(steps, critic_mode)
+                    .unwrap_or_else(|error| refuse(&format!("freezing: {error}")))
+            })
+            .collect();
+        let batch = &batches[0];
         let freeze_time = freeze_started.elapsed();
         // With --hash-games: the whole frozen batch, content and order, as one digest -- the same
         // encoding `ppo_replay` reports for a captured batch, so the two compare directly.
@@ -2525,9 +2635,11 @@ fn main() {
             ti4_mlp::perf::steps_digest(batch.steps())
                 .unwrap_or_else(|error| refuse(&format!("digesting the batch: {error}")))
         });
-        let raw_options: usize = batch.steps().iter().map(|step| step.options.len()).sum();
+        let all_steps = || batches.iter().flat_map(Batch::steps);
+        let decisions: usize = batches.iter().map(Batch::len).sum();
+        let raw_options: usize = all_steps().map(|step| step.options.len()).sum();
         let mut head_counts: BTreeMap<String, usize> = BTreeMap::new();
-        for step in batch.steps() {
+        for step in all_steps() {
             let name = ti4_mlp::all_heads()
                 .get(step.head)
                 .copied()
@@ -2541,10 +2653,9 @@ fn main() {
                 .unwrap_or_else(|error| refuse(&format!("capturing the batch to {path}: {error}")));
             println!("  captured    {} decisions to {path}", batch.len());
         }
-        if batch.steps().len() != seated_decisions {
+        if decisions != seated_decisions {
             refuse(&format!(
-                "freezing changed the decision count from {seated_decisions} to {}",
-                batch.steps().len()
+                "freezing changed the decision count from {seated_decisions} to {decisions}"
             ));
         }
         let optimise_lock = phase_lock("optimise");
@@ -2575,41 +2686,46 @@ fn main() {
             } else {
                 (&demonstrations, 0.10)
             };
-        let stats = if auxiliary.is_empty() {
-            ti4_mlp::ppo::update(
-                &mut actor,
-                &batch,
-                critic_mode,
-                settings,
-                seed_base ^ update as u64,
-                &mut optimizer,
-            )
-        } else {
-            let batches = batch.len().div_ceil(settings.minibatch);
-            ti4_mlp::ppo::update_with_auxiliary(
-                &mut actor,
-                &batch,
-                critic_mode,
-                settings,
-                seed_base ^ update as u64,
-                &mut optimizer,
-                auxiliary_cap,
-                |current, epoch, minibatch| {
-                    let width = 128usize;
-                    let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
-                    let selected: Vec<_> = (0..width.min(auxiliary.len()))
-                        .map(|offset| auxiliary[(start + offset) % auxiliary.len()].clone())
-                        .collect();
-                    ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
-                },
-            )
+        // One update per model, each on its own batch with its own optimiser.
+        let mut stats_by_model = Vec::with_capacity(models.len());
+        for ((actor, optimizer), batch) in models.iter_mut().zip(&batches) {
+            let stats = if auxiliary.is_empty() {
+                ti4_mlp::ppo::update(
+                    actor,
+                    batch,
+                    critic_mode,
+                    settings,
+                    seed_base ^ update as u64,
+                    optimizer,
+                )
+            } else {
+                let batches = batch.len().div_ceil(settings.minibatch);
+                ti4_mlp::ppo::update_with_auxiliary(
+                    actor,
+                    batch,
+                    critic_mode,
+                    settings,
+                    seed_base ^ update as u64,
+                    optimizer,
+                    auxiliary_cap,
+                    |current, epoch, minibatch| {
+                        let width = 128usize;
+                        let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
+                        let selected: Vec<_> = (0..width.min(auxiliary.len()))
+                            .map(|offset| auxiliary[(start + offset) % auxiliary.len()].clone())
+                            .collect();
+                        ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
+                    },
+                )
+            }
+            .unwrap_or_else(|error| refuse(&format!("update: {error}")));
+            stats_by_model.push(stats);
         }
-        .unwrap_or_else(|error| refuse(&format!("update: {error}")));
         // Every update uploads a batch of a different size, and libtorch keeps freed blocks
         // reserved; without a release the reserve outgrew the card and spilled into shared system
         // memory, where the optimise step ran 5-8x slower (2026-09-22). The update's tensors are
         // gone by now, so this frees only what nothing uses.
-        let gpu_memory = if matches!(actor.device(), ti4_tensor::Device::Cuda(_)) {
+        let gpu_memory = if matches!(models[0].0.device(), ti4_tensor::Device::Cuda(_)) {
             let held = ti4_tensor::cuda_cache::memory(0);
             ti4_tensor::cuda_cache::release_cached();
             held.zip(ti4_tensor::cuda_cache::memory(0))
@@ -2620,11 +2736,10 @@ fn main() {
         drop(optimise_lock);
         let phases = ti4_mlp::perf::take_phases();
 
-        let last = stats.last().unwrap_or_else(|| refuse("no epoch ran"));
         println!(
             "  update {:>3}  games {games}  decisions {:>7}  rollout {:>6.1?}  optimise {:>6.1?}  total {:>6.1?}",
             update,
-            batch.len(),
+            decisions,
             rollout_time,
             optimise_time,
             rollout_time + optimise_time
@@ -2639,19 +2754,32 @@ fn main() {
                 gb(after.allocated)
             );
         }
-        println!(
-            "              actor loss {:>9.5}  critic {:>9.5}  |log r| {:>7.5}  clipped {:>6.2}%",
-            last.actor_loss,
-            last.critic_loss,
-            last.kl,
-            last.clipped_fraction * 100.0
-        );
-        let worst = last
-            .entropy
-            .iter()
-            .min_by(|left, right| left.1.total_cmp(right.1));
-        if let Some((head, entropy)) = worst {
-            println!("              lowest-entropy head {head} at {entropy:.4}");
+        for (index, stats) in stats_by_model.iter().enumerate() {
+            let last = stats.last().unwrap_or_else(|| refuse("no epoch ran"));
+            let name = if models.len() == 1 {
+                String::new()
+            } else {
+                format!("  [{}]", FACTIONS[index])
+            };
+            println!(
+                "              actor loss {:>9.5}  critic {:>9.5}  |log r| {:>7.5}  clipped {:>6.2}%{name}",
+                last.actor_loss,
+                last.critic_loss,
+                last.kl,
+                last.clipped_fraction * 100.0
+            );
+            let worst = last
+                .entropy
+                .iter()
+                .min_by(|left, right| left.1.total_cmp(right.1));
+            if let Some((head, entropy)) = worst {
+                println!("              lowest-entropy head {head} at {entropy:.4}{name}");
+            }
+            // Non-vacuity: an update that moved nothing is not an update, however plausible its
+            // telemetry.
+            if matches!(critic_mode, CriticMode::BatchMean) && last.critic_loss != 0.0 {
+                refuse("batch_mean mode reported a critic loss");
+            }
         }
         // Wasted activations per seat-game. This is the quantity the penalty exists to move, so it
         // is reported every update whether or not a penalty is charged -- a run with the penalty at
@@ -2673,12 +2801,6 @@ fn main() {
             }
         }
 
-        // Non-vacuity: an update that moved nothing is not an update, however plausible its
-        // telemetry.
-        if matches!(critic_mode, CriticMode::BatchMean) && last.critic_loss != 0.0 {
-            refuse("batch_mean mode reported a critic loss");
-        }
-
         let report_started = Instant::now();
         // ---- the periodic report ----
         let done = update + 1;
@@ -2687,7 +2809,7 @@ fn main() {
             if !demonstrations.is_empty() {
                 let (reference_kl, greedy_flip) = reference_drift(
                     &replay_actor,
-                    &actor.inference_copy().to_device(ti4_tensor::Device::Cpu),
+                    &models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu),
                     &demonstrations,
                 )
                 .unwrap_or_else(|error| refuse(&format!("measuring reference drift: {error}")));
@@ -2697,17 +2819,29 @@ fn main() {
                 );
             }
             reported_at = done;
-            let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
-                .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
-            if !no_checkpoint {
+            for (index, (actor, optimizer)) in models.iter().enumerate() {
+                if no_checkpoint {
+                    break;
+                }
+                let fingerprint = ti4_mlp::ppo::parameter_fingerprint(actor, critic_mode)
+                    .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
+                // Separate models publish under one directory per faction.
+                let (directory, model) = if models.len() == 1 {
+                    (std::path::PathBuf::from(&out), String::new())
+                } else {
+                    (
+                        std::path::Path::new(&out).join(FACTIONS[index]),
+                        format!(", separate model {}", FACTIONS[index]),
+                    )
+                };
                 publish(
-                    &actor,
-                    &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
+                    actor,
+                    &directory.join(format!("checkpoint-{}", optimizer.steps())),
                     &slots_text,
                     critic_mode,
                     &ti4_mlp::bundle::Provenance {
                         source: format!(
-                            "M10-034 PPO, {done} update(s) from {bundle_path}, roster {roster:?}{}",
+                            "M10-034 PPO, {done} update(s) from {bundle_path}, roster {roster:?}{model}{}",
                             if self_imitation > 0.0 {
                                 format!(
                                     ", self-imitation {self_imitation} margin {sil_margin} keep {sil_keep}"
@@ -2752,7 +2886,7 @@ fn main() {
                 "update": update,
                 "rollout_backend": match &rollout_backend { RolloutBackend::Cpu => "cpu", RolloutBackend::Infer(backend) if backend.is_int8() => "infer-int8", RolloutBackend::Infer(_) => "infer", RolloutBackend::GpuBatched { .. } => "gpu-batched" },
                 "games": games,
-                "decisions": batch.len(),
+                "decisions": decisions,
                 "raw_options": raw_options,
                 "head_counts": head_counts,
                 "batch_steps_sha256": batch_digest,
@@ -2783,21 +2917,20 @@ fn main() {
         }
     }
 
-    let after_parameters = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
-        .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
-    let after_state = optimizer
-        .state_fingerprint()
-        .unwrap_or_else(|error| refuse(&format!("fingerprinting Adam: {error}")));
-    if after_parameters == before_parameters {
-        refuse(
-            "the run moved no parameter; the losses above describe an update that never applied",
-        );
-    }
-    if after_state == before_state {
-        refuse("Adam's moments and step cursor did not advance");
+    for ((after_parameters, after_state), (before_parameters, before_state)) in
+        fingerprints(&models).into_iter().zip(&before)
+    {
+        if after_parameters == *before_parameters {
+            refuse(
+                "the run moved no parameter; the losses above describe an update that never applied",
+            );
+        }
+        if after_state == *before_state {
+            refuse("Adam's moments and step cursor did not advance");
+        }
     }
     println!("\n  parameters  moved");
-    println!("  adam state  advanced, {} steps", optimizer.steps());
+    println!("  adam state  advanced, {} steps", models[0].1.steps());
 
     println!(
         "\n  done. Rollouts are CPU inference across rayon workers; the optimiser honoured --device."
