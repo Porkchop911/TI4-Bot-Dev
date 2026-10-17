@@ -1492,11 +1492,13 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "tokens.rs",
         function: "pending_choice",
-        // `TokenRedistribution::pending_choice`: 81.5's gain and redistribution (one decision per
-        // seat), and Warfare's and Predictive Intelligence's redistributions, all asked by
-        // `strategy_cards::redistribute_tokens`.
-        count: 1,
-        delivery: Delivery::ObservedVia("strategy_cards.rs::ask"),
+        // Two `Choice::new` sites share this function name. `TokenRedistribution::pending_choice`:
+        // 81.5's gain and redistribution (one decision per seat), and Warfare's and Predictive
+        // Intelligence's redistributions, all asked by `strategy_cards::redistribute_tokens`.
+        // `TokenGain::pending_choice`: the gain token by token of a game from before
+        // `RULES_STATUS_GAIN`, asked by `game.rs::step_token_gain` (wired below).
+        count: 2,
+        delivery: Delivery::ObservedVia("game.rs::step_token_gain"),
     },
     Producer {
         module: "transactions.rs",
@@ -1661,6 +1663,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_scoring", 1),
     ("game.rs", "step_secondary", 1),
     ("game.rs", "step_tactical", 1),
+    ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_agenda_talks", 1),

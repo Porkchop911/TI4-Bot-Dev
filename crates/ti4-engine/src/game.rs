@@ -31,7 +31,7 @@ use crate::tactical::{
     read_move,
 };
 use crate::timing::{Resolver, TimingContext, TimingError};
-use crate::tokens::TokenGain;
+use crate::tokens::{TokenGain, TokenGainError};
 use crate::transit::{CargoError, CargoWindow, MoveOutcome, apply_move, survives_gravity_rifts};
 use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
 
@@ -79,6 +79,8 @@ pub enum GameError {
     TimingEventCancelled(String),
     #[error(transparent)]
     Scoring(#[from] ScoringError),
+    #[error(transparent)]
+    TokenGain(#[from] TokenGainError),
     #[error(transparent)]
     Tactical(#[from] TacticalError),
     #[error(transparent)]
@@ -1975,6 +1977,26 @@ impl<'a> Game<'a> {
         if let Some(window) = &self.scoring {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
+        if let Some((window, _)) = &self.tokens
+            && self.state.rules_version < ti4_model::state::RULES_STATUS_GAIN
+        {
+            return window.pending_choice().map(|choice| {
+                let actor = choice.player.clone();
+                let choice = choice.contextualized(DecisionContext::new(
+                    actor,
+                    DecisionSource::Rule("52.4".to_owned()),
+                    "gain_command_token",
+                    self.state.phase,
+                    self.state.round,
+                ));
+                crate::tokens::with_pool_details(
+                    choice,
+                    &self.state,
+                    "gain",
+                    Some(window.remaining_for_next_player()),
+                )
+            });
+        }
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
@@ -2115,6 +2137,9 @@ impl<'a> Game<'a> {
             return self.step_scoring();
         }
         if self.tokens.is_some() {
+            if self.state.rules_version < ti4_model::state::RULES_STATUS_GAIN {
+                return self.step_token_gain();
+            }
             return self.finish_status_phase();
         }
         if self.voting.is_some() {
@@ -5516,6 +5541,45 @@ impl<'a> Game<'a> {
                 crate::promissory::return_all_foreign(&mut self.state, "ce");
                 self.tokens = Some((gain, Box::new(report)));
                 self.result(false, None)
+            }
+            Err(error) => self.result(false, Some(error.into())),
+        }
+    }
+
+    /// Resolve one token of the 81.5 gain of a game from before `RULES_STATUS_GAIN`, finishing the
+    /// status phase when every token is placed. The redistribution then gains nothing more.
+    fn step_token_gain(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            return self.finish_status_phase();
+        };
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        // Taken out and put back so the window and `state` are not borrowed from `self` at
+        // once. On the error path it goes back unchanged, leaving the token still owed.
+        let Some((mut window, report)) = self.tokens.take() else {
+            unreachable!("the token window is open");
+        };
+        let outcome = window.resolve(&mut self.state, answer);
+        let complete = window.is_complete();
+        self.tokens = Some((window, report));
+        match outcome {
+            Ok(pool) => {
+                self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
+                if complete {
+                    return self.finish_status_phase();
+                }
+                self.result(true, None)
             }
             Err(error) => self.result(false, Some(error.into())),
         }
@@ -11392,6 +11456,92 @@ mod tests {
             .filter(|event| event.starts_with("COMMAND_TOKEN_GAINED:"))
             .count();
         assert_eq!(gained, 3, "each gained token is still announced");
+    }
+
+    /// A game from before `RULES_STATUS_GAIN` asks the pool of each gained token on its own
+    /// (52.4), and the redistribution after it is over the tokens already placed, with no gain.
+    /// The status phase's gain of a game of rules version 11, open and answered by `table`.
+    fn status_gain_of_version_11(table: Table) -> Game<'static> {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.phase = Phase::Status;
+        state.rules_version = ti4_model::state::RULES_STATUS_GAIN - 1;
+        for (seat, pools) in [("a", (3, 3, 2)), ("b", (5, 5, 5))] {
+            let seat = state.player_mut(&PlayerId::new(seat)).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = pools;
+        }
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let order = [PlayerId::new("a"), PlayerId::new("b")];
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&game.state, ContentStore::embedded(), &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
+        ));
+        game
+    }
+
+    #[test]
+    fn status_phase_gain_of_an_older_game_asks_each_token() {
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut game = status_gain_of_version_11(Table::with_default(Box::new(decider)));
+        let first = game.legal_options().expect("a gained token is asked");
+        assert_eq!(first.player, a);
+        assert_eq!(first.details["mode"], "gain");
+        assert_eq!(first.details["tokens_to_place"], 2);
+
+        while game.tokens.is_some() {
+            assert_eq!(game.step().error, None);
+        }
+
+        let asked = seen.borrow();
+        let subtypes: Vec<_> = asked
+            .iter()
+            .map(|choice| {
+                let context = choice.context.as_ref().expect("typed context");
+                (choice.player.clone(), context.subtype.clone())
+            })
+            .collect();
+        let gain = |seat: &PlayerId| (seat.clone(), "gain_command_token".to_owned());
+        let redistribute =
+            |seat: &PlayerId| (seat.clone(), "status_redistribute_tokens".to_owned());
+        assert_eq!(
+            subtypes,
+            [
+                gain(&a),
+                gain(&a),
+                gain(&b),
+                gain(&b),
+                redistribute(&a),
+                redistribute(&b)
+            ]
+        );
+        for choice in &asked[4..] {
+            assert!(
+                choice.details.get("gained").is_none(),
+                "nothing more is gained"
+            );
+        }
+        // The first option: the gain into tactic (b has room for one), then nothing in tactic,
+        // the least in fleet, the rest in strategy.
+        let sheet = |seat: &PlayerId| game.pools_of(seat);
+        assert_eq!(sheet(&a), [0, 2, 8]);
+        assert_eq!(sheet(&b), [0, 2, 14]);
+        assert_eq!(game.state.tokens_in_reinforcements(&b), 0);
+
+        // The log of those answers replays to the same events and state.
+        let log: Vec<String> = asked
+            .iter()
+            .map(|choice| choice.options[0].id.clone())
+            .collect();
+        let mut again =
+            status_gain_of_version_11(Table::with_default(Box::new(Scripted::new(log))));
+        while again.tokens.is_some() {
+            assert_eq!(again.step().error, None);
+        }
+        assert_eq!(again.events, game.events);
+        assert!(again.state == game.state, "same state after the replay");
     }
 
     /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed

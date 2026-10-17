@@ -542,7 +542,7 @@
     "agenda_seq": 0,
     "transactions_this_round": [],
     "turn_seq": 0,
-    "rules_version": 11,
+    "rules_version": 12,
     "feat_occurrence_seq": 0,
     "scored_feat_occurrences": [],
     "vp_ledger": [],

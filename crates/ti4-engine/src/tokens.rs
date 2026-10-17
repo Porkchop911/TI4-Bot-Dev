@@ -4,10 +4,12 @@
 //! The status phase's gain is not asked token by token: the redistribution that follows it
 //! decides where every token ends up, so [`TokenGain`] only counts what each seat gains and
 //! [`TokenRedistribution::with_gain`] asks once over the larger sheet. Leadership's gain, which no
-//! redistribution follows, asks a pool for each token in `strategy_cards::gain_tokens`.
+//! redistribution follows, asks a pool for each token in `strategy_cards::gain_tokens`. A game
+//! from before `RULES_STATUS_GAIN` asks the status phase's gain token by token too
+//! ([`TokenGain::pending_choice`]), and its redistribution comes after over what is placed.
 
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, TokenPool};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 
@@ -21,10 +23,31 @@ pub const POOL_KIND: &str = "pool";
 /// they modify the count handed to [`TokenGain::for_status`], not this constant.
 pub const STATUS_TOKENS: u32 = 2;
 
+/// A pool could not be selected from the state that was presented.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TokenGainError {
+    #[error("the token-gain window is complete")]
+    Complete,
+    #[error("player {0} is no longer seated")]
+    PlayerMissing(PlayerId),
+    #[error("option id {0:?} does not name a command-token pool")]
+    UnknownPool(String),
+    #[error(transparent)]
+    IllegalChoice(#[from] IllegalChoice),
+}
+
+/// The pools a gained token may enter, in the oracle's option order.
+const POOLS: [(&str, TokenPool, &str); 3] = [
+    ("tactic_tokens", TokenPool::Tactic, "tactic pool"),
+    ("fleet_tokens", TokenPool::Fleet, "fleet pool"),
+    ("strategic_tokens", TokenPool::Strategic, "strategy pool"),
+];
+
 /// What each seat gains at status step 81.5, in initiative order.
 ///
-/// The gained tokens are placed by the redistribution that follows (see
-/// [`TokenRedistribution::with_gain`]), so this holds counts, not a decision.
+/// From `RULES_STATUS_GAIN` the gained tokens are placed by the redistribution that follows (see
+/// [`TokenRedistribution::with_gain`]), so this holds counts, not a decision. An older game places
+/// them one at a time, each into a chosen pool ([`Self::pending_choice`], [`Self::resolve`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenGain {
     /// One entry per token owed, in resolution order.
@@ -75,6 +98,65 @@ impl TokenGain {
     #[must_use]
     pub fn remaining_for(&self, player: &PlayerId) -> usize {
         self.pending.iter().filter(|next| *next == player).count()
+    }
+
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// How many tokens the next player still has to place, this one included (before
+    /// `RULES_STATUS_GAIN`).
+    #[must_use]
+    pub fn remaining_for_next_player(&self) -> usize {
+        self.pending
+            .first()
+            .map_or(0, |next| self.remaining_for(next))
+    }
+
+    /// The choice for the next token, or `None` once every token is placed (before
+    /// `RULES_STATUS_GAIN`).
+    #[must_use]
+    pub fn pending_choice(&self) -> Option<Choice> {
+        let player = self.pending.first()?;
+        Some(Choice::new(
+            player.clone(),
+            "gain a command token into which pool",
+            POOLS
+                .iter()
+                .map(|(id, _, label)| ChoiceOption::labelled(*id, POOL_KIND, *label))
+                .collect(),
+        ))
+    }
+
+    /// Place the next token into the chosen pool (before `RULES_STATUS_GAIN`).
+    ///
+    /// # Errors
+    /// [`TokenGainError::Complete`] when no token remains, [`TokenGainError::IllegalChoice`]
+    /// when the answer was not offered, [`TokenGainError::UnknownPool`] when it does not name a
+    /// pool, and [`TokenGainError::PlayerMissing`] when the player has left the table.
+    pub fn resolve(
+        &mut self,
+        state: &mut GameState,
+        answer: ChoiceOption,
+    ) -> Result<TokenPool, TokenGainError> {
+        let choice = self.pending_choice().ok_or(TokenGainError::Complete)?;
+        let option = validate(&choice, answer)?;
+        let Some(pool) = POOLS
+            .iter()
+            .find(|(id, _, _)| *id == option.id)
+            .map(|(_, pool, _)| *pool)
+        else {
+            return Err(TokenGainError::UnknownPool(option.id));
+        };
+        if state.player(&choice.player).is_none() {
+            return Err(TokenGainError::PlayerMissing(choice.player));
+        }
+        // 20.4a: a player with no token in reinforcements cannot gain one. The offer still
+        // happens -- it is the same decision either way -- and the gain is what comes up empty.
+        state.gain_token(&choice.player, pool, 1);
+        self.pending.remove(0);
+        Ok(pool)
     }
 }
 
