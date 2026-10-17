@@ -36,7 +36,11 @@ test("desktop: the right column is the players and the log, and the open step is
   const board = page.getByRole("region", { name: "Galaxy board" });
   const sheet = page.getByRole("region", { name: "Open step" });
   const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
-  const heading = sheet.locator("#step-panel").getByRole("heading").first();
+  const heading = sheet.getByRole("heading").first();
+  // The step of a tactical action is its selected tab: no heading says it again.
+  const step = sheet.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab", {
+    selected: true,
+  });
   const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
   const fits = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
@@ -84,12 +88,23 @@ test("desktop: the right column is the players and the log, and the open step is
 
   // The shortcut keys of the open step work as before: they read the step, not the screen.
   await page.keyboard.press("t");
-  await expect(heading).toHaveText("Activation");
+  await expect(step).toContainText("Activation");
+  // The sheet has the row of the context and its controls first, then the step tabs, then the
+  // step; the heading row is the context of the action, not the name of the step.
+  await expect(heading).toHaveText(/^Tactical action · /);
+  await expect(sheet.getByRole("heading", { name: "Activation", exact: true })).toHaveCount(0);
+  const headingBox = (await heading.boundingBox())!;
+  const tabsBox = (await sheet
+    .getByRole("tablist", { name: "Tactical action steps" })
+    .boundingBox())!;
+  const panelBox = (await sheet.locator("#step-panel").boundingBox())!;
+  expect(headingBox.y).toBeLessThan(tabsBox.y);
+  expect(tabsBox.y).toBeLessThan(panelBox.y);
   await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
   await page.locator("g.system.target:not(.plain)").first().click();
   await expect(send).toBeEnabled();
   await send.click();
-  await expect(heading).toHaveText("Movement");
+  await expect(step).toContainText("Movement");
   await fits();
   await page.screenshot({ path: `${SHOTS}/movement.png`, animations: "disabled" });
   // The movement of the draft is the viewer's decision, and private: the Log has no copy of it,
@@ -105,7 +120,7 @@ test("desktop: the right column is the players and the log, and the open step is
   await expect(sheet).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/fleet.png`, animations: "disabled" });
   await fleet.getByRole("button", { name: "Done with this system" }).click();
-  await expect(heading).toHaveText("Movement");
+  await expect(step).toContainText("Movement");
   expect(errors).toEqual([]);
 });
 
@@ -223,7 +238,7 @@ test("desktop: while the viewer decides a secondary, the sheet has its row and i
     await sheet.getByRole("button", { name: "Add tactic pool token" }).click();
   }
   await send.click();
-  await expect(sheet.locator("#step-panel")).toContainText("Strategic action · Sol");
+  await expect(sheet).toContainText("Strategic action · Sol");
 
   // The sheet: the row of the viewer with its choice, and no row of another seat.
   await expect(sheet).toContainText("Your decision");
@@ -260,7 +275,10 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
   const board = page.getByRole("region", { name: "Galaxy board" });
   const sheet = page.getByRole("region", { name: "Open step" });
   const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
-  const heading = sheet.locator("#step-panel").getByRole("heading").first();
+  const heading = sheet.getByRole("heading").first();
+  const step = sheet.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab", {
+    selected: true,
+  });
   const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
   const minimize = sheet.getByRole("button", { name: "Minimize" });
   const restore = sheet.getByRole("button", { name: "Restore" });
@@ -287,7 +305,7 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
 
   // A choice on the board while minimized keeps it minimized; the next step opens it.
   await page.keyboard.press("t");
-  await expect(heading).toHaveText("Activation");
+  await expect(step).toContainText("Activation");
   await minimize.click();
   await expect(restore).toContainText("Activation");
   await page.locator("g.system.target:not(.plain)").first().click();
@@ -295,7 +313,7 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
   await expect(send).toBeEnabled();
   await page.screenshot({ path: `${SHOTS}/minimized-activation.png`, animations: "disabled" });
   await send.click();
-  await expect(heading).toHaveText("Movement");
+  await expect(step).toContainText("Movement");
   await expect(minimize).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -387,8 +405,12 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   const tabs = turn.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab");
   await expect(tabs).toHaveText([/Activation/, /Movement/, /Space combat/]);
   await expect(tabs.last()).toHaveAttribute("aria-selected", "true");
-  await expect(turn.getByRole("heading", { name: "Space combat" })).toBeVisible();
-  await expect(turn).toContainText("Tactical action · ");
+  // The selected tab names the step; the heading row is the context of the action, above the tabs.
+  await expect(turn.getByRole("heading", { name: "Space combat" })).toHaveCount(0);
+  await expect(turn.getByRole("heading").first()).toHaveText(/^Tactical action · /);
+  expect((await turn.getByRole("heading").first().boundingBox())!.y).toBeLessThan(
+    (await tabs.first().boundingBox())!.y,
+  );
   await expect(turn).toContainText("Played now");
   // Each roll of the combat is a table, with the dice on its rows.
   const rolls = turn.getByRole("group", { name: "Rolls" });
@@ -417,10 +439,13 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   await expect(board.getByRole("status", { name: "Board shows" })).toHaveText(
     /^Round 1 · Turn \d+ · after Space combat$/,
   );
-  // The heading row names the turn, with the rows of the Log around it; the live row is the last.
-  const turns = turn.getByRole("navigation", { name: "Turns of the Log" });
-  await expect(turns).toContainText(/· Turn \d+/);
+  // The toolbar has "‹" and "›" to the rows of the Log around it; the live row is the last. The
+  // sheet has no line of its own for them.
+  const turns = header.getByRole("navigation", { name: "Turns of the Log" });
+  await expect(turns).toContainText(/Round 1 · Turn \d+ · /);
   await expect(turns.getByRole("button", { name: "Next turn" })).toBeDisabled();
+  await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toHaveCount(0);
+  await expect(turn.getByRole("button", { name: "Close" })).toHaveCount(0);
   // No control of the live game: the decision is a bar that says that it waits, with no footer.
   await expect(sheet).toHaveCount(0);
   await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveCount(0);
@@ -437,12 +462,21 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
 
   // The movement: what left each system, and the fleet in #29 now → after.
   await tabs.nth(1).click();
-  await expect(turn.getByRole("heading", { name: "Movement" })).toBeVisible();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(board.getByRole("status", { name: "Board shows" })).toHaveText(/after Movement$/);
   await expect(turn).toContainText("4 ships · 3 cargo");
   await expect(turn).toContainText("0 → 2");
   await expect(turn).not.toContainText("Choose a system on the map");
   await page.screenshot({ path: `${SHOTS}/turn-movement.png`, animations: "disabled" });
+
+  // "▾" minimizes the turn to one line, and the screen stays in the history mode; the line gives
+  // it back.
+  await turn.getByRole("button", { name: "Minimize" }).click();
+  await expect(tabs).toHaveCount(0);
+  await expect(turn.getByRole("button", { name: "Restore" })).toContainText("Movement");
+  await expect(header).toContainText("History");
+  await turn.getByRole("button", { name: "Restore" }).click();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
 
   // Esc closes the turn, and the decision is back.
   await page.keyboard.press("Escape");
@@ -527,8 +561,8 @@ test("desktop: a strategic turn of the Log opens to its card and a row for each 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/strategic-turn.png`, animations: "disabled" });
-  // "×" closes it.
-  await turn.getByRole("button", { name: "Close" }).click();
+  // "Back to now" closes it.
+  await page.getByRole("button", { name: "Back to now" }).click();
   await expect(turn).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -565,7 +599,7 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   await expect(
     page.getByRole("region", { name: "Galaxy board" }).getByRole("status", { name: "Board shows" }),
   ).toHaveText("Round 1 · end of the Strategy phase");
-  await expect(turn.locator("#step-panel > div").first()).not.toContainText("Resolved");
+  await expect(turn.locator("aside > div").first()).not.toContainText("Resolved");
   const picks = turn.locator("ul[aria-label=Picks] > li");
   await expect(picks).toHaveCount(8);
   await expect(picks.filter({ hasText: "You" })).toContainText("Imperial");
@@ -573,17 +607,17 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await page.screenshot({ path: `${SHOTS}/phase.png`, animations: "disabled" });
   // "‹" and "›" go to the rows of the Log around it: the phase is the first row.
-  const turns = turn.getByRole("navigation", { name: "Turns of the Log" });
-  await expect(turns.locator("span")).toHaveText("Round 1");
+  const turns = page.locator("header").getByRole("navigation", { name: "Turns of the Log" });
+  await expect(turns.locator("strong")).toHaveText("Round 1 · Strategy phase");
   await expect(turns.getByRole("button", { name: "Previous turn" })).toBeDisabled();
   await turns.getByRole("button", { name: "Next turn" }).click();
   await expect(phase).toHaveAttribute("aria-pressed", "false");
   await expect(log.getByRole("button", { pressed: true })).toHaveCount(1);
-  await expect(turns.locator("span")).toHaveText(/· Turn 1$/);
+  await expect(turns.locator("strong")).toHaveText(/^Round 1 · Turn 1 · /);
   await expect(page.locator("header")).toContainText(/Round 1 · Turn 1 · /);
   await turns.getByRole("button", { name: "Previous turn" }).click();
   await expect(phase).toHaveAttribute("aria-pressed", "true");
-  await turn.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   await expect(turn).toHaveCount(0);
 
   // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.

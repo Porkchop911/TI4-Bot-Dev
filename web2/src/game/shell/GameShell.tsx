@@ -3,7 +3,7 @@ import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "
 import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhoneScreen } from "../../ui";
 import { ActionFooter, footerOf } from "../action/ActionPanel";
 import { StepSheet } from "../action/StepSheet";
-import { Board } from "../board/Board";
+import { Board, showsInspector } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
 import { LogPanel } from "../log/LogPanel";
@@ -261,6 +261,11 @@ export function GameShell({
   // The open step is a sheet over the board. An open fleet, the open landings and the open build
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
+  // One sheet over the board at a time: on a phone the inspector of a system has the place of the
+  // step sheet and of an opened turn, and its "×" gives it back. Desktop has the inspector at the
+  // bottom left and the step sheet at the bottom right: they do not cover each other.
+  const inspecting = phone && showsInspector(view.board, phone);
+  const [turnMinimized, setTurnMinimized] = useState<string | null>(null);
   const step = view.inspect ? (
     // A turn of the Log that is open has the place of the step sheet, in the history mode.
     <TurnSheet
@@ -269,9 +274,13 @@ export function GameShell({
       fresh={fresh}
       mark={ACCENT[view.accent]}
       status={view.toolbar.status}
+      minimized={turnMinimized === view.inspect.turn}
+      onMinimized={(minimized) => setTurnMinimized(minimized ? view.inspect!.turn : null)}
+      covered={inspecting}
     />
   ) : (
-    !boardSheet && (
+    !boardSheet &&
+    !inspecting && (
       <StepSheet
         view={view.action}
         status={view.toolbar.status}
@@ -296,7 +305,7 @@ export function GameShell({
               other={other}
               settings={!!dev}
               table={!!table}
-              history={view.inspect?.title ?? null}
+              history={view.inspect ?? null}
             />
           }
           board={

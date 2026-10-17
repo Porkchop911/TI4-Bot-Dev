@@ -105,6 +105,13 @@ function SystemInspector({ view }: { view: InspectorView }) {
   );
 }
 
+/**
+ * The inspector of a system is shown: on a phone the step sheet over the map has the choice at its
+ * chosen system (the planets of Construction), and the inspector of that system would cover it.
+ */
+export const showsInspector = (view: BoardView, phone: boolean): boolean =>
+  !!view.inspector && !(phone && view.blocks && view.task?.chosen[view.inspector.system]);
+
 /** The board fills the left of the shell. Everything else on it floats: views, tools, inspector. */
 export function Board({ view, children }: { view: BoardView; children?: ReactNode }) {
   const [mapView, setMapView] = useState<MapViewId>("standard");
@@ -200,11 +207,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       >
         <GalaxyMap view={view} mapView={mapView} svgRef={svg} />
       </div>
-      {/* On a phone the step sheet over the map has the choice at its chosen system (the planets of
-          Construction): the inspector of that system would cover it. */}
-      {view.inspector && !(phone && view.blocks && view.task?.chosen[view.inspector.system]) && (
-        <SystemInspector view={view.inspector} />
-      )}
+      {showsInspector(view, phone) && <SystemInspector view={view.inspector!} />}
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}

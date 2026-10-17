@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { ActionView, InspectView, Intent } from "../../model";
 import { Button, cx, Icon, PhoneScope, ReadOnlyScope, usePhoneScreen } from "../../ui";
 import { ActionPanel } from "../action/ActionPanel";
+import { MinimizedLine } from "../action/StepSheet";
 import { GameProvider, useDispatch, useSeats } from "../context";
 
 /**
@@ -79,10 +80,10 @@ export function WaitingBar({
 /**
  * A turn or a phase of the Log, opened: its action as Live showed it, read-only, in the place of
  * the step sheet, over the board as it was then. The screen is in the history mode: the board is
- * hatched, a stamp over the sheet says which point it shows, and the
- * heading row names the turn with "‹" and "›" to the rows of the Log around it. Its step tabs are
+ * hatched, a stamp over the sheet says which point it shows; the toolbar names the
+ * turn with "‹" and "›" to the rows of the Log around it. Its step tabs are
  * a view of the turn; a row and a token show what was done and are no control, the inspector of a
- * system stays. "×" closes it. The viewer's open decision is not shown: its bar says that it
+ * system stays. "▾" minimizes it to one line, as the step sheet. The viewer's open decision is not shown: its bar says that it
  * waits, and "Back" closes the turn and gives it back.
  */
 export function TurnSheet({
@@ -91,8 +92,19 @@ export function TurnSheet({
   fresh,
   mark,
   status,
+  minimized,
+  onMinimized,
+  covered = false,
 }: {
   view: InspectView;
+  /** The sheet of the turn is one line, so that the board is in view. */
+  minimized: boolean;
+  onMinimized: (minimized: boolean) => void;
+  /**
+   * Another sheet has the place of the turn on a phone (the inspector of a system): one sheet over
+   * the board at a time. The board stays the past one.
+   */
+  covered?: boolean;
   /** The colour of the live workspace, for the mark of a decision that came. */
   mark: string;
   /** The viewer's open decision. Null: none. */
@@ -115,40 +127,13 @@ export function TurnSheet({
       return dispatch(intent);
     }
   };
-  const go = (turn: string | null) => turn && dispatch({ type: "inspectTurn", turn });
-  const step =
-    "grid size-7 shrink-0 place-items-center rounded text-lg text-muted hover:text-text disabled:opacity-30 touch:size-9";
-  const nav = (
-    <nav aria-label="Turns of the Log" className="flex min-w-0 items-center">
-      <button
-        type="button"
-        aria-label="Previous turn"
-        title="Previous turn"
-        disabled={!view.previous}
-        onClick={() => go(view.previous)}
-        className={step}
-      >
-        ‹
-      </button>
-      <span className="min-w-0 truncate text-sm font-strong text-text" title={view.name}>
-        {view.name}
-      </span>
-      <button
-        type="button"
-        aria-label="Next turn"
-        title="Next turn"
-        disabled={!view.next}
-        onClick={() => go(view.next)}
-        className={step}
-      >
-        ›
-      </button>
-    </nav>
-  );
-  const panel = (
+  // Minimized, the turn is one line, as the step sheet: a tap on it restores it.
+  const panel = minimized ? (
+    <MinimizedLine view={view.action} onRestore={() => onMinimized(false)} />
+  ) : (
     <ReadOnlyScope>
       <GameProvider seats={seats} dispatch={read}>
-        <ActionPanel view={view.action} status={status} onClose={close} nav={nav} />
+        <ActionPanel view={view.action} status={status} onMinimize={() => onMinimized(true)} />
       </GameProvider>
     </ReadOnlyScope>
   );
@@ -185,20 +170,24 @@ export function TurnSheet({
     return (
       <>
         {past}
-        {/* The stamp is a part of what covers the board: no system is framed under it. */}
-        <div
-          data-covers-board=""
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
-        >
-          <div className="flex px-2.5">{stamp}</div>
-          <div
-            role="region"
-            aria-label="Turn"
-            className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-auto border-t border-line-strong bg-surface"
-          >
-            {panel}
-          </div>
-        </div>
+        {!covered && (
+          <>
+            {/* The stamp is a part of what covers the board: no system is framed under it. */}
+            <div
+              data-covers-board=""
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
+            >
+              <div className="flex px-2.5">{stamp}</div>
+              <div
+                role="region"
+                aria-label="Turn"
+                className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-auto border-t border-line-strong bg-surface"
+              >
+                {panel}
+              </div>
+            </div>
+          </>
+        )}
       </>
     );
   }

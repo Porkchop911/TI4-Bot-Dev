@@ -40,11 +40,12 @@ export function Toolbar({
   /** The game has a table: the sheet "Table" is the last reference sheet. */
   table?: boolean;
   /**
-   * The history mode: which point of the game the screen shows ("Round 1 · Turn 5 · Mahact"). The
-   * status of the game and the workspace give way to it and to "Back to now"; no control of the
-   * live game or of the draft is shown. Null: the screen shows now.
+   * The history mode: which point of the game the screen shows ("Round 1 · Turn 5 · Mahact"), with
+   * "‹" and "›" to the rows of the Log around it that open. The status of the game and the
+   * workspace give way to it and to "Back to now"; no control of the live game or of the draft is
+   * shown. Null: the screen shows now.
    */
-  history?: string | null;
+  history?: { title: string; previous: string | null; next: string | null } | null;
 }) {
   const dispatch = useDispatch();
   const references: (readonly [string, string])[] = table
@@ -62,6 +63,19 @@ export function Toolbar({
       {label}
     </button>
   );
+  // "‹" and "›" of the history mode: as small as the line of text they stand in.
+  const step = (label: string, sign: string, turn: string | null) => (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={!turn}
+      onClick={() => turn && dispatch({ type: "inspectTurn", turn })}
+      className="-my-1 grid h-6 w-5 shrink-0 place-items-center rounded text-base leading-none text-muted hover:text-text disabled:opacity-30 touch:h-8 touch:w-7"
+    >
+      <span aria-hidden="true">{sign}</span>
+    </button>
+  );
   const draftItems = [
     { label: "Start over", onSelect: () => dispatch({ type: "startOver" }) },
     { label: "Discard draft", onSelect: () => dispatch({ type: "discardDraft" }) },
@@ -75,9 +89,16 @@ export function Toolbar({
               <Icon name="history" className="size-3.5" />
               History
             </span>
-            <strong className="truncate text-sm font-semibold text-text" title={history}>
-              {history}
-            </strong>
+            <nav aria-label="Turns of the Log" className="-ml-1 flex min-w-0 items-center">
+              {step("Previous turn", "‹", history.previous)}
+              <strong
+                className="min-w-0 truncate text-sm font-semibold text-text"
+                title={history.title}
+              >
+                {history.title}
+              </strong>
+              {step("Next turn", "›", history.next)}
+            </nav>
           </div>
           <Button tone="quiet" size="sm" onClick={() => dispatch({ type: "closeTurn" })}>
             Back to now

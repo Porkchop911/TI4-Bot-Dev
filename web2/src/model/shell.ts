@@ -319,10 +319,8 @@ export interface InspectView {
   /** The id of the turn (`LogTurnView.id`) or of the phase (`LogPhaseView.id`). */
   turn: string;
   action: ActionView;
-  /** Which point the screen shows, in the toolbar: "Round 1 · Turn 5 · Mahact", "Round 1 · Status phase". */
+  /** Which point the screen shows, in the toolbar between "‹" and "›": "Round 1 · Turn 5 · Mahact", "Round 1 · Status phase". */
   title: string;
-  /** The turn in the heading row of the sheet: "Mahact · Turn 5"; a phase, whose heading names it: "Round 1". */
-  name: string;
   /** What the board shows: "Round 1 · Turn 5 · after Movement", "Round 1 · end of the Status phase". */
   stamp: string;
   /** The rows of the Log before and after it that open. Null: none. */

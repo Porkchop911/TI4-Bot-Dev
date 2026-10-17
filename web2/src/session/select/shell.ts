@@ -296,7 +296,7 @@ const opens = (log: LogView) =>
 
 /**
  * A row of the Log that is open, in the history mode: which point of the game the screen shows
- * (the toolbar, the heading row of the sheet, the stamp on the board) and the rows around it. The
+ * (the toolbar with "‹" and "›" to the rows around it, the stamp on the board). The
  * pill "Resolved" is gone: the mode says it. "Played now" stays on the row that is played now.
  */
 function inspectOf(
@@ -313,33 +313,28 @@ function inspectOf(
   const shown: ActionView =
     action.kind === "tactical"
       ? { ...action, task: { ...action.task, pill: resolved(action.task.pill) } }
-      : // A phase has its round in the heading row once: beside "‹" and "›".
+      : // A phase has its round once: in the toolbar.
         {
           ...action,
           pill: resolved(action.pill),
           context: entry?.kind === "phase" ? null : action.context,
         };
   let title = "";
-  let name = "";
   let stamp = "";
   if (entry?.kind === "turn") {
     const seat = seatLabel(update, entry.seat, printed);
     title = `Round ${entry.round} · Turn ${entry.turn} · ${seat}`;
-    name = `${seat} · Turn ${entry.turn}`;
     const step = action.kind === "tactical" ? action.tabs[action.selected]?.name : null;
     stamp = `Round ${entry.round} · Turn ${entry.turn} · ${step ? `after ${step}` : "end of the turn"}`;
   } else if (entry) {
     const phase = entry.label.split(" · ")[0];
     title = `Round ${entry.round} · ${phase}`;
-    // The heading of the sheet is the phase already.
-    name = `Round ${entry.round}`;
     stamp = `Round ${entry.round} · end of the ${phase}`;
   }
   return {
     turn: id,
     action: shown,
     title,
-    name,
     stamp,
     previous: at > 0 ? rows[at - 1].id : null,
     next: at >= 0 && at < rows.length - 1 ? rows[at + 1].id : null,

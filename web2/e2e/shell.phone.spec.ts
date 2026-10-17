@@ -204,7 +204,7 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     await sheet.getByRole("button", { name: "Add tactic pool token" }).click();
   }
   await send.click();
-  await expect(sheet.locator("#step-panel")).toContainText("Strategic action · Sol");
+  await expect(sheet).toContainText("Strategic action · Sol");
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
   await expect(sheet).not.toContainText("Resolved");
   await expect(sheet).not.toContainText("Then: ");
@@ -274,7 +274,7 @@ test("phone: the step sheet minimizes to its heading line, the main button under
 test("phone: a tactical turn of the Log opens on Map over the board, read-only, in the history mode with the decision as a bar that waits", async ({
   page,
 }) => {
-  test.setTimeout(10_000);
+  test.setTimeout(20_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -313,6 +313,11 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
   await expect(turn).toBeVisible();
   const tabs = turn.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab");
   await expect(tabs).toHaveText([/Activation/, /Movement/, /Space combat/]);
+  // The heading row is the context of the action and comes first; the tab names the step.
+  const heading = turn.getByRole("heading").first();
+  await expect(heading).toHaveText(/^Tactical action · /);
+  await expect(turn.getByRole("heading", { name: "Space combat" })).toHaveCount(0);
+  expect((await heading.boundingBox())!.y).toBeLessThan((await tabs.first().boundingBox())!.y);
   await expect(turn.getByRole("img", { name: /^Rolled \d+: (hit|miss)$/ }).first()).toBeVisible();
   await expect(turn.locator("input, select, textarea")).toHaveCount(0);
   // The history mode: the toolbar says which point of the game the screen shows, with the way
@@ -333,7 +338,13 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
     .locator('[aria-label*="the open window or turn is about this system"]');
   const [system, mark] = [(await marked.boundingBox())!, (await stamp.boundingBox())!];
   expect(system.y + system.height).toBeLessThanOrEqual(mark.y);
-  await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toBeVisible();
+  // "‹" and "›" are in the toolbar, around the turn, in one line; the sheet has no line for them.
+  const turns = header.getByRole("navigation", { name: "Turns of the Log" });
+  await expect(turns.getByRole("button", { name: "Previous turn" })).toBeVisible();
+  await expect(turns.getByRole("button", { name: "Next turn" })).toBeDisabled();
+  expect((await turns.boundingBox())!.height).toBeLessThan(40);
+  await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toHaveCount(0);
+  await expect(turn.getByRole("button", { name: "Close" })).toHaveCount(0);
   // No control of the live game: the decision is a bar in the place of the footer.
   await expect(send).toHaveCount(0);
   await expect(page.getByText("This commits to the live game")).toHaveCount(0);
@@ -344,9 +355,46 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
   expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/turn.png`, animations: "disabled" });
 
-  // "×" closes it, and the step sheet is back; so does "Back" of the bar.
-  await turn.getByRole("button", { name: "Close" }).click();
+  // One sheet over the board at a time: the inspector of a system has the place of the turn, the
+  // board stays the past one, and its "×" gives the turn back.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  await page.locator("g.system").filter({ hasText: "#29" }).first().click();
+  const close = board.getByRole("button", { name: "Close system details" });
+  await expect(close).toBeVisible();
   await expect(turn).toHaveCount(0);
+  await expect(board.locator("[data-past]")).toHaveCount(1);
+  await expect(waiting).toBeInViewport();
+  await page.screenshot({ path: `${SHOTS}/turn-inspector.png`, animations: "disabled" });
+  await close.click();
+  await expect(turn).toBeVisible();
+
+  // "▾" minimizes the turn to one line; the screen stays in the history mode.
+  await turn.getByRole("button", { name: "Minimize" }).click();
+  await expect(tabs).toHaveCount(0);
+  await expect(turn.getByRole("button", { name: "Restore" })).toContainText("Space combat");
+  await expect(header).toContainText("History");
+  await page.screenshot({ path: `${SHOTS}/turn-minimized.png`, animations: "disabled" });
+  await turn.getByRole("button", { name: "Restore" }).click();
+  await expect(tabs).toHaveCount(3);
+
+  // "Back to now" ends the mode, and the step sheet is back; so does "Back" of the bar.
+  await header.getByRole("button", { name: "Back to now" }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet).toBeVisible();
+  // The live step has the same order: the context, then the tabs, then the step.
+  const live = sheet.getByRole("heading").first();
+  await expect(live).toHaveText(/^Tactical action · /);
+  expect((await live.boundingBox())!.y).toBeLessThan(
+    (await sheet.getByRole("tablist", { name: "Tactical action steps" }).boundingBox())!.y,
+  );
+  await page.screenshot({ path: `${SHOTS}/live-step.png`, animations: "disabled" });
+  // The inspector has the place of the step sheet too, and gives it back. (#29 is under the
+  // sheet: the click is sent to it.)
+  await page.locator("g.system").filter({ hasText: "#29" }).first().dispatchEvent("click");
+  await expect(close).toBeVisible();
+  await expect(sheet).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/live-inspector.png`, animations: "disabled" });
+  await close.click();
   await expect(sheet).toBeVisible();
   await expect(send).toBeVisible();
   await pane("Log").click();
@@ -406,7 +454,7 @@ test("phone: a strategic turn of the Log opens on Map, with its seats, and the m
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/strategic-turn.png`, animations: "disabled" });
-  await turn.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Back to now" }).click();
   await expect(turn).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -441,7 +489,7 @@ test("phone: a phase of the Log opens on Map with what the seats did in it", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/phase.png`, animations: "disabled" });
-  await turn.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Back to now" }).click();
   await expect(turn).toHaveCount(0);
   expect(errors).toEqual([]);
 });

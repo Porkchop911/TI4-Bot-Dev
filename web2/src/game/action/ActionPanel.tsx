@@ -148,11 +148,11 @@ export function pillBeyond(pill: PillView | null, status: string): PillView | nu
 export const footerOf = (view: ActionView): FooterView =>
   view.kind === "tactical" ? view.task.footer : view.footer;
 
-interface TaskPanelProps {
-  heading: string;
+interface HeadingRowProps {
+  /** Null: the selected step tab names it (a tactical action), and the context leads the row. */
+  heading: string | null;
   /** What the heading does not say, muted beside it. */
   context: string | null;
-  interrupt: InterruptView | null;
   pill: PillView | null;
   /** "Not sent" while a choice is staged. */
   badge: PillView | null;
@@ -160,39 +160,108 @@ interface TaskPanelProps {
   edit?: TaskView["edit"];
   /** Rules and explanations. They are shown on hover or click only. */
   help: HelpView[];
-  /** Null when the shell shows the footer itself. */
-  footer: FooterView | null;
-  /** Scroll position is kept while this stays the same. */
-  contentKey: string;
-  labelledBy?: string;
   /** Minimizes the step sheet to its heading line. Absent where the panel is not a sheet. */
   onMinimize?: () => void;
-  /** Closes the panel: "×" at the end of the heading row. Absent: it has none. */
-  onClose?: () => void;
-  /** Before "×": the way to the rows around a turn of the Log that is open. */
-  nav?: ReactNode;
-  children: ReactNode;
 }
 
-/** The open step: heading with its state, the content, and a footer that says what the main button does. */
-function TaskPanel({
+/**
+ * The first row of the panel: the heading, or for a tactical action its context (the step is the
+ * selected tab under it), with its state and the controls of the sheet.
+ */
+function HeadingRow({
   heading,
   context,
-  interrupt,
   pill,
   badge,
   trail,
   edit,
   help,
+  onMinimize,
+}: HeadingRowProps) {
+  const dispatch = useDispatch();
+  const lead = heading ?? context ?? "";
+  return (
+    <div className="flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
+      {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
+      {/* The context of a tactical action gives way with "…": its pill stays on the line. */}
+      <span
+        className={cx(
+          "flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5",
+          heading && "phone:flex-wrap",
+        )}
+      >
+        {onMinimize && <SheetToggle open onToggle={onMinimize} />}
+        <h2
+          className={cx(
+            "min-w-0 truncate font-semibold tracking-[-.2px]",
+            heading ? "text-lg phone:whitespace-normal" : "text-base",
+          )}
+          title={lead}
+        >
+          {lead}
+        </h2>
+        {heading && context && (
+          <span className="min-w-0 shrink-[2] truncate text-sm text-muted" title={context}>
+            {context}
+          </span>
+        )}
+        {pill && (
+          <Badge tone={pill.tone} className="shrink-0">
+            {pill.label}
+          </Badge>
+        )}
+        {badge && (
+          <Badge tone={badge.tone} className="shrink-0">
+            {badge.label}
+          </Badge>
+        )}
+        {help.length > 0 && (
+          <span className="shrink-0">
+            <Hint label={`Rules: ${lead}`}>
+              {help.map((item) => (
+                <p key={item.title}>
+                  <strong className="block">{item.title}</strong>
+                  {item.text}
+                </p>
+              ))}
+            </Hint>
+          </span>
+        )}
+      </span>
+      <Trail items={trail} />
+      {edit && (
+        <Button
+          tone="quiet"
+          size="sm"
+          icon="edit"
+          className="ml-auto"
+          disabled={edit.disabled}
+          title={edit.hint}
+          onClick={() => dispatch({ type: "editStep", step: edit.step })}
+        >
+          {edit.label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** The open step: the band of a window, the content, and a footer that says what the main button does. */
+function TaskPanel({
+  interrupt,
   footer,
   contentKey,
   labelledBy,
-  onMinimize,
-  onClose,
-  nav,
   children,
-}: TaskPanelProps) {
-  const dispatch = useDispatch();
+}: {
+  interrupt: InterruptView | null;
+  /** Null when the shell shows the footer itself. */
+  footer: FooterView | null;
+  /** Scroll position is kept while this stays the same. */
+  contentKey: string;
+  labelledBy?: string;
+  children: ReactNode;
+}) {
   return (
     <section
       id="step-panel"
@@ -201,79 +270,6 @@ function TaskPanel({
       tabIndex={-1}
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
-        {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
-        <span
-          className={cx(
-            "flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5 phone:flex-wrap",
-            onClose && "flex-1",
-          )}
-        >
-          {onMinimize && <SheetToggle open onToggle={onMinimize} />}
-          <h2
-            className="min-w-0 truncate text-lg font-semibold tracking-[-.2px] phone:whitespace-normal"
-            title={heading}
-          >
-            {heading}
-          </h2>
-          {context && (
-            <span className="min-w-0 shrink-[2] truncate text-sm text-muted" title={context}>
-              {context}
-            </span>
-          )}
-          {pill && (
-            <Badge tone={pill.tone} className="shrink-0">
-              {pill.label}
-            </Badge>
-          )}
-          {badge && (
-            <Badge tone={badge.tone} className="shrink-0">
-              {badge.label}
-            </Badge>
-          )}
-          {help.length > 0 && (
-            <span className="shrink-0">
-              <Hint label={`Rules: ${heading}`}>
-                {help.map((item) => (
-                  <p key={item.title}>
-                    <strong className="block">{item.title}</strong>
-                    {item.text}
-                  </p>
-                ))}
-              </Hint>
-            </span>
-          )}
-          {nav && <span className="ml-auto flex min-w-0 shrink items-center">{nav}</span>}
-          {onClose && (
-            <button
-              type="button"
-              aria-label="Close"
-              title="Close"
-              onClick={onClose}
-              className={cx(
-                "-mr-1 shrink-0 rounded px-1 text-lg leading-6 text-muted hover:text-text touch:min-h-9 touch:min-w-9",
-                !nav && "ml-auto",
-              )}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          )}
-        </span>
-        <Trail items={trail} />
-        {edit && (
-          <Button
-            tone="quiet"
-            size="sm"
-            icon="edit"
-            className="ml-auto"
-            disabled={edit.disabled}
-            title={edit.hint}
-            onClick={() => dispatch({ type: "editStep", step: edit.step })}
-          >
-            {edit.label}
-          </Button>
-        )}
-      </div>
       {interrupt && <Interrupt view={interrupt} />}
       <div
         key={contentKey}
@@ -286,36 +282,59 @@ function TaskPanel({
   );
 }
 
+/** The heading of a tactical action: none where the selected step tab says it already. */
+export const tacticalHeading = (view: Extract<ActionView, { kind: "tactical" }>): string | null =>
+  view.tabs.length > 0 && view.tabs[view.selected]?.name === view.task.title
+    ? null
+    : view.task.title;
+
 /**
  * The action panel: one frame for every action. A tactical action has five steps, a strategic action
- * has two, a component action has none. Live and Draft use the same frame.
- * The panel has one width for every step. It is the viewer's decision (the step sheet): a block or a
- * step that only informs (`BlockRole`) is not in it, but in the live turn of the Log.
+ * has two, a component action has none. Live, Draft and an opened turn of the Log use the same frame:
+ * first the heading row with the context and the controls, then the step tabs of a tactical action,
+ * then the step. The panel has one width for every step. It is the viewer's decision (the step
+ * sheet): a block or a step that only informs (`BlockRole`) is not in it, but in the Log.
  */
 export function ActionPanel({
   view,
   status,
   footer = true,
   onMinimize,
-  onClose,
-  nav,
 }: {
   view: ActionView;
   /** The status in the toolbar. The pill of the heading does not say it again. */
   status: string;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;
-  /** Minimizes the step sheet to its heading line: "▾" before the heading. */
+  /** Minimizes the sheet to its heading line: "▾" before the heading. */
   onMinimize?: () => void;
-  /** Closes the panel: "×" in the heading row (a turn of the Log that is open). */
-  onClose?: () => void;
-  /** Before "×": the way to the rows around a turn of the Log that is open. */
-  nav?: ReactNode;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
   return (
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {view.kind === "tactical" ? (
+        <HeadingRow
+          heading={tacticalHeading(view)}
+          context={view.context}
+          pill={pillBeyond(view.task.pill, status)}
+          badge={view.badge}
+          trail={view.task.trail}
+          edit={view.task.edit}
+          help={view.task.help}
+          onMinimize={onMinimize}
+        />
+      ) : (
+        <HeadingRow
+          heading={view.heading}
+          context={view.context}
+          pill={pillBeyond(view.pill, status)}
+          badge={view.badge}
+          trail={view.trail}
+          help={view.help}
+          onMinimize={onMinimize}
+        />
+      )}
       {view.tabs.length > 0 && (
         <StepTabs
           label="Tactical action steps"
@@ -339,20 +358,10 @@ export function ActionPanel({
       )}
       {view.kind === "tactical" ? (
         <TaskPanel
-          heading={view.task.title}
-          context={view.context}
           interrupt={view.interrupt}
-          pill={pillBeyond(view.task.pill, status)}
-          badge={view.badge}
-          trail={view.task.trail}
-          edit={view.task.edit}
-          help={view.task.help}
           footer={footer ? view.task.footer : null}
           contentKey={view.contentKey}
           labelledBy={`step-tab-${view.selected}`}
-          onMinimize={onMinimize}
-          onClose={onClose}
-          nav={nav}
         >
           {view.task.review && <Review view={view.task.review} />}
           {/* A step that only informs (a combat that the viewer watches) is of the Log. */}
@@ -361,18 +370,9 @@ export function ActionPanel({
         </TaskPanel>
       ) : (
         <TaskPanel
-          heading={view.heading}
-          context={view.context}
           interrupt={view.interrupt}
-          pill={pillBeyond(view.pill, status)}
-          badge={view.badge}
-          trail={view.trail}
-          help={view.help}
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}
-          onMinimize={onMinimize}
-          onClose={onClose}
-          nav={nav}
         >
           {/* The blocks that only inform (the other seats, what happened) are of the Log. */}
           <Blocks blocks={view.blocks.filter((block) => !informs(block))} />
