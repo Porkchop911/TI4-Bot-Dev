@@ -99,3 +99,4 @@ fixtures/legacy_entropy/*
 node_modules/
 web/.e2e-dist/
 selfplay-results/
+.claude/settings.local.json
