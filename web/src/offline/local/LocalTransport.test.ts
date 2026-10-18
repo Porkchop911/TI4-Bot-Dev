@@ -31,6 +31,26 @@ async function open() {
 
 afterEach(() => vi.useRealTimers());
 
+describe("LocalTransport.gameVersions", () => {
+  const make = (cfg: StartConfig) =>
+    new LocalTransport({
+      gameId: GAME,
+      config: cfg,
+      engineVersions: { botVersion: 5, rulesVersion: 11 },
+      createPort: async () => new FakePort(),
+    });
+
+  it("a new game plays the newest bot", () => {
+    expect(make(config).gameVersions()).toEqual({ botVersion: 5, botRecorded: true, newestBot: 5, newestRules: 11 });
+  });
+  it("a resumed save names its bot; one from before the field plays version 1", () => {
+    const named = make({ resume: { ...save([]), bot_version: 4 } }).gameVersions();
+    expect(named).toMatchObject({ botVersion: 4, botRecorded: true });
+    const old = make({ resume: save([]) }).gameVersions();
+    expect(old).toMatchObject({ botVersion: 1, botRecorded: false });
+  });
+});
+
 describe("LocalTransport", () => {
   it("starts the engine with the config and shows the first question", async () => {
     const { transport, port, saves } = await open();

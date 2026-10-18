@@ -23,6 +23,21 @@ the page, the server and the MLP models do.
 Look at the machine first (`free -g`, `nproc`). With less than 4 GB, run every build alone, one
 after the other. Each step below is one command at a time; none runs in the background.
 
+The number of parallel jobs of cargo (steps 4 to 6) follows the memory:
+
+- **Less than 4 GB in total: `CARGO_BUILD_JOBS=1`, always.** With more jobs the kernel kills the
+  build (exit code 137, no error of cargo; the box has no swap). One job takes about 4 to 5 minutes
+  for the engine of the page and as long for the server.
+- 4 to 8 GB: `CARGO_BUILD_JOBS=2`. More than 8 GB: leave it out (cargo uses every core).
+- Set it for each command, not in `.cargo/config.toml` (the agents build in the same checkout):
+  ```
+  CARGO_BUILD_JOBS=1 scripts/pack-models.sh
+  CARGO_BUILD_JOBS=1 web2/scripts/build-wasm.sh
+  CARGO_BUILD_JOBS=1 cargo b-web
+  ```
+- With less than 4 GB, stop both Vite servers before the builds (`tmux send-keys -t ui C-c`, and
+  `-t web` for web/), and start them again after step 7 (step 8). Each takes about 300 MB.
+
 1. Fetch and update the branch. The working tree must be clean (`git status`).
    ```
    git fetch origin <branch>
@@ -36,13 +51,15 @@ after the other. Each step below is one command at a time; none runs in the back
 3. `cd web2 && npm install` (needed when `package.json` or `package-lock.json` changed; harmless
    otherwise).
 4. The models, when `models/index.json`, `crates/ti4-infer/` or `scripts/pack-models.sh` changed,
-   or `out/models/` is missing: `scripts/pack-models.sh`. It needs the bundles that the index names
-   (`examples/reviewer/checkpoint-473312`) and checks their SHA-256; a mismatch stops it. Without the
-   `brotli` CLI it writes no `.br`, and the server sends the plain file.
-5. The engine of the page: `web2/scripts/build-wasm.sh` (the release build, not `--dev`). Minutes
-   after a change of the engine or a `cargo clean`.
-6. The server: `cargo b-web`. Use only the alias, never `cargo run -p ti4-server` or
-   `cargo build -p ...`: another package set builds the engine again with other features.
+   or `out/models/` is missing: `scripts/pack-models.sh` (with `CARGO_BUILD_JOBS`, above). It needs
+   the bundles that the index names (`examples/reviewer/checkpoint-473312`) and checks their
+   SHA-256; a mismatch stops it. Without the `brotli` CLI it writes no `.br`, and the server sends
+   the plain file.
+5. The engine of the page: `web2/scripts/build-wasm.sh` (the release build, not `--dev`; with
+   `CARGO_BUILD_JOBS`, above). Minutes after a change of the engine or a `cargo clean`.
+6. The server: `cargo b-web` (with `CARGO_BUILD_JOBS`, above). Use only the alias, never
+   `cargo run -p ti4-server` or `cargo build -p ...`: another package set builds the engine again
+   with other features.
 7. Restart the server:
    ```
    tmux send-keys -t server C-c
@@ -50,7 +67,9 @@ after the other. Each step below is one command at a time; none runs in the back
    ```
    Without `TI4_MODEL_DIR` the server starts with no models, and single player has no MLP bots.
 8. Restart Vite when `vite.config.ts`, `package.json` or `tsconfig.json` changed (Vite does not
-   always pick that up by itself). Otherwise its HMR is enough, also for a new `ti4.wasm`.
+   always pick that up by itself), and start it again when it was stopped for the builds (with
+   less than 4 GB; `web` the same way, in `web/`). Otherwise its HMR is enough, also for a new
+   `ti4.wasm`.
    ```
    tmux send-keys -t ui C-c
    tmux send-keys -t ui 'clear; npm run dev' Enter

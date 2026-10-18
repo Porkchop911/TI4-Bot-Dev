@@ -49,12 +49,19 @@ export function useCamera(
     [apply],
   );
 
-  /** Frames the given systems, or the whole board. */
+  /**
+   * Frames the given systems, or the whole board. `covered` is the part of the height of the
+   * board that a sheet covers at its bottom (the step sheet of a phone): the systems are framed in
+   * the part above it.
+   */
   const fit = useCallback(
-    (ids?: string[]) => {
+    (ids?: string[], covered = 0) => {
       // No system to frame: the whole board.
       const picked = ids ? tiles.filter((tile) => ids.includes(tile.id)) : [];
-      const area = picked.length ? frame(picked) : box;
+      const systems = picked.length ? frame(picked) : null;
+      const under =
+        systems && covered > 0 && covered < 0.9 ? systems.h * (covered / (1 - covered)) : 0;
+      const area = systems ? { ...systems, cy: systems.cy + under / 2, h: systems.h + under } : box;
       camera.current = {
         x: area.cx - box.cx,
         y: area.cy - box.cy,
@@ -67,9 +74,9 @@ export function useCamera(
 
   /** For a new task: the whole board if it fits at a readable size, else the systems of the task. */
   const fitFor = useCallback(
-    (taskSystems: string[]) => {
+    (taskSystems: string[], covered = 0) => {
       const rect = galaxy.current!.getBoundingClientRect();
-      fit(Math.min(rect.width / box.w, rect.height / box.h) < 1 ? taskSystems : undefined);
+      fit(Math.min(rect.width / box.w, rect.height / box.h) < 1 ? taskSystems : undefined, covered);
     },
     [fit, box, galaxy],
   );

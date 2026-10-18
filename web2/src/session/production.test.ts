@@ -13,6 +13,7 @@ import {
   setCount,
   setGoods,
   sizes,
+  stagedCounts,
   stepsOf,
   togglePlanet,
   totals,
@@ -81,7 +82,7 @@ it("has the facts of the engine for the fixture", () => {
   expect(facts.planets.map((planet) => planet.planet)).not.toContain("quann");
 });
 
-it("adds up the staged purchases: units, cost after the discount, fleet and cargo", () => {
+it("adds up the staged purchases: units, cost after the discount, and the counts of the fleet", () => {
   const draft = built([CRUISER, "space"], [FIGHTER, "space"], [INFANTRY, "velnor"]);
   expect(sizes(facts, draft)).toEqual([1, 2, 2]);
   expect(totals(facts, draft)).toMatchObject({
@@ -89,16 +90,23 @@ it("adds up the staged purchases: units, cost after the discount, fleet and carg
     capacity: 13,
     cost: 3,
     paid: 0,
-    fleet: 4,
-    cargo: facts.transport.used + 2,
-    // A staged cruiser carries one unit more.
-    transport: facts.transport.limit + 1,
     available: 26,
   });
+  // The counts that the engine reads the fleet supply and the capacity from: the cruiser is a
+  // ship with a capacity of one, the fighters are fighters in space, the infantry is on a planet.
+  expect(stagedCounts(facts, draft)).toEqual({
+    ...facts.fleet,
+    ships: facts.fleet.ships + 1,
+    transport: facts.fleet.transport + 1,
+    fighters: facts.fleet.fighters + 2,
+  });
+  // The space docks of the system hold fighters, and Sol has Fighter II: the engine says so.
+  expect(facts.fleet.fighter_support).toBeGreaterThan(0);
+  expect(facts.fleet.fighters_to_fleet_pool).toBe(true);
   // The capacity follows the staged ships, and goes back with them.
   const sun = built([WARSUN, "space"]);
-  expect(totals(facts, sun).transport).toBe(facts.transport.limit + 6);
-  expect(totals(facts, removeBuild(sun, 0)).transport).toBe(facts.transport.limit);
+  expect(stagedCounts(facts, sun).transport).toBe(facts.fleet.transport + 6);
+  expect(stagedCounts(facts, removeBuild(sun, 0))).toEqual(facts.fleet);
   expect(totals(facts, EMPTY)).toMatchObject({ units: 0, cost: 0 });
   // A purchase only where the unit can be placed.
   expect(addBuild(facts, EMPTY, INFANTRY, "space")).toBe(EMPTY);
@@ -359,7 +367,24 @@ it("opens the production step with the build at the system that produces", () =>
 
 it("shows the staged build: the counters, the cost, the limits, and the board after it", () => {
   const draft = built([CRUISER, "space"], [FIGHTER, "space"], [INFANTRY, "velnor"]);
-  const view = selectShell(update, local({ inspected: "72", production: draft, canUndo: true }));
+  // The engine read the counts of the build: the space docks hold the two fighters.
+  const standing = {
+    fleet_limit: 5,
+    fleet_charged: 4,
+    transport: 10,
+    consumed: 0,
+    fighters_charged: 0,
+    capacity_excess: 0,
+  };
+  const view = selectShell(
+    update,
+    local({
+      inspected: "72",
+      production: draft,
+      canUndo: true,
+      standing: { key: JSON.stringify(stagedCounts(facts, draft)), response: standing },
+    }),
+  );
   const { action, sheet, footer } = production(view);
   expect(action.tabs[4].caption).toBe("5 units");
   expect(labels(footer)).toEqual(["Undo", "Reset selection", "Pay 3 resources"]);
@@ -378,7 +403,7 @@ it("shows the staged build: the counters, the cost, the limits, and the board af
     { label: "Production capacity", used: 5, total: 13 },
     { label: "Resources", used: 3, total: 26 },
     { label: "Fleet supply after", used: 4, total: 5 },
-    { label: "Fighters and cargo in space", used: 2, total: 10 },
+    { label: "Fighters and cargo in space", used: 0, total: 10 },
   ]);
   expect(view.accent).toBe("draft");
   const tile = (shell: typeof view) => shell.board.tiles.find((item) => item.id === "72")!;
@@ -460,4 +485,31 @@ it("produces at once what costs nothing", () => {
   const view = selectShell(update, local({ production: built([FIGHTER, "space"]) }));
   expect(labels(production(view).footer)).toEqual(["Reset selection", "Produce units"]);
   expect(production(view).sheet.cost).toBe(0);
+});
+
+it("pays with the face that the engine names, and with commodities as trade goods", () => {
+  // Archon's Gift: Lisis pays with its influence. The Keleres agent: two commodities pay.
+  const gifted: ProductionFacts = {
+    ...facts,
+    planets: facts.planets.map((planet) =>
+      planet.planet === "lisis" ? { ...planet, worth: 4, face: "influence" } : planet,
+    ),
+    commodities: 2,
+  };
+  let draft = built([CRUISER, "space"], [FIGHTER, "space"], [INFANTRY, "velnor"]);
+  draft = togglePlanet(gifted, draft, "lisis");
+  draft = setGoods(gifted, draft, 1, "commodity");
+  expect(totals(gifted, draft)).toMatchObject({ cost: 3, paid: 5, available: 26 + 2 + 2 });
+  const steps = stepsOf(gifted, draft);
+  expect(steps.filter((step) => step.kind === "pay")).toEqual([
+    { kind: "pay", source: "exhaust|lisis|influence" },
+    { kind: "pay", source: "commodity" },
+  ]);
+  // Staged again from its steps, the payment is the same.
+  const again = draftOf(gifted, steps as PlanStep[]);
+  expect(again).toMatchObject({ planets: ["lisis"], goods: 0, commodities: 1 });
+  // A commodity is spent before a trade good, and no more than the agent allows.
+  expect(setGoods(gifted, draft, 5, "commodity").commodities).toBe(2);
+  const paid = autoPay(gifted, { ...draft, planets: [], commodities: 0 });
+  expect(totals(gifted, paid).paid).toBe(3);
 });

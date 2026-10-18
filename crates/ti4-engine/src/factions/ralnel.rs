@@ -1926,7 +1926,7 @@ mod tests {
         state.player_mut(&sol()).unwrap().action_cards = vec![card.clone()];
         let mut resolver = crate::fixtures::armed_resolver(&state);
         crate::fixtures::with_context(&mut state, DEFAULT, None, &mut scripted(&[]), |ctx| {
-            crate::reactions::play(ctx, &mut resolver, &sol(), &card).expect("plays")
+            crate::reactions::play(ctx, &mut resolver, &sol(), &card, None).expect("plays")
         });
         assert!(
             !state.discarded_action_cards.contains(&card),
@@ -1954,7 +1954,7 @@ mod tests {
         state.player_mut(&sol()).unwrap().action_cards = vec![card.clone()];
         let mut resolver = crate::fixtures::armed_resolver(&state);
         crate::fixtures::with_context(&mut state, DEFAULT, None, &mut scripted(&[]), |ctx| {
-            crate::reactions::play(ctx, &mut resolver, &sol(), &card).expect("plays")
+            crate::reactions::play(ctx, &mut resolver, &sol(), &card, None).expect("plays")
         });
         assert!(state.discarded_action_cards.contains(&card));
     }

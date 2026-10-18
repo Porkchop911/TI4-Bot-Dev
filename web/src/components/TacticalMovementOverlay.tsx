@@ -495,7 +495,7 @@ export const TacticalMovementOverlay: React.FC<
   // the seat's token count only stands in when a choice carries no such detail.
   const engineSupply = readFleetSupply(choice?.details?.fleet_supply);
   const fleetTokens = engineSupply?.limit ?? player?.fleet_tokens;
-  const armadaBonus = engineSupply?.armada ?? 0;
+  const armadaBonus = engineSupply?.fleetSupplyBonus ?? 0;
 
   // Existing non-fighter ships already in active destination system
   const existingNonFightersInDestination = useMemo(() => {

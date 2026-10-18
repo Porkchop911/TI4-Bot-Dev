@@ -108,7 +108,7 @@ impl Default for PlayOptions {
     fn default() -> Self {
         Self {
             limits: Limits::default(),
-            tunings: vec![Tuning::default()],
+            tunings: vec![ti4_rule_bot::tuning::current()],
             candidate_seats: None,
             trace: false,
             timeline: true,
@@ -215,13 +215,8 @@ impl SelfPlay {
                     .copied()
                     .unwrap_or_default();
                 tuning::set(t);
-                let (picked, smart, _) = ti4_rule_bot::choose_explained(
-                    choice,
-                    Some(seen),
-                    sh.seed,
-                    seat,
-                    index,
-                );
+                let (picked, smart, _) =
+                    ti4_rule_bot::choose_explained(choice, Some(seen), sh.seed, seat, index);
                 (choice.options[picked].clone(), smart)
             }
             _ => (sh.random.choose(choice)?, false),
@@ -320,6 +315,7 @@ pub(crate) fn empty_for_tests() -> GameResult {
         card_set: None,
         rotation: None,
         starting_tech: false,
+        rules_version: None,
     };
     empty_result(
         &spec,

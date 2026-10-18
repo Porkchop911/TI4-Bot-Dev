@@ -28,6 +28,8 @@ export interface LobbyLocal {
   mine: string[];
   inspected: string | null;
   offline: boolean;
+  /** The bot that "+ Bot" and "Fill" put in a seat, as this page chose it. Null: the usual one. */
+  bot?: string | null;
 }
 
 /**
@@ -38,7 +40,7 @@ export interface LobbyLocal {
 const KIND_SIGNS: Record<string, LobbySignView["kind"]> = { smart: "rule", random: "random" };
 const kindSign = (kind: string): LobbySignView["kind"] | null =>
   kind.startsWith(MLP_PREFIX) ? "model" : (KIND_SIGNS[kind] ?? null);
-/** The kind of "Fill with …": the usual choice. */
+/** The kind of "+ Bot" and "Fill" until the page chose another: the usual choice. */
 const USUAL_KIND = "smart";
 /** One step of the wait of the seats that the server plays, in milliseconds. */
 const WAIT_STEP = 500;
@@ -311,7 +313,11 @@ export function selectLobby(
   const hostName =
     lobby.slots.find((slot) => slot.occupant === lobby.host_player_id)?.nickname ?? "the host";
 
-  const usual = kinds.find((kind) => kind.id === USUAL_KIND);
+  // The bot of "+ Bot" and "Fill": the one that this page chose, while the table offers it.
+  const bot =
+    kinds.find((kind) => kind.id === local.bot) ??
+    kinds.find((kind) => kind.id === USUAL_KIND) ??
+    kinds[0];
 
   const sheets = new Map<string, FactionSheetView | null>();
   const sheetOf = (faction: string) => {
@@ -356,11 +362,6 @@ export function selectLobby(
     const you = slot.occupant !== null && slot.occupant === viewer;
     const buttons: LobbyButtonView[] = [];
     if (slot.occupant === null) {
-      if (host) {
-        for (const kind of kinds) {
-          buttons.push({ label: kind.name, intent: { type: "addBot", kind: kind.id } });
-        }
-      }
       // One row has it: every open seat is the same seat until the game starts.
       if (viewer !== null && firstOpen && !single) {
         buttons.push({
@@ -439,6 +440,13 @@ export function selectLobby(
           }
         : { note: blocked || `Waiting for ${hostName} to start`, main: null, nickname: false };
 
+  // A table in the page has a seat more for "+ Bot" when none is open; a lobby has room for people.
+  const max = options?.max_players ?? 8;
+  const grows = single && (lobby.start_from ?? null) === null && seats < max;
+  const full = single
+    ? `Every seat is taken, and a table has ${max} seats at most`
+    : "No seat is open";
+
   const preview = table.preview;
   return {
     title: `${single ? "Single player" : before ? "Lobby" : "Table"} · ${plural(seats, "player")}`,
@@ -455,11 +463,39 @@ export function selectLobby(
     filled: `${seats - open} of ${seats}`,
     help: kinds.map((kind) => ({ title: kind.name, text: kind.description })),
     rows,
-    fill:
-      host && open > 0 && usual
+    bots:
+      host && before && bot
         ? {
-            label: `Fill with ${usual.name.toLowerCase()}s`,
-            intent: { type: "fillBots", kind: usual.id },
+            sign: {
+              kind: kindSign(bot.id) ?? "random",
+              word: `${bot.name}: played by ${playerOf(single)}`,
+            },
+            chosen: bot.id,
+            options: kinds.map((kind) => ({
+              id: kind.id,
+              label: kind.name,
+              intent: { type: "chooseBot", kind: kind.id },
+            })),
+            enabled: open > 0 || grows,
+            add: {
+              label: "+ Bot",
+              ...(open > 0 || grows
+                ? {
+                    title:
+                      open > 0 ? `${bot.name} in an open seat` : `A seat more, for ${bot.name}`,
+                    intent: { type: "addBot", kind: bot.id },
+                  }
+                : { title: full, intent: null }),
+            },
+            fill: {
+              label: "Fill",
+              ...(open > 0
+                ? {
+                    title: `${bot.name} in every open seat`,
+                    intent: { type: "fillBots", kind: bot.id },
+                  }
+                : { title: "No seat is open", intent: null }),
+            },
           }
         : null,
     shuffle:

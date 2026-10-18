@@ -67,6 +67,23 @@ describe("selectTokens", () => {
     ]);
   });
 
+  it("says the fleet supply bonus of the engine on the fleet pool only", () => {
+    const plain = selectTokens(question([3, 3, 2], 0), null)!;
+    expect(plain.block.rows.map((row) => row.subtitle)).toEqual([undefined, undefined, undefined]);
+    const letnev = question([3, 3, 2], 0);
+    letnev.details = {
+      ...letnev.details,
+      pools: { tactic: 3, fleet: 3, strategic: 2, fleet_supply_bonus: 2 },
+    };
+    const view = selectTokens(letnev, null)!;
+    expect(view.block.rows.map((row) => row.subtitle)).toEqual([undefined, "+2 supply", undefined]);
+    expect(view.block.rows[1].hint).toContain("2 more non-fighter ships");
+    // A staged arrangement keeps the bonus on the fleet pool, and its id is the pools only.
+    const staged = countPools(letnev, null, "pools.f", 4)!;
+    expect(staged.pools.fleet).toBe(4);
+    expect(selectTokens(letnev, staged.pools)!.block.rows[1].subtitle).toBe("+2 supply");
+  });
+
   it("takes the bounds of the counters from the offered arrangements", () => {
     const view = selectTokens(question([3, 3, 0], 2), null)!;
     expect(counters(view).map((counter) => [counter?.id, counter?.min, counter?.max])).toEqual([

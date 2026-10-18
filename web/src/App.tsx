@@ -10,6 +10,9 @@ import { playerDisplay } from "./presentation/playerDisplay.ts";
 import { Board } from "./components/Board.tsx";
 import { TurnStatusBar, TurnStatusDetails } from "./components/TurnStatusBar.tsx";
 import { useBuildInfo } from "./buildInfo.ts";
+import { engineLabel, useLoadedEngine } from "./offline/engineInfo.ts";
+import { summarizeVersions } from "./versionInfo.ts";
+import { VersionInfoDialog } from "./components/VersionInfo.tsx";
 import { PasswordScreen } from "./access/PasswordScreen.tsx";
 import { probeAccess, useAccessRequired } from "./access/accessGate.ts";
 import { FeedbackLauncher, openFeedback } from "./feedback/FeedbackLauncher.tsx";
@@ -66,6 +69,7 @@ import { ConnectionProblem, ReconnectingChip, useAfterDelay } from "./components
 import { readBreakthroughs } from "./presentation/breakthroughs.ts";
 import { readExplorationLog } from "./presentation/explorationToasts.ts";
 import { readAgendaLog } from "./presentation/agendaToasts.ts";
+import { readRelicLog } from "./presentation/relicToasts.ts";
 import { useBackUndo } from "./hooks/useBackUndo.ts";
 import { CornerToastLayer } from "./components/CornerToastLayer.tsx";
 import { NotificationLogButton, NotificationLogProvider } from "./components/NotificationLog.tsx";
@@ -434,6 +438,7 @@ const GameViewContainer: React.FC<{
     previewSecondary,
     queryReach,
     queryEngine,
+    gameVersions,
     batchResume,
     resumeBatch,
     dismissBatchResume,
@@ -445,6 +450,14 @@ const GameViewContainer: React.FC<{
   const shellMultiplayer = useCapability("multiplayer");
   const turnRedoOn = capabilities.turnRedo && shellTurnRedo;
   const multiplayerOn = capabilities.multiplayer && shellMultiplayer;
+  const loadedEngine = useLoadedEngine();
+  const versionSummary = summarizeVersions({
+    hosted: gameVersions ? gameVersions() : null,
+    state: snapshot?.state,
+    serverCommit: buildInfo.commit,
+    engine: engineLabel(loadedEngine),
+  });
+  const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   useRegisterFeedbackSource("game", () => ({
     gameId,
     viewer,
@@ -452,6 +465,7 @@ const GameViewContainer: React.FC<{
     pendingChoice: realPendingChoice,
     lobby,
     events,
+    versions: versionSummary,
   }));
   const reconnecting = useAfterDelay(
     (status !== "connected" || Boolean(reconnectingState) || Boolean(lobbyConnectionLost)) && !fatal,
@@ -562,6 +576,7 @@ const GameViewContainer: React.FC<{
   const explorationLog = useMemo(() => readExplorationLog(snapshot?.state), [snapshot?.state]);
   const breakthroughs = useMemo(() => readBreakthroughs(snapshot?.state), [snapshot?.state]);
   const agendaLog = useMemo(() => readAgendaLog(snapshot?.state), [snapshot?.state]);
+  const relicLog = useMemo(() => readRelicLog(snapshot?.state), [snapshot?.state]);
   const planetResources = useMemo(() => planetResourceMap(snapshot?.view.board), [snapshot?.view.board]);
   const planetInfluence = useMemo(() => planetInfluenceMap(snapshot?.view.board), [snapshot?.view.board]);
   const planetBoosts = useMemo(() => planetBoostMap(snapshot?.view.board), [snapshot?.view.board]);
@@ -765,6 +780,7 @@ const GameViewContainer: React.FC<{
         explorations={explorationLog}
         breakthroughs={breakthroughs}
         agendas={agendaLog}
+        relics={relicLog}
         table={snapshot?.view.table}
       />
       <MobileMenuSlotContext.Provider value={compactLayout ? menuSlotValue : null}>
@@ -782,6 +798,7 @@ const GameViewContainer: React.FC<{
                 compactLayout ? (
                   <MobileTopMenu
                     onOpenFeedback={buildInfo.isPublic || createTransport ? openFeedback : undefined}
+                    versions={versionSummary}
                     attention={menuAttention({
                       connected: status === "connected",
                       yourDecision: Boolean(
@@ -828,9 +845,18 @@ const GameViewContainer: React.FC<{
               >
                 Objectives
               </button>
+              <button
+                type="button"
+                data-testid="version-info-button"
+                onClick={() => setIsVersionsOpen(true)}
+                className="button button--secondary"
+              >
+                Versions
+              </button>
               <NotificationLogButton />
             </div>
             )}
+            {isVersionsOpen && <VersionInfoDialog summary={versionSummary} onClose={() => setIsVersionsOpen(false)} />}
           </div>
         }
         board={

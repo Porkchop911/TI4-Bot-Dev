@@ -610,16 +610,11 @@ pub fn preview_moves(
         ]));
     }
     // Display only: the seat's ships against the fleet supply of the active system. `limit` is
-    // the enforced one (Letnev's Armada included, named in `armada`).
-    let mut fleet_supply = serde_json::json!({
-        "used": before.fleet_charged,
-        "limit": before.fleet_limit,
-    });
-    let armada = crate::faction_abilities::armada_bonus(state, content, player);
-    if armada > 0 {
-        fleet_supply["armada"] = serde_json::json!(armada);
-    }
-    choice.detailed("fleet_supply", fleet_supply)
+    // the enforced one (Letnev's Armada included, named in `fleet_supply_bonus`).
+    choice.hinted(
+        crate::fleet::FLEET_SUPPLY_KEY,
+        &crate::fleet::FleetSupplyHints::of(state, content, player, &before, false),
+    )
 }
 
 /// What a movement-step answer asks for.
@@ -1119,7 +1114,7 @@ mod tests {
     }
 
     /// The movement choice carries the enforced fleet limit of the active system; Letnev's Armada
-    /// is inside it and named, other seats carry no `armada` key.
+    /// is inside it and named, other seats carry no `fleet_supply_bonus` key.
     #[test]
     fn the_movement_choice_reports_the_fleet_limit_with_letnevs_armada() {
         let hub = crate::fixtures::plain_hub();
@@ -1147,10 +1142,10 @@ mod tests {
         };
         let letnev = details("letnev");
         assert_eq!(letnev["limit"], 5, "three tokens and Armada's two");
-        assert_eq!(letnev["armada"], 2);
+        assert_eq!(letnev["fleet_supply_bonus"], 2);
         let other = details("sol");
         assert_eq!(other["limit"], 3);
-        assert!(other.get("armada").is_none());
+        assert!(other.get("fleet_supply_bonus").is_none());
     }
 
     /// OBS-008a2: each ship-move option states the exact fleet-supply and transport change the ship

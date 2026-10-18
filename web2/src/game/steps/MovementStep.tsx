@@ -1,11 +1,10 @@
 import type { MovementView } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import { Card, Die, Hint, Icon, InlineNote, ListRow, Pill, SectionTitle, cx } from "../../ui";
 import { BattleTable } from "../combat/BattleTable";
 import { useLink } from "../link";
 import { MovementSummary } from "./movement/OriginSheet";
 import { Arrival } from "./movement/parts";
-import { MovementTokens } from "./movement/Tokens";
 
 function Unreachable({ row }: { row: NonNullable<MovementView["unreachable"]>["rows"][number] }) {
   const { linked, props } = useLink([`sys:${row.system}`]);
@@ -26,11 +25,10 @@ function Unreachable({ row }: { row: NonNullable<MovementView["unreachable"]>["r
  * of a ship. The controls are on the board, at each system; the panel says what leaves.
  */
 export function MovementStep({ view }: { view: MovementView }) {
-  const Origins = view.editing ? MovementSummary : MovementTokens;
   return (
     <>
       <Arrival view={view} />
-      {view.origins.length > 0 && <Origins origins={view.origins} />}
+      {view.origins.length > 0 && <MovementSummary origins={view.origins} />}
       {view.unreachable && (
         // Dense: the board marks these systems, and the inspector of a system says the same.
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 px-1 text-xs text-faint">
@@ -60,7 +58,7 @@ export function MovementStep({ view }: { view: MovementView }) {
             {view.rift.map((ship, index) => (
               <ListRow
                 key={index}
-                icon={ship.unit}
+                icon={ship.unit ?? undefined}
                 title={ship.name}
                 subtitle={ship.text}
                 invalid={!!ship.roll?.lost}
@@ -85,20 +83,13 @@ export function MovementStep({ view }: { view: MovementView }) {
         </>
       )}
       {view.removed.length > 0 && (
-        <InlineNote>
-          Removed after movement: {view.removed.map((unit) => unitName(unit)).join(", ")}.
-        </InlineNote>
+        <InlineNote>Removed after movement: {view.removed.join(", ")}.</InlineNote>
       )}
       {view.cannon && (
         <>
           <SectionTitle>Space cannon offense</SectionTitle>
           <BattleTable view={view.cannon} />
         </>
-      )}
-      {view.cannonSkipped && (
-        <InlineNote tone="quiet" strong="Space cannon offense skipped.">
-          No enemy PDS can reach the active system.
-        </InlineNote>
       )}
     </>
   );

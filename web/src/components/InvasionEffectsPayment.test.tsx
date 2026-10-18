@@ -57,7 +57,13 @@ const custodiansPayment: PendingChoiceDto = {
   ],
 };
 
-function dispatch(choice: PendingChoiceDto, viewerSeat = "p1") {
+// The same invasion with a defender on its planet.
+const defended = {
+  ...board,
+  invasion: { ...board.invasion!, odds_context: { mr: { opponent: "p2" } } },
+} as unknown as BoardView;
+
+function dispatch(choice: PendingChoiceDto, viewerSeat = "p1", boardView: BoardView = board) {
   const resources = new Map([
     ["meer", 0],
     ["arinam", 1],
@@ -72,7 +78,7 @@ function dispatch(choice: PendingChoiceDto, viewerSeat = "p1") {
         <ChoiceRendererDispatcher
           choice={choice}
           viewerSeat={viewerSeat}
-          boardView={board}
+          boardView={boardView}
           onSubmit={vi.fn().mockResolvedValue(undefined)}
           isMinimized={false}
           onMinimizedChange={vi.fn()}
@@ -98,9 +104,15 @@ describe("payments inside an invasion", () => {
     expect(screen.getByTestId("confirm-payment-btn")).not.toBeDisabled();
   });
 
-  it("still shows the invasion overlay to the other seats while the invader pays", () => {
-    dispatch(custodiansPayment, "p2");
+  it("still shows the invasion overlay to the other seats while the invader pays, when a planet has a defender", () => {
+    dispatch(custodiansPayment, "p2", defended);
     expect(screen.getByTestId("invasion-overlay")).toBeInTheDocument();
+    expect(screen.queryByTestId("planet-card-exhaust|meer-values")).not.toBeInTheDocument();
+  });
+
+  it("shows an invasion with no defender only to the invader", () => {
+    dispatch(custodiansPayment, "p2");
+    expect(screen.queryByTestId("invasion-overlay")).not.toBeInTheDocument();
     expect(screen.queryByTestId("planet-card-exhaust|meer-values")).not.toBeInTheDocument();
   });
 

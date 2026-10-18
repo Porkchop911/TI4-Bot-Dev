@@ -1,10 +1,44 @@
-import type { LandingPlanetView, LandingView } from "../../../model";
-import { forceText, plural } from "../../../model";
-import { Button, Icon, cx } from "../../../ui";
+import type { GroundOddsView, LandingPlanetView, LandingView } from "../../../model";
+import { GROUND_ODDS_COUNT, forceText, plural } from "../../../model";
+import { Button, Hint, Icon, Press, cx, useReadOnly } from "../../../ui";
 import { PlanetTraits } from "../../board/PlanetTraits";
-import { OwnerLabel, SeatSymbol, useDispatch } from "../../context";
+import { BattleTable } from "../../combat/BattleTable";
+import { CombatOdds } from "../../combat/SpaceOdds";
+import { OwnerLabel, SeatSymbol, useDispatch, useSeat } from "../../context";
 import { useLink } from "../../link";
 import { SourceChip } from "../movement/Tokens";
+
+/**
+ * The odds of the ground combat that the staged units start on a planet, as `ti4-calc` computes
+ * them in the page. A defense that the odds cannot count has "No odds".
+ */
+function GroundOdds({ odds }: { odds: GroundOddsView }) {
+  const defender = useSeat(odds.defender);
+  if (!odds.unavailable) {
+    return (
+      <CombatOdds view={odds} label="Ground combat" className="text-xs">
+        Simulated{odds.rollouts > 0 ? ` · ${odds.rollouts} rollouts` : ""}. Win: the ground forces
+        that land take the planet. Draw: both sides are destroyed, and the planet stays with the
+        defender. Survivors: the units that are expected to be left, of the units that fight.{" "}
+        {GROUND_ODDS_COUNT}
+      </CombatOdds>
+    );
+  }
+  return (
+    <section aria-label="Ground combat" className="flex min-w-0 items-baseline gap-1.5 text-xs">
+      <strong className="font-mid whitespace-nowrap">Ground combat</strong>
+      <span className="text-muted">·</span>
+      <SeatSymbol seat={odds.defender} />
+      <span className="min-w-0 truncate text-muted" title={defender?.name}>
+        {defender?.faction ?? odds.defender}
+      </span>
+      <span className="ml-auto whitespace-nowrap text-muted">No odds</span>
+      <Hint label="About the odds">
+        The planet has a defense that the simulation cannot count, so there are no odds.
+      </Hint>
+    </section>
+  );
+}
 
 /** One planet: who holds it, what is there, then a token for each unit that lands and a free slot. */
 function PlanetRow({ view, planet }: { view: LandingView; planet: LandingPlanetView }) {
@@ -71,6 +105,7 @@ function PlanetRow({ view, planet }: { view: LandingView; planet: LandingPlanetV
           </button>
         </div>
       )}
+      {planet.odds && <GroundOdds odds={planet.odds} />}
     </div>
   );
 }
@@ -168,29 +203,65 @@ export function LandingSummary({ view }: { view: LandingView }) {
   const row =
     "row flex min-h-8 w-full flex-wrap items-baseline gap-x-2.5 px-3.5 py-1 text-left hover:bg-raised [.row+&]:border-t [.row+&]:border-line/50 phone:px-2.5";
   const open = () => dispatch({ type: "inspectSystem", system: view.system });
+  // Read-only, the landings are made: what landed on each planet, nothing to choose.
+  const readOnly = useReadOnly();
   return (
     <div className="rounded-lg border border-line">
-      <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
-        Choose a planet on the map to land ground forces.
-      </div>
+      {!readOnly && (
+        <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
+          Choose a planet on the map to land ground forces.
+        </div>
+      )}
       {view.planets.map((planet) => (
-        <button key={planet.id} type="button" className={row} onClick={open}>
+        <Press key={planet.id} className={row} onClick={open}>
           <strong className="font-mid">{planet.name}</strong>
           <span className="text-xs text-muted">
             {planet.lands ? (
               <strong className="font-mid text-text">{planet.lands}</strong>
             ) : (
-              (planet.reason ?? "Nothing lands")
+              (planet.reason ?? (readOnly ? "Nothing landed" : "Nothing lands"))
             )}
           </span>
-        </button>
+          {planet.odds && !planet.odds.preview && (
+            <span className="ml-auto text-xs whitespace-nowrap text-muted">
+              Ground combat · {planet.odds.unavailable ? "No odds" : "Win …"}
+            </span>
+          )}
+        </Press>
       ))}
-      <button type="button" className={row} onClick={open}>
-        <strong className="font-mid">Space area</strong>
-        <span className="text-xs text-muted">
-          {view.stays ? `${view.stays} · not landed` : "Every ground force lands"}
-        </span>
-      </button>
+      {!readOnly && (
+        <Press className={row} onClick={open}>
+          <strong className="font-mid">Space area</strong>
+          <span className="text-xs text-muted">
+            {view.stays ? `${view.stays} · not landed` : "Every ground force lands"}
+          </span>
+        </Press>
+      )}
     </div>
+  );
+}
+
+/**
+ * In the panel: the first round of each ground combat that the landings start, with the odds in
+ * the headers of the sides. While the answer for new landings is on its way, the table of the
+ * last one is dimmed.
+ */
+export function GroundPreviews({ view }: { view: LandingView }) {
+  return (
+    <>
+      {view.planets.map(
+        ({ id, odds }) =>
+          odds?.preview && (
+            <section
+              key={id}
+              aria-label={odds.preview.table.label}
+              aria-busy={odds.pending}
+              className={cx(odds.pending && "opacity-50")}
+            >
+              <BattleTable view={odds.preview.table} odds={odds.preview.odds} />
+            </section>
+          ),
+      )}
+    </>
   );
 }

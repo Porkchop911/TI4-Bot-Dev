@@ -1746,6 +1746,12 @@ mod tests {
                 .count()
         };
         let mut state = game();
+        // Not Antimass Deflectors' -1, which the target's faction may start with.
+        state
+            .player_mut(&b())
+            .unwrap()
+            .technologies
+            .remove(&ti4_model::id::TechnologyId::new("amd"));
         crate::fixtures::put(&mut state, &centre, "cruiser", &b(), 1);
         crate::fixtures::put_on_planet(&mut state, &beside, &planet, "titans_pds2", &a(), 1);
         assert_eq!(

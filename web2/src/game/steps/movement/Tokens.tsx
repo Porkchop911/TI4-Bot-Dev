@@ -1,6 +1,6 @@
 import type { CargoSourceView, MoveShipView, OriginView, ShipUnitView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Icon, Pill, cx } from "../../../ui";
+import { Button, Icon, Pill, Press, cx } from "../../../ui";
 import { RichText, useDispatch } from "../../context";
 import { useLink } from "../../link";
 
@@ -35,8 +35,7 @@ export function SourceChip({
       : `${source.place}, ${source.site.label}`
     : source.place;
   return (
-    <button
-      type="button"
+    <Press
       aria-pressed={pressed}
       disabled={!!source.reason || source.left === 0}
       aria-label={`${verb} ${source.name}, ${where}, ${source.left} left`}
@@ -54,7 +53,7 @@ export function SourceChip({
       {/* The icon names the unit; the name is the tooltip and the accessible name. */}
       <Icon name={source.unit} className="size-4" />
       <strong className="font-mid text-text tabular-nums">{source.left}</strong>
-    </button>
+    </Press>
   );
 }
 
@@ -143,8 +142,7 @@ function Token({
   const dispatch = useDispatch();
   const can = unit.moves || unit.canMove;
   return (
-    <button
-      type="button"
+    <Press
       disabled={!editing || !can}
       aria-pressed={unit.moves}
       aria-label={unit.label}
@@ -171,7 +169,7 @@ function Token({
           <Icon name="arrow" className="size-2.5" />
         </span>
       )}
-    </button>
+    </Press>
   );
 }
 
@@ -220,9 +218,8 @@ function Slots({
           );
         }
         return (
-          <button
+          <Press
             key={index}
-            type="button"
             className={cx(box, "disabled:opacity-45")}
             disabled={!slot && !accept}
             aria-label={
@@ -240,7 +237,7 @@ function Slots({
             }
           >
             {inside}
-          </button>
+          </Press>
         );
       })}
     </span>
@@ -255,8 +252,7 @@ function Boost({ unit, editing }: { unit: ShipUnitView; editing: boolean }) {
     return boost.on ? <Pill tone="staged">+1 Gravity Drive</Pill> : null;
   }
   return (
-    <button
-      type="button"
+    <Press
       aria-pressed={boost.on}
       disabled={boost.locked || (!boost.on && !!boost.reason)}
       aria-label={`Gravity Drive on ${unit.label}`}
@@ -275,7 +271,7 @@ function Boost({ unit, editing }: { unit: ShipUnitView; editing: boolean }) {
       {/* A sign, not only the colour: the check says that this ship has it. */}
       {boost.on && <Icon name="check" className="size-3" />}
       +1 Gravity Drive
-    </button>
+    </Press>
   );
 }
 
@@ -302,8 +298,10 @@ function UnitRow({
     const place = slot.site ? `${slot.site}, ${slot.place}` : slot.place;
     from.set(place, (from.get(place) ?? 0) + 1);
   }
+  // The row of a ship lights its own path, which Gravity Drive can make another than its kind's.
+  const { props } = useLink(unit.link);
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5" {...props}>
       <Token ship={ship} unit={unit} editing={editing} />
       {unit.hold && <Slots unit={unit} source={source} editing={editing} />}
       {from.size > 0 && (
@@ -407,33 +405,6 @@ export function OriginTokens({
     <div>
       {origin.ships.map((ship) => (
         <Kind key={ship.key} ship={ship} source={source} editing={editing} places={places} />
-      ))}
-    </div>
-  );
-}
-
-/** A recorded movement, read-only: one band for each system that ships left. */
-export function MovementTokens({ origins }: { origins: OriginView[] }) {
-  return (
-    <div className="rounded-lg border border-line">
-      {origins.map((origin) => (
-        <section
-          key={origin.system}
-          aria-label={origin.label}
-          className="grid grid-cols-[190px_minmax(0,1fr)] border-line not-first:border-t phone:grid-cols-1"
-        >
-          <header className="border-r border-line px-3 py-1.5 phone:border-r-0 phone:border-b phone:border-line/50 phone:px-2.5">
-            <h3 className="truncate text-base font-semibold" title={origin.label}>
-              {origin.label}
-            </h3>
-            <div className="text-xs text-muted">
-              {plural(origin.away, "system")} away
-              {origin.leaves && <strong className="font-mid text-text"> · {origin.leaves}</strong>}
-            </div>
-            {origin.warning && <div className="text-xs text-orange">⚠ {origin.warning}</div>}
-          </header>
-          <OriginTokens origin={origin} />
-        </section>
       ))}
     </div>
   );

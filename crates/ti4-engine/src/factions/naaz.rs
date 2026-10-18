@@ -1662,6 +1662,21 @@ mod tests {
     }
 
     #[test]
+    fn fabrication_drawing_the_shard_of_the_throne_awards_its_point() {
+        // The purge goes through `relics::gain`, which applies the Shard's +1 VP for every version
+        // (the Naaz path was reported as missing it; it never did).
+        for version in [ti4_model::state::RULES_FACTION_EFFECTS - 1, ti4_model::state::RULES_VERSION] {
+            let mut state = game();
+            state.rules_version = version;
+            state.relic_deck = vec![ti4_model::id::RelicId::new(crate::relics::SHARD)];
+            give_fragments(&mut state, &a(), "CULTURAL", 2);
+            let before = state.player(&a()).unwrap().victory_points;
+            assert!(perform(&mut state, &a(), FAB_RELIC, &[]));
+            assert_eq!(state.player(&a()).unwrap().victory_points, before + 1, "version {version}");
+        }
+    }
+
+    #[test]
     fn fabrication_frontier_fragments_stand_in_and_are_spent_last() {
         let mut state = game();
         give_fragments(&mut state, &a(), "HAZARDOUS", 1);

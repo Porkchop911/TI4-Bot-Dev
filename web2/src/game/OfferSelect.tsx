@@ -1,15 +1,38 @@
 import type { OfferMode, OfferView } from "../model";
 import { Select } from "../ui/controls";
+import { useReadOnly } from "../ui/readOnly";
 import { useDispatch } from "./context";
+
+const MODES: Record<OfferMode, string> = {
+  always: "Offered",
+  ownturn: "Only on my turns",
+  never: "Never",
+};
 
 /**
  * When a reaction is offered to the viewer. The same control in the row of a reaction window and
  * on the card in a sheet: the window is where a reaction is muted, the sheet where it is set back.
  */
-export function OfferSelect({ offer }: { offer: OfferView }) {
+export function OfferSelect({
+  offer,
+  compact = false,
+}: {
+  offer: OfferView;
+  /** In a row of a window: a small list in the line of the name, with no frame until hover. */
+  compact?: boolean;
+}) {
   const dispatch = useDispatch();
+  // Read-only, the setting is its word.
+  if (useReadOnly()) {
+    return <span className="text-xs text-muted">{MODES[offer.mode]}</span>;
+  }
   return (
     <Select
+      className={
+        compact
+          ? "border-transparent bg-transparent px-1 py-0.5 text-muted hover:border-line hover:text-text focus-visible:border-line"
+          : undefined
+      }
       aria-label={`Offer ${offer.name}`}
       title="A window that offers only what you muted is passed without a question"
       value={offer.mode}

@@ -448,6 +448,22 @@ impl<'a> MovementRules<'a> {
         self.is_gravity_rift(system_id)
     }
 
+    /// The wormhole kinds that join two systems of a step that are not hex neighbours ("ALPHA",
+    /// "BETA"). Empty for a step between neighbours, or one that a wormhole does not explain
+    /// (a hyperlane, an ability).
+    #[must_use]
+    pub fn wormholes_between(&self, from: &str, to: &str) -> Vec<String> {
+        if self.galaxy.distance(from, to) == Some(1) || !self.galaxy.are_adjacent(from, to) {
+            return Vec::new();
+        }
+        let there = self.galaxy.wormhole_kinds(to);
+        self.galaxy
+            .wormhole_kinds(from)
+            .intersection(&there)
+            .map(|kind| (*kind).to_owned())
+            .collect()
+    }
+
     fn is_gravity_rift(&self, system_id: &str) -> bool {
         self.system(system_id).is_some_and(System::is_gravity_rift)
             || self.gravity_rift_systems.contains(system_id)

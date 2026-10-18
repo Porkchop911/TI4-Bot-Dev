@@ -710,3 +710,25 @@
     padding: 4px 10px;
   }
 }
+
+.objectives-matrix__cap-note {
+  /* The matrix scrolls sideways on a phone; stay inside the first screen width. */
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: min(calc(100vw - 56px), 560px);
+  margin: 4px 0 2px;
+  padding: 6px 10px;
+  border-left: 3px solid #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e2e8f0;
+}
+
+.objectives-matrix__cap-skipped {
+  margin-top: 4px;
+  font-size: 11px;
+  font-style: italic;
+  color: #fbbf24;
+}

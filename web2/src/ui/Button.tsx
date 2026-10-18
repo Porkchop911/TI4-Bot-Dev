@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes } from "react";
 import { cx } from "./cx";
 import { Icon, type IconName } from "./Icon";
+import { useReadOnly } from "./readOnly";
 
-export type ButtonTone = "default" | "primary" | "quiet" | "demo";
+export type ButtonTone = "default" | "primary" | "quiet";
 export type ButtonSize = "md" | "sm" | "icon";
 
 const HOVER = "enabled:hover:bg-hover enabled:hover:border-line-strong";
@@ -11,7 +12,6 @@ const TONES: Record<ButtonTone, string> = {
   primary:
     "border-accent bg-accent text-[#171d27] enabled:hover:bg-[color-mix(in_srgb,var(--accent),white_15%)] enabled:hover:border-[color-mix(in_srgb,var(--accent),white_15%)]",
   quiet: `border-line bg-transparent ${HOVER}`,
-  demo: `border-dashed border-line bg-transparent text-muted ${HOVER}`,
 };
 const SIZES: Record<ButtonSize, string> = {
   md: "min-h-9 px-3.5 py-2 text-sm touch:min-h-11",
@@ -38,6 +38,10 @@ export function Button({
   children,
   ...rest
 }: ButtonProps) {
+  // Read-only content has no actions: what a button does is not there.
+  if (useReadOnly()) {
+    return null;
+  }
   return (
     <button
       type="button"

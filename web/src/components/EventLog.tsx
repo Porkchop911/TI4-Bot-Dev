@@ -168,6 +168,10 @@ export function buildEventTree(events: readonly GameLogEntry[]): LogNode[] {
 
   for (const entry of events) {
     const event = entry.event;
+    // The facts of the state and the changes of the board are for web2's Log: no line here.
+    if (event.kind === "state_changed" || event.kind === "board_changed") {
+      continue;
+    }
     if (event.kind === "game_initialized" || event.kind === "phase_transition") {
       boundaryRound = event.round;
       boundaryPhase = event.phase;

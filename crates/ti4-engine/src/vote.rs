@@ -15,7 +15,7 @@ const AGENDA_DETAIL: &str = "agenda";
 use ti4_content::ContentStore;
 use ti4_content::galaxy::all_planets;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{PlanetId, PlayerId};
+use ti4_model::id::{PlanetId, PlayerId, TechnologyId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
@@ -35,11 +35,26 @@ pub const VOTE_PLANET_KIND: &str = "vote_planet";
 pub const TIEBREAK_KIND: &str = "tiebreak";
 /// Gila the Silvertongue: trade goods spent for two votes each, as `"spend|<n>"`.
 pub const VOTE_TRADE_GOODS_KIND: &str = "vote_trade_goods";
+/// Predictive Intelligence: cast 3 additional votes, as `"predictive|cast"`.
+pub const PREDICTIVE_KIND: &str = "vote_predictive";
 /// Genetic Recombination (Mahact): the holder names the outcome a voter must back, as
 /// `"recombine|<outcome>"`.
 pub const RECOMBINE_KIND: &str = "recombine";
 /// Genetic Recombination: the voter's answer, `"tribute|vote"` or `"tribute|token"`.
 pub const TRIBUTE_KIND: &str = "tribute";
+
+/// Predictive Intelligence (effect 2): the votes its holder may add.
+const PREDICTIVE_VOTES: i64 = 3;
+
+/// Whether `player` may be offered Predictive Intelligence's additional votes: a ready card, in a
+/// game at rules version `RULES_TECH_EFFECTS` or later.
+fn predictive_ready(state: &GameState, player: &PlayerId) -> bool {
+    let card = TechnologyId::new("pi");
+    state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
+        && state.player(player).is_some_and(|seat| {
+            seat.technologies.contains(&card) && !seat.exhausted_technologies.contains(&card)
+        })
+}
 
 /// What may be voted for on one agenda (8.8 to 8.11).
 ///
@@ -295,6 +310,13 @@ enum Stage {
         outcome: String,
         votes: i64,
     },
+    /// Asking `order[index]`, who holds a ready Predictive Intelligence, whether to cast 3
+    /// additional votes for `outcome` (rules version `RULES_TECH_EFFECTS`).
+    Predictive {
+        index: usize,
+        outcome: String,
+        votes: i64,
+    },
     /// The speaker is deciding a tie or a silent table.
     Tiebreak,
     /// Finished, with the winning outcome if there was one.
@@ -329,6 +351,9 @@ pub struct VoteWindow {
     obligation: Option<(usize, String)>,
     /// The outcome the holder chose for the voter now answering the [`Stage::Tribute`] question.
     demanded: Option<(usize, String)>,
+    /// Predictive Intelligence holders who cast the 3 additional votes, with the outcome they
+    /// backed: the card exhausts when that outcome is not resolved.
+    predictive: Vec<(PlayerId, String)>,
 }
 
 /// One way for a voter to exhaust a planet: the option id, the planet and the votes it casts.
@@ -398,6 +423,7 @@ impl VoteWindow {
             recombination_offered: std::collections::BTreeSet::new(),
             obligation: None,
             demanded: None,
+            predictive: Vec::new(),
         }
     }
 
@@ -629,6 +655,23 @@ impl VoteWindow {
                         format!("exhaust a planet to vote {outcome}"),
                         options,
                     )
+                    // Display / decider view only: the ledger before this seat's votes (outcome
+                    // order as in the cast question) and the votes it has cast so far.
+                    .detailed(
+                        "tally",
+                        serde_json::Value::Array(
+                            self.choices
+                                .iter()
+                                .map(|o| {
+                                    serde_json::json!([
+                                        o,
+                                        self.ballot.counts.get(o).copied().unwrap_or(0)
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                    )
+                    .detailed("votes_so_far", votes_so_far)
                     .contextualized(DecisionContext::new(
                         player.clone(),
                         DecisionSource::Rule("8.11".to_owned()),
@@ -764,6 +807,41 @@ impl VoteWindow {
                     )),
                 )
             }
+            Stage::Predictive {
+                index,
+                outcome,
+                votes,
+            } => {
+                let player = self.order.get(*index)?;
+                let option = ChoiceOption::labelled(
+                    "predictive|cast",
+                    PREDICTIVE_KIND,
+                    format!("cast 3 additional votes for {outcome}"),
+                )
+                .with("votes", 3)
+                .previewed(Preview::certain(vec![Delta::new(
+                    Quantity::Votes,
+                    *votes,
+                    *votes + PREDICTIVE_VOTES,
+                )]));
+                Some(
+                    Choice::new(
+                        player.clone(),
+                        format!("Predictive Intelligence: 3 more votes for {outcome}"),
+                        vec![option, ChoiceOption::decline()],
+                    )
+                    .detailed("outcome", outcome.as_str())
+                    .detailed("votes", *votes)
+                    .detailed("votes_added", PREDICTIVE_VOTES)
+                    .contextualized(DecisionContext::new(
+                        player.clone(),
+                        DecisionSource::Content("pi".to_owned()),
+                        "vote_predictive_intelligence",
+                        state.phase,
+                        state.round,
+                    )),
+                )
+            }
             Stage::Tiebreak => {
                 let candidates = tiebreak_candidates(&self.ballot, &self.choices);
                 let planet_outcomes = elects_planet(content, &self.alias);
@@ -856,8 +934,45 @@ impl VoteWindow {
                 votes,
             };
         } else {
+            self.bank(state, content, index, outcome, votes);
+        }
+    }
+
+    /// The votes of one player are settled: offer Predictive Intelligence's 3 additional votes
+    /// when they hold a ready card and cast any vote, else record them and move on.
+    fn bank(
+        &mut self,
+        state: &GameState,
+        content: &ContentStore,
+        index: usize,
+        outcome: String,
+        votes: i64,
+    ) {
+        if votes > 0 && predictive_ready(state, &self.order[index]) {
+            self.stage = Stage::Predictive {
+                index,
+                outcome,
+                votes,
+            };
+        } else {
             self.record(state, content, index, &outcome, votes);
             self.stage = Stage::Outcome(index + 1);
+        }
+    }
+
+    /// Predictive Intelligence's penalty: the card of each holder who cast the 3 additional votes
+    /// exhausts when the outcome they backed is not the one resolved. Applied once, as the vote
+    /// closes.
+    fn settle_predictions(&mut self, state: &mut GameState) {
+        let Stage::Done(winner) = &self.stage else {
+            return;
+        };
+        for (player, backed) in std::mem::take(&mut self.predictive) {
+            if winner.as_deref() != Some(backed.as_str())
+                && let Some(seat) = state.player_mut(&player)
+            {
+                seat.exhausted_technologies.insert(TechnologyId::new("pi"));
+            }
         }
     }
 
@@ -1023,13 +1138,27 @@ impl VoteWindow {
                 if spent > 0 && !crate::supply::spend_goods(state, &self.order[index], spent) {
                     return Err(VoteError::Complete);
                 }
-                self.record(
+                self.bank(
                     state,
                     content,
                     index,
-                    &outcome,
+                    outcome,
                     votes + rate * i64::from(spent),
                 );
+            }
+            Stage::Predictive {
+                index,
+                outcome,
+                votes,
+            } => {
+                let votes = if option.is_decline() {
+                    votes
+                } else {
+                    self.predictive
+                        .push((self.order[index].clone(), outcome.clone()));
+                    votes + PREDICTIVE_VOTES
+                };
+                self.record(state, content, index, &outcome, votes);
                 self.stage = Stage::Outcome(index + 1);
             }
             Stage::Tiebreak => {
@@ -1037,6 +1166,7 @@ impl VoteWindow {
             }
         }
         self.settle(state, content, sources);
+        self.settle_predictions(state);
         Ok(())
     }
 

@@ -33,6 +33,8 @@ pub struct SecondaryWaiver {
     pub id: String,
     /// What the option says ("resolve the secondary using Acquiescence").
     pub label: String,
+    /// What the label names by id, for `details.phrases` of the question (display only).
+    pub worded: Option<crate::phrases::Worded>,
 }
 
 /// A selected cost for a prerequisite-ignoring research waiver.
@@ -362,6 +364,7 @@ mod tests {
                 vec![SecondaryWaiver {
                     id: "w".to_owned(),
                     label: format!("free {card}"),
+                    worded: None,
                 }]
             }),
             secondary_waived: Some(|state, _, follower, _, waiver| {

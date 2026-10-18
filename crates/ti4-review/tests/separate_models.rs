@@ -18,7 +18,10 @@ fn a_separate_models_checkpoint_seats_each_faction_on_its_own_model() {
         std::env::var("TI4_SEPARATE_CHECKPOINT").expect("TI4_SEPARATE_CHECKPOINT is set"),
     );
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    while !root.join("examples/reviewer/full_np8_12_holdout.json").is_file() {
+    while !root
+        .join("examples/reviewer/full_np8_12_holdout.json")
+        .is_file()
+    {
         assert!(root.pop(), "no workspace root carries the reviewer inputs");
     }
     let config = SimulationConfig {
@@ -39,7 +42,11 @@ fn a_separate_models_checkpoint_seats_each_faction_on_its_own_model() {
     println!("{:#?}", policy.profiles);
     review.advance(ti4_review::AdvanceUnit::Step, 200);
     assert!(
-        review.session.frames.iter().any(|frame| !frame.decisions.is_empty()),
+        review
+            .session
+            .frames
+            .iter()
+            .any(|frame| !frame.decisions.is_empty()),
         "the table made decisions"
     );
 }

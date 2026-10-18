@@ -1030,13 +1030,41 @@ pub fn resolve_with(
         }
         "grant_reallocation" => {
             // "gains any 1 technology of their choice. Then, for each prerequisite on that
-            // technology, they remove 1 token from their fleet pool." The choice is the elected
-            // player's; with no decider here the technology is not chosen for them -- the fleet
-            // cost is what this arm can honour without inventing a pick, and a driver that has a
-            // table resolves the gain through `technology`.
+            // technology, they remove 1 token from their fleet pool and return it to their
+            // reinforcements."
             let elected = PlayerId::new(outcome);
-            if let Some(seat) = state.player_mut(&elected) {
-                seat.spend_token(ti4_model::state::TokenPool::Fleet);
+            if state.player(&elected).is_none() {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            if state.rules_version < ti4_model::state::RULES_AGENDA_GRANT_REVEAL {
+                // Before rules version 14 no technology was granted and a single fleet token was
+                // removed whatever it would have cost.
+                if let Some(seat) = state.player_mut(&elected) {
+                    seat.spend_token(ti4_model::state::TokenPool::Fleet);
+                }
+            } else if let Some(chosen) = crate::relics::ask_technology(
+                state,
+                content,
+                sources,
+                ctx.table,
+                galaxy,
+                &elected,
+                None,
+                "grant_reallocation",
+                false,
+            ) {
+                // Gained, not researched: no prerequisites needed, nothing that fires on research.
+                crate::technology::gain(state, content, sources, &elected, &chosen);
+                let cost: usize = crate::technology::prerequisites(content, &chosen)
+                    .values()
+                    .sum();
+                if let Some(seat) = state.player_mut(&elected) {
+                    for _ in 0..cost {
+                        seat.spend_token(ti4_model::state::TokenPool::Fleet);
+                    }
+                }
             }
         }
         "standardization" => {
@@ -2875,5 +2903,64 @@ mod tests {
                 .iter()
                 .any(|kind| kind == "NAAZ_MECH_PLACED")
         );
+    }
+
+    /// Research Grant Reallocation from the seed-7-free fixture: the elected seat `b` picks `hm`
+    /// (two green prerequisites).
+    fn grant_game(version: u32) -> GameState {
+        let mut state = game(&["a", "b"]);
+        state.rules_version = version;
+        state
+    }
+
+    #[test]
+    fn grant_reallocation_gives_the_elected_player_the_chosen_technology() {
+        let mut state = grant_game(ti4_model::state::RULES_AGENDA_GRANT_REVEAL);
+        let before = state
+            .player(&b())
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
+        assert!(!state.player(&b()).unwrap().technologies.contains(&ti4_model::id::TechnologyId::new("hm")));
+
+        run_with(&mut state, None, "grant_reallocation", "b", &["hm"]);
+
+        let seat = state.player(&b()).unwrap();
+        assert!(seat.technologies.contains(&ti4_model::id::TechnologyId::new("hm")));
+        assert_eq!(
+            seat.tokens(ti4_model::state::TokenPool::Fleet),
+            before - 2,
+            "one fleet token per prerequisite (GG)"
+        );
+        assert_eq!(
+            state.player(&a()).unwrap().tokens(ti4_model::state::TokenPool::Fleet),
+            before,
+            "nobody else pays"
+        );
+    }
+
+    #[test]
+    fn grant_reallocation_without_prerequisites_costs_no_token() {
+        let mut state = grant_game(ti4_model::state::RULES_AGENDA_GRANT_REVEAL);
+        let before = state
+            .player(&b())
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
+        run_with(&mut state, None, "grant_reallocation", "b", &["nm"]);
+        let seat = state.player(&b()).unwrap();
+        assert!(seat.technologies.contains(&ti4_model::id::TechnologyId::new("nm")));
+        assert_eq!(seat.tokens(ti4_model::state::TokenPool::Fleet), before);
+    }
+
+    #[test]
+    fn grant_reallocation_keeps_its_old_effect_below_rules_version_14() {
+        let mut state = grant_game(ti4_model::state::RULES_AGENDA_GRANT_REVEAL - 1);
+        let before = state
+            .player(&b())
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
+        run_with(&mut state, None, "grant_reallocation", "b", &["hm"]);
+        let seat = state.player(&b()).unwrap();
+        assert!(!seat.technologies.contains(&ti4_model::id::TechnologyId::new("hm")));
+        assert_eq!(seat.tokens(ti4_model::state::TokenPool::Fleet), before - 1);
     }
 }

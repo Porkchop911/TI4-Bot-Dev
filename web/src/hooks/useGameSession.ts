@@ -72,6 +72,8 @@ export interface UseGameSessionReturn {
   queryReach: (systemId: string) => Promise<import("../protocol/client.ts").ReachReply>;
   /** The engine of a game that runs on this device (`GameTransport.queryEngine`); absent online. */
   queryEngine?: (request: object) => Promise<unknown>;
+  /** Bot version and newest versions of the engine of an offline game (display only). */
+  gameVersions?: () => import("../versionInfo.ts").HostedGameVersions;
   resumeBatch: () => Promise<void>;
   dismissBatchResume: () => void;
 }
@@ -137,6 +139,7 @@ export function useGameSession({
     previewSecondary: (card, primary, answers) => client.previewSecondary(card, primary, answers),
     queryReach,
     queryEngine,
+    gameVersions: client.gameVersions?.bind(client),
     resumeBatch: () => client.resumeBatch(),
     dismissBatchResume: () => client.dismissBatchResume(),
   };

@@ -39,7 +39,7 @@ const str = (value: unknown): string | null =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
 /** Subtypes of the decisions an agenda raises (votes, predictions, tie-break, the voter's tribute). */
-const VOTE_SUBTYPES = new Set(["cast_vote", "vote_exhaust_planet", "vote_spend_trade_goods", "recombination_tribute"]);
+const VOTE_SUBTYPES = new Set(["cast_vote", "vote_exhaust_planet", "vote_spend_trade_goods", "vote_predictive_intelligence", "recombination_tribute"]);
 const AGENDA_SUBTYPES = new Set([...VOTE_SUBTYPES, "vote_tiebreak", "predict_agenda_outcome"]);
 
 export const isAgendaDecision = (choice: Pick<PendingChoiceDto, "context"> | null | undefined): boolean => {

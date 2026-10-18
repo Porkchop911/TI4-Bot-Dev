@@ -202,6 +202,8 @@ fn run_seeded(seed: u64, players: usize, max_steps: usize) -> Result<usize, Fail
             state: Some(&game.state),
             view: Some(project_game_view_full(
                 &latest.state,
+                content,
+                game.sources(),
                 &viewer,
                 &latest.tiles,
                 None,

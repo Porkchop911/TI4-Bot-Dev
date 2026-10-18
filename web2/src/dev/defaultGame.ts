@@ -1,7 +1,4 @@
-import { type LocalGame, gameAddress } from "../session/savedGame";
+import type { LocalGame } from "../session/savedGame";
 
-/** The local game of the header of the demo ("Local game"): seed 42, eight seats, seat A here. */
+/** The local game of a bare `?local` or `?scenario`: seed 42, eight seats, seat A here. */
 export const DEFAULT_GAME: LocalGame = { seed: 42, players: 8, humans: 1 };
-
-/** Its address. */
-export const LOCAL_GAME = `/${gameAddress(DEFAULT_GAME)}`;

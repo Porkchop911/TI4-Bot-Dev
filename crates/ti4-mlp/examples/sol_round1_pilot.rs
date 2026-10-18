@@ -103,7 +103,10 @@ fn unit_of(o: &ChoiceOption) -> &str {
 fn doctrine(c: &Choice, sub: &str, proposed: &ChoiceOption) -> Option<String> {
     let produce = |o: &&ChoiceOption| o.kind == "produce";
     let banned = |o: &ChoiceOption| {
-        o.kind == "produce" && ["dreadnought", "destroyer"].iter().any(|b| unit_of(o).starts_with(b))
+        o.kind == "produce"
+            && ["dreadnought", "destroyer"]
+                .iter()
+                .any(|b| unit_of(o).starts_with(b))
     };
     let fits = |o: &&ChoiceOption| {
         o.payload
@@ -139,7 +142,10 @@ fn spare_planet_resources(seen: &SeatObservation<'_>) -> i64 {
     let hold = seen
         .revealed_objective_progress(me)
         .iter()
-        .filter(|p| p.satisfied && ["cost_spend_resources", "cost_all_three"].contains(&p.family_token.as_str()))
+        .filter(|p| {
+            p.satisfied
+                && ["cost_spend_resources", "cost_all_three"].contains(&p.family_token.as_str())
+        })
         .map(|p| p.threshold as i64)
         .max()
         .unwrap_or(0);
@@ -148,7 +154,12 @@ fn spare_planet_resources(seen: &SeatObservation<'_>) -> i64 {
 
 /// Never pass with ready planets: take a tactical action at a system with Sol's space dock,
 /// move nothing and build fighters (if they fit) or infantry with the spare planet resources.
-fn spend_down(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: &ChoiceOption) -> Option<String> {
+fn spend_down(
+    s: &mut Shared,
+    c: &Choice,
+    seen: &SeatObservation<'_>,
+    proposed: &ChoiceOption,
+) -> Option<String> {
     let sub = subtype(c);
     let menu = c.details.get("kind").and_then(Value::as_str) == Some("turn_menu");
     if menu || sub == "end_turn" {
@@ -158,7 +169,8 @@ fn spend_down(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: 
         let spare = spare_planet_resources(seen);
         if spare >= 2 {
             s.spend = Some(SpendStage::Activating);
-            s.spend_log.push(json!({"round":seen.round(),"spare":spare}));
+            s.spend_log
+                .push(json!({"round":seen.round(),"spare":spare}));
             return Some("tactical".into());
         }
         return None;
@@ -169,15 +181,19 @@ fn spend_down(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: 
             let dock = |id: &str| {
                 seen.board().iter().any(|(system, st)| {
                     system.as_str() == id
-                        && st.planet_units.values().flatten().chain(&st.units).any(|u| {
-                            u.owner == *me && u.type_id.as_str().contains("spacedock")
-                        })
+                        && st
+                            .planet_units
+                            .values()
+                            .flatten()
+                            .chain(&st.units)
+                            .any(|u| u.owner == *me && u.type_id.as_str().contains("spacedock"))
                 })
             };
             let pick = c.options.iter().find(|o| dock(&o.id)).map(|o| o.id.clone());
             s.spend = pick.as_ref().map(|_| SpendStage::Moving);
             if pick.is_none() {
-                s.spend_log.push(json!({"round":seen.round(),"aborted":"no dock system activatable"}));
+                s.spend_log
+                    .push(json!({"round":seen.round(),"aborted":"no dock system activatable"}));
             }
             pick
         }
@@ -192,14 +208,22 @@ fn spend_down(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: 
                     && o.payload.get("owed").and_then(Value::as_i64).unwrap_or(99) <= spare
             };
             let fits = |o: &&ChoiceOption| {
-                o.payload.get("capacity_excess_after").and_then(Value::as_i64).is_none_or(|x| x <= 0)
+                o.payload
+                    .get("capacity_excess_after")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|x| x <= 0)
             };
             let pick = c
                 .options
                 .iter()
                 .filter(affordable)
                 .find(|o| unit_of(o).starts_with("fighter") && fits(o))
-                .or_else(|| c.options.iter().filter(affordable).find(|o| unit_of(o).contains("infantry")));
+                .or_else(|| {
+                    c.options
+                        .iter()
+                        .filter(affordable)
+                        .find(|o| unit_of(o).contains("infantry"))
+                });
             pick.map(|o| o.id.clone())
         }
         _ => None,
@@ -226,14 +250,22 @@ const MOVE_FAMILIES: [&str; 16] = [
     "mecatol_ships_while_controlling",
 ];
 
-fn no_early_pass(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: &ChoiceOption) -> Option<String> {
+fn no_early_pass(
+    s: &mut Shared,
+    c: &Choice,
+    seen: &SeatObservation<'_>,
+    proposed: &ChoiceOption,
+) -> Option<String> {
     let me = seen.bound_seat();
     let menu = c.details.get("kind").and_then(Value::as_str) == Some("turn_menu");
     let progress = seen.revealed_objective_progress(me);
     // Settle the last forced action: did it move its objective?
     if menu || subtype(c) == "end_turn" {
         if let Some((alias, before)) = s.push_pending.take() {
-            let after = progress.iter().find(|p| p.alias == alias).map_or(before, |p| p.have);
+            let after = progress
+                .iter()
+                .find(|p| p.alias == alias)
+                .map_or(before, |p| p.have);
             s.push_log.push(json!({"round":seen.round(),"alias":alias,"before":before,"after":after,"gained":after > before}));
         }
     }
@@ -257,7 +289,13 @@ fn no_early_pass(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, propose
 /// The choice subtypes a rule-bot arm takes over for Sol; empty means every choice.
 fn rule_scope(arm: Arm) -> Option<&'static [&'static str]> {
     match arm {
-        Arm::RuleTactical => Some(&["turn_menu", "activate_system", "movement_step", "commit_ground_forces", "end_turn"]),
+        Arm::RuleTactical => Some(&[
+            "turn_menu",
+            "activate_system",
+            "movement_step",
+            "commit_ground_forces",
+            "end_turn",
+        ]),
         Arm::RuleProduction => Some(&["produce_unit", "produce_one_unit", "place_unit"]),
         Arm::RuleResearch => Some(&["research_technology"]),
         Arm::RuleCards => Some(&["draft_strategy_card"]),
@@ -347,7 +385,8 @@ impl Force {
             return pick.map(|o| o.id.clone());
         }
         if self.arm == Arm::RuleTable {
-            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
+            let mut rng =
+                ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
             let pick = ti4_rule_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
             s.rule_used += 1;
@@ -371,7 +410,8 @@ impl Force {
             return no_early_pass(s, c, seen, proposed);
         }
         if self.arm == Arm::Dagger {
-            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
+            let mut rng =
+                ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
             s.label = ti4_rule_bot::pick(c, seen, &mut rng)
                 .filter(|&i| i < c.options.len())
@@ -381,10 +421,12 @@ impl Force {
         }
         if let Some(scope) = rule_scope(self.arm) {
             let menu = c.details.get("kind").and_then(Value::as_str) == Some("turn_menu");
-            if !(scope.is_empty() || scope.contains(&sub) || (menu && scope.contains(&"turn_menu"))) {
+            if !(scope.is_empty() || scope.contains(&sub) || (menu && scope.contains(&"turn_menu")))
+            {
                 return None;
             }
-            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
+            let mut rng =
+                ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
             let pick = ti4_rule_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
             s.rule_used += 1;
@@ -498,9 +540,7 @@ impl Force {
                         deal.amount = true;
                         Some("diplomacy|amount|1".to_owned())
                     }
-                    "diplomacy_review" if deal.note && deal.amount => {
-                        Some(PROPOSE_ID.to_owned())
-                    }
+                    "diplomacy_review" if deal.note && deal.amount => Some(PROPOSE_ID.to_owned()),
                     other if other.starts_with("diplomacy_") => {
                         has(CANCEL_ID).then(|| CANCEL_ID.to_owned())
                     }
@@ -541,7 +581,11 @@ impl Decider for Force {
             .unwrap_or_default();
         let mut s = self.shared.borrow_mut();
         let forced = self.steer(&mut s, c, seen, &proposed);
-        let label = if self.arm == Arm::Dagger { s.label.take() } else { forced.clone() };
+        let label = if self.arm == Arm::Dagger {
+            s.label.take()
+        } else {
+            forced.clone()
+        };
         if let [trace] = traces.as_slice() {
             let n = trace.options.len();
             let one_hot = label
@@ -556,11 +600,12 @@ impl Decider for Force {
             let anchor = || -> Option<Vec<f64>> {
                 let base = self.base.as_ref()?;
                 let row = FactionRow::of("sol").ok()?;
-                let logits: Vec<f64> = ti4_tensor::to_vec(&base.logits(&trace.options, &trace.head, row).ok()?)
-                    .ok()?
-                    .into_iter()
-                    .map(f64::from)
-                    .collect();
+                let logits: Vec<f64> =
+                    ti4_tensor::to_vec(&base.logits(&trace.options, &trace.head, row).ok()?)
+                        .ok()?
+                        .into_iter()
+                        .map(f64::from)
+                        .collect();
                 let top = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let e: Vec<f64> = logits.iter().map(|l| (l - top).exp()).collect();
                 let z: f64 = e.iter().sum();
@@ -572,7 +617,8 @@ impl Decider for Force {
                 None => None,
             };
             if let Some(teacher) = teacher.filter(|_| n >= 2) {
-                s.samples.push((trace.head.clone(), trace.options.clone(), teacher));
+                s.samples
+                    .push((trace.head.clone(), trace.options.clone(), teacher));
             }
         }
         let executed = match forced {
@@ -588,12 +634,16 @@ impl Decider for Force {
         };
         if self.seat == 0 && executed.kind == "produce" {
             let field = |k: &str| executed.payload.get(k).cloned().unwrap_or(Value::Null);
-            s.sol_built.push(json!({"round":seen.round(),"subtype":subtype(c),"unit":field("unit"),
-                "count":field("count"),"placed":field("placed"),"cost":field("cost")}));
+            s.sol_built.push(
+                json!({"round":seen.round(),"subtype":subtype(c),"unit":field("unit"),
+                "count":field("count"),"placed":field("placed"),"cost":field("cost")}),
+            );
         }
         if executed.id != proposed.id {
-            s.overrides.push(json!({"seat":self.seat,"round":seen.round(),"subtype":subtype(c),
-                "proposed":proposed.id,"executed":executed.id}));
+            s.overrides.push(
+                json!({"seat":self.seat,"round":seen.round(),"subtype":subtype(c),
+                "proposed":proposed.id,"executed":executed.id}),
+            );
         }
         Ok(executed)
     }
@@ -707,7 +757,9 @@ fn play(
             for (i, p) in players.iter().enumerate() {
                 let row = FactionRow::of(FACTIONS[i]).map_err(|e| e.to_string())?;
                 let seat_actor = match student {
-                    Some(student) if i == 0 && matches!(job.arm, Arm::Student | Arm::Dagger) => student,
+                    Some(student) if i == 0 && matches!(job.arm, Arm::Student | Arm::Dagger) => {
+                        student
+                    }
                     _ => actor,
                 };
                 let mut bot = MlpBot::sharing(
@@ -782,7 +834,11 @@ fn play(
     let s = shared.borrow();
     if error.is_none() && job.collect {
         let mut all = collector.lock().expect("collector");
-        all.extend(s.samples.iter().map(|(h, o, t)| (job.origin, h.clone(), o.clone(), t.clone())));
+        all.extend(
+            s.samples
+                .iter()
+                .map(|(h, o, t)| (job.origin, h.clone(), o.clone(), t.clone())),
+        );
     }
     if error.is_none()
         && s.unavailable.is_none()
@@ -885,7 +941,9 @@ fn execute() -> Result<(), String> {
     if distill_out.is_some() && arms != [Arm::RuleAll] && arms != [Arm::Dagger] {
         return Err("--distill-out collects from --arms rule-all or dagger only".into());
     }
-    if (dagger_rounds > 0) != (arms == [Arm::Dagger]) || (dagger_rounds > 0 && distill_out.is_none()) {
+    if (dagger_rounds > 0) != (arms == [Arm::Dagger])
+        || (dagger_rounds > 0 && distill_out.is_none())
+    {
         return Err("--arms dagger needs --dagger-rounds and --distill-out".into());
     }
     let collector: Collected = std::sync::Mutex::new(Vec::new());
@@ -916,9 +974,31 @@ fn execute() -> Result<(), String> {
         .build_global()
         .map_err(|e| e.to_string())?;
     if dagger_rounds > 0 {
-        return dagger(&args, &loaded, student.map(|s| s.actor), &pool, rounds, base, origins, dice, workers, dagger_rounds, distill_out.expect("checked"), bundle, output);
+        return dagger(
+            &args,
+            &loaded,
+            student.map(|s| s.actor),
+            &pool,
+            rounds,
+            base,
+            origins,
+            dice,
+            workers,
+            dagger_rounds,
+            distill_out.expect("checked"),
+            bundle,
+            output,
+        );
     }
-    let results = run_jobs(&loaded, student.as_ref().map(|s| &s.actor), &collector, &pool, rounds, &jobs, workers);
+    let results = run_jobs(
+        &loaded,
+        student.as_ref().map(|s| &s.actor),
+        &collector,
+        &pool,
+        rounds,
+        &jobs,
+        workers,
+    );
     let mut repeats = Vec::new();
     for r in results.iter().filter(|r| r["job"]["repeat"] == true) {
         let twin = results.iter().find(|o| {
@@ -941,30 +1021,40 @@ fn execute() -> Result<(), String> {
         let (mut train, mut validation) = (Vec::new(), Vec::new());
         for (origin, head, options, teacher) in rows {
             let head = actor.layout_head_index(&head).map_err(|e| e.to_string())?;
-            let sample = ti4_mlp::distill::Sample { row, head, options, teacher };
+            let sample = ti4_mlp::distill::Sample {
+                row,
+                head,
+                options,
+                teacher,
+            };
             if origin >= cut {
                 validation.push(sample);
             } else {
                 train.push(sample);
             }
         }
-        let learning_rate: f64 = args
-            .get("--learning-rate")
-            .map_or(Ok(3e-5), |v| v.parse().map_err(|_| "invalid --learning-rate"))?;
+        let learning_rate: f64 = args.get("--learning-rate").map_or(Ok(3e-5), |v| {
+            v.parse().map_err(|_| "invalid --learning-rate")
+        })?;
         let settings = ti4_mlp::distill::Settings {
             learning_rate,
             max_epochs: usize::try_from(number("--epochs", 3)?).map_err(|_| "epochs overflow")?,
             preserve_untrained_rows: true,
             ..ti4_mlp::distill::Settings::default()
         };
-        eprintln!("distill: {} train / {} validation Sol rule-bot decisions", train.len(), validation.len());
+        eprintln!(
+            "distill: {} train / {} validation Sol rule-bot decisions",
+            train.len(),
+            validation.len()
+        );
         let result = ti4_mlp::distill::train(&mut actor, &train, &validation, settings, |e| {
             eprintln!(
                 "epoch {} train NLL {:.5} validation NLL {:.5} steps {}",
                 e.number, e.train_kl, e.validation_kl, e.steps
             );
         })?;
-        let slots = std::fs::read_to_string(bundle.join("slots.json")).map_err(|e| e.to_string())?;
+        let slots =
+            std::fs::read_to_string(bundle.join("slots.json")).map_err(|e| e.to_string())?;
         let saved = ti4_mlp::bundle::write(
             dest,
             &actor.to_device(ti4_tensor::Device::Cpu),
@@ -972,7 +1062,10 @@ fn execute() -> Result<(), String> {
             loaded.critic_mode,
             &ti4_mlp::bundle::Provenance {
                 source: format!("Sol rule-bot distillation from {}", bundle.display()),
-                git_commit: args.get("--git-commit").cloned().ok_or("--distill-out needs --git-commit")?,
+                git_commit: args
+                    .get("--git-commit")
+                    .cloned()
+                    .ok_or("--distill-out needs --git-commit")?,
                 update: loaded.update,
             },
         )
@@ -1035,7 +1128,15 @@ fn run_jobs(
                 .skip(w)
                 .step_by(workers)
                 .map(|j| {
-                    let r = play(&actor, student.as_ref(), collector, vocabulary, pool, rounds, j);
+                    let r = play(
+                        &actor,
+                        student.as_ref(),
+                        collector,
+                        vocabulary,
+                        pool,
+                        rounds,
+                        j,
+                    );
                     let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                     let status = if !r["error"].is_null() {
                         "FAILED"
@@ -1076,11 +1177,16 @@ fn dagger(
     bundle: &Path,
     output: &Path,
 ) -> Result<(), String> {
-    let commit = args.get("--git-commit").cloned().ok_or("--distill-out needs --git-commit")?;
-    let learning_rate: f64 = args
-        .get("--learning-rate")
-        .map_or(Ok(3e-4), |v| v.parse().map_err(|_| "invalid --learning-rate"))?;
-    let epochs: usize = args.get("--epochs").map_or(Ok(3), |v| v.parse().map_err(|_| "invalid --epochs"))?;
+    let commit = args
+        .get("--git-commit")
+        .cloned()
+        .ok_or("--distill-out needs --git-commit")?;
+    let learning_rate: f64 = args.get("--learning-rate").map_or(Ok(3e-4), |v| {
+        v.parse().map_err(|_| "invalid --learning-rate")
+    })?;
+    let epochs: usize = args
+        .get("--epochs")
+        .map_or(Ok(3), |v| v.parse().map_err(|_| "invalid --epochs"))?;
     let slots = std::fs::read_to_string(bundle.join("slots.json")).map_err(|e| e.to_string())?;
     let row = FactionRow::of("sol").map_err(|e| e.to_string())?;
     let mut current = first.unwrap_or_else(|| loaded.actor.inference_copy());
@@ -1091,10 +1197,24 @@ fn dagger(
         let start = base + k * origins;
         let jobs: Vec<Job> = (start..start + origins)
             .flat_map(|origin| {
-                (0..dice).map(move |d| Job { origin, arm: Arm::Dagger, dice: d, repeat: false, collect: true })
+                (0..dice).map(move |d| Job {
+                    origin,
+                    arm: Arm::Dagger,
+                    dice: d,
+                    repeat: false,
+                    collect: true,
+                })
             })
             .collect();
-        let results = run_jobs(loaded, Some(&current), &collector, pool, rounds, &jobs, workers);
+        let results = run_jobs(
+            loaded,
+            Some(&current),
+            &collector,
+            pool,
+            rounds,
+            &jobs,
+            workers,
+        );
         let failed = results.iter().filter(|r| !r["error"].is_null()).count();
         let sol_vp: Vec<f64> = results
             .iter()
@@ -1102,7 +1222,10 @@ fn dagger(
             .filter_map(|r| r["snapshots"].as_array()?.last()?["vp"].as_f64())
             .collect();
         let fresh = std::mem::take(&mut *collector.lock().map_err(|e| e.to_string())?);
-        let labelled = fresh.iter().filter(|(_, _, _, t)| t.iter().any(|p| *p == 1.0)).count();
+        let labelled = fresh
+            .iter()
+            .filter(|(_, _, _, t)| t.iter().any(|p| *p == 1.0))
+            .count();
         let added = fresh.len();
         data.extend(fresh);
         // Validation holds out the last tenth of each round's origins.
@@ -1111,7 +1234,12 @@ fn dagger(
         let (mut train, mut validation) = (Vec::new(), Vec::new());
         for (origin, head, options, teacher) in &data {
             let head = actor.layout_head_index(head).map_err(|e| e.to_string())?;
-            let sample = ti4_mlp::distill::Sample { row, head, options: options.clone(), teacher: teacher.clone() };
+            let sample = ti4_mlp::distill::Sample {
+                row,
+                head,
+                options: options.clone(),
+                teacher: teacher.clone(),
+            };
             if (origin - base) % origins >= origins - hold {
                 validation.push(sample);
             } else {
@@ -1136,7 +1264,10 @@ fn dagger(
             validation.len()
         );
         let result = ti4_mlp::distill::train(&mut actor, &train, &validation, settings, |e| {
-            eprintln!("  epoch {} train {:.5} validation {:.5} steps {}", e.number, e.train_kl, e.validation_kl, e.steps);
+            eprintln!(
+                "  epoch {} train {:.5} validation {:.5} steps {}",
+                e.number, e.train_kl, e.validation_kl, e.steps
+            );
         })?;
         let actor = actor.to_device(ti4_tensor::Device::Cpu);
         let path = std::path::PathBuf::from(format!("{}-r{}", dest.display(), k + 1));
@@ -1160,7 +1291,11 @@ fn dagger(
     }
     let report = json!({"schema":1,"status":"sol-dagger-distillation","checkpoint":bundle,"learning_rate":learning_rate,"epochs":epochs,
         "source_sha256":hash(include_bytes!("sol_round1_pilot.rs")),"rounds":log});
-    std::fs::write(output, serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::write(
+        output,
+        serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1199,18 +1334,37 @@ mod tests {
         let c = Choice::new(
             PlayerId::new("seat0"),
             "produce",
-            vec![build("dreadnought", 0), build("fighter", 0), build("sol_infantry", 0), ChoiceOption::new("done_producing", "decline")],
+            vec![
+                build("dreadnought", 0),
+                build("fighter", 0),
+                build("sol_infantry", 0),
+                ChoiceOption::new("done_producing", "decline"),
+            ],
         );
         let dread = c.options[0].clone();
         let stop = c.options[3].clone();
-        assert_eq!(doctrine(&c, "produce_unit", &dread).as_deref(), Some("build|fighter|1"));
-        assert_eq!(doctrine(&c, "produce_unit", &stop).as_deref(), Some("build|fighter|1"));
+        assert_eq!(
+            doctrine(&c, "produce_unit", &dread).as_deref(),
+            Some("build|fighter|1")
+        );
+        assert_eq!(
+            doctrine(&c, "produce_unit", &stop).as_deref(),
+            Some("build|fighter|1")
+        );
         let full = Choice::new(
             PlayerId::new("seat0"),
             "produce",
-            vec![build("dreadnought", 0), build("fighter", 1), build("sol_infantry", 0), ChoiceOption::decline()],
+            vec![
+                build("dreadnought", 0),
+                build("fighter", 1),
+                build("sol_infantry", 0),
+                ChoiceOption::decline(),
+            ],
         );
-        assert_eq!(doctrine(&full, "produce_unit", &dread).as_deref(), Some("build|sol_infantry|1"));
+        assert_eq!(
+            doctrine(&full, "produce_unit", &dread).as_deref(),
+            Some("build|sol_infantry|1")
+        );
         assert_eq!(doctrine(&full, "produce_unit", &stop), None);
     }
 

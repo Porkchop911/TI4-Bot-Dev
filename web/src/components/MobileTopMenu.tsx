@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Drawer } from "../primitives/index.ts";
 import { setLayoutOverride, useLayoutOverride, type LayoutOverride } from "../hooks/useCompactLayout.ts";
 import { useMobileMenuSlot } from "../presentation/MobileMenuSlot.tsx";
+import type { VersionSummary } from "../versionInfo.ts";
+import { VersionInfo } from "./VersionInfo.tsx";
 import "./MobileTopMenu.css";
 
 /** Why the menu button carries a dot: something wants the viewer, or the link is down. */
@@ -39,6 +41,8 @@ export interface MobileTopMenuProps {
   onOpenObjectives: () => void;
   /** Present on the public playtest server: opens the feedback sheet. */
   onOpenFeedback?: () => void;
+  /** Bot and rules version of the game and the build. */
+  versions?: VersionSummary;
 }
 
 /**
@@ -52,6 +56,7 @@ export const MobileTopMenu: React.FC<MobileTopMenuProps> = ({
   onOpenTechnologies,
   onOpenObjectives,
   onOpenFeedback,
+  versions,
 }) => {
   const [open, setOpen] = useState(false);
   const slot = useMobileMenuSlot();
@@ -141,6 +146,7 @@ export const MobileTopMenu: React.FC<MobileTopMenuProps> = ({
               </button>
             ))}
           </div>
+          {versions && <VersionInfo summary={versions} />}
         </div>
       </Drawer>
     </>

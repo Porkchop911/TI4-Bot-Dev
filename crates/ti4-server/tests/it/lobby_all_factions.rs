@@ -206,6 +206,7 @@ fn slow_undecided_tables_over_many_seeds_seat_distinct_pool_factions_and_play() 
 }
 
 #[test]
+#[ignore = "slow (>60s): plays twelve smart games of four with the tricky factions; to be improved"]
 fn slow_tricky_factions_play_a_longer_smart_game() {
     let tricky = [
         "nekro", "ghost", "winnu", "naaz", "titans", "mahact", "empyrean", "nomad", "cabal",

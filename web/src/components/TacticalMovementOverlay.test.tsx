@@ -1176,7 +1176,7 @@ describe("TacticalMovementOverlay Armada fleet supply", () => {
     );
 
   it("reads the engine's limit and marks Armada's two", () => {
-    show(movement({ fleet_supply: { used: 0, limit: 5, armada: 2 } }));
+    show(movement({ fleet_supply: { used: 0, limit: 5, fleet_supply_bonus: 2 } }));
     expect(screen.getByTestId("fleet-supply-gauge")).toHaveTextContent("0 / 5 Ships");
     expect(screen.getByTestId("movement-armada")).toHaveTextContent("incl. +2 Armada");
   });

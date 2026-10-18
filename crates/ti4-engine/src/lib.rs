@@ -51,10 +51,12 @@ pub mod fleet;
 pub mod fleet_strength;
 pub mod fracture;
 pub mod game;
+pub mod infantry_ii;
 pub mod invasion;
 pub mod laws;
 pub mod leaders;
 pub mod legendary;
+pub mod magen_defense;
 pub mod map_feasibility;
 pub mod movement;
 pub mod neutral_units;
@@ -65,6 +67,7 @@ pub mod observation;
 pub mod opening;
 pub mod payment;
 pub mod phase;
+pub mod phrases;
 pub mod planets;
 pub mod preview;
 pub mod production;
@@ -88,6 +91,10 @@ pub mod supply;
 pub mod synergy;
 pub mod tactical;
 pub mod technology;
+#[cfg(test)]
+mod technology_effects_tests;
+#[cfg(test)]
+mod faction_effects_tests;
 pub mod thunders_edge;
 pub mod timing;
 pub mod tokens;
@@ -113,7 +120,7 @@ pub use combat::{
     space_cannon_offense,
 };
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
-pub use dice::{Dice, Roll};
+pub use dice::{Dice, Roll, RollSubject};
 pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};
 pub use fingerprint::{CanonicalHash, CanonicalHashVersion, decision_hash, event_hash};
 pub use game::{Game, GameError, RunError, StepResult};

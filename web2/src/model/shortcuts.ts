@@ -15,6 +15,9 @@ function collect(blocks: BlockView[], into: Keyed[]) {
     if (block.kind === "menu") {
       into.push(...block.rows);
     }
+    if (block.kind === "source") {
+      into.push(...(block.choices ?? []));
+    }
     if (block.kind === "draft") {
       collect(block.blocks, into);
     }

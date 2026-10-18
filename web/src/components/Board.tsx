@@ -36,6 +36,8 @@ import {
 import { useSharedPaymentDraft } from "../presentation/PaymentDraftContext.tsx";
 import { useSharedTokenDraft } from "../presentation/CommandTokenDraftContext.tsx";
 import { useSharedReadyDraft } from "../presentation/ReadyPlanetsDraftContext.tsx";
+import { useProductionPayment } from "../presentation/ProductionPaymentContext.tsx";
+import { isAnsweredFromPlan } from "../presentation/productionPayment.ts";
 
 export { getPlayerColor, PLAYER_PALETTE };
 export type { MapOverlayMode };
@@ -117,12 +119,17 @@ export const Board: React.FC<BoardProps> = ({
     [tokenPayment?.offer],
   );
 
+  // A production's later payment is answered from the confirmed plan: the map offers no planets
+  // for it (a toggle there would stage a payment nothing confirms; run s2-04-2345).
+  const productionPlan = useProductionPayment()?.plan ?? null;
+  const mapChoice = isAnsweredFromPlan(pendingChoice, productionPlan) ? null : pendingChoice;
+
   // Pure presentation derivation
   const presentation = buildBoardPresentationModel(
     board,
     seatingOrder,
     players,
-    pendingChoice,
+    mapChoice,
     viewerSeat,
     selectedSystemId,
     tokenPaymentPlanets,
@@ -211,14 +218,14 @@ export const Board: React.FC<BoardProps> = ({
       readyMarks ??
       (presentation.targets.targetMode === "payment" && tokenPayment
         ? derivePaymentMarks(tokenPayment.offer, tokenPayment.draft)
-        : presentation.targets.targetMode === "payment" && pendingChoice
+        : presentation.targets.targetMode === "payment" && mapChoice
           ? derivePaymentMarks(
-              derivePaymentOffer(pendingChoice),
+              derivePaymentOffer(mapChoice),
               sharedDraft?.draft ?? EMPTY_PAYMENT_DRAFT,
             )
           : undefined),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [presentation.targets.targetMode, pendingChoice, sharedDraft?.draft, tokenPayment, readyMarks],
+    [presentation.targets.targetMode, mapChoice, sharedDraft?.draft, tokenPayment, readyMarks],
   );
 
   // Touch: one finger pans, two fingers pinch-zoom the map only (touch-action: none keeps the

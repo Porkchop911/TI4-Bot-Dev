@@ -101,6 +101,17 @@ pub struct PlanetView {
     /// Display only: the printed values are in the map tile metadata. Empty when nothing does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_boosts: Vec<PlanetValueBoost>,
+    /// The resources of the planet now, when they differ from the printed value: with its
+    /// attachments and the laws on it (`ti4_engine::production::planet_value_now`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<i64>,
+    /// The influence of the planet now, when it differs from the printed value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub influence: Option<i64>,
+    /// The technology specialties of the planet now ("warfare"), when they differ from the
+    /// printed ones: with its attachments (`ti4_engine::planets::tech_specialties_now`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tech_specialties: Option<Vec<String>>,
 }
 
 /// One source of extra resources or influence on a planet.
@@ -273,6 +284,38 @@ pub struct InvasionStepView {
     pub harrow_hits: usize,
 }
 
+/// One round of a space combat of the turn as it resolved ([`ti4_model::state::SpaceRoundRecord`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SpaceRoundView {
+    pub system_id: SystemId,
+    pub attacker: PlayerId,
+    pub defender: PlayerId,
+    pub battle_seq: u32,
+    pub round: u32,
+    pub round_start: Vec<PlacedUnitView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_start: Vec<PlacedUnitView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_dice: Vec<CombatDieRoll>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub barrage_hits: BTreeMap<PlayerId, u32>,
+    pub dice_rolls: Vec<CombatDieRoll>,
+    pub hits: BTreeMap<PlayerId, u32>,
+}
+
+/// A step of an invasion of the turn as it resolved ([`ti4_model::state::GroundStepRecord`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GroundStepView {
+    pub system_id: SystemId,
+    pub invasion_seq: u64,
+    pub invader: PlayerId,
+    pub step: InvasionStepView,
+}
+
 /// Redacted view of the galaxy board.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -287,6 +330,14 @@ pub struct BoardView {
     pub combat: Option<CombatView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invasion: Option<InvasionView>,
+    /// The rounds of the space combats of the turn, as they resolved: a combat that began and
+    /// ended between two updates is here too. Cleared when the turn ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub space_rounds: Vec<SpaceRoundView>,
+    /// The steps of the invasions of the turn (bombardment, space cannon, each ground round),
+    /// as they resolved. Cleared when the turn ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ground_steps: Vec<GroundStepView>,
 }
 
 /// Exact progress towards a public objective requirement.
@@ -349,6 +400,11 @@ pub struct GameView {
     pub phase: Phase,
     pub speaker: PlayerId,
     pub seating_order: Vec<PlayerId>,
+    /// The order of the turns of the action phase (LRR 3, 47): by the lowest initiative of each
+    /// seat, an override such as the Naalu "0" token counted in its place, ties and seats with no
+    /// card by seating. Empty, and absent, outside the action phase.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initiative_order: Vec<PlayerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_player: Option<PlayerId>,
     pub finished: bool,

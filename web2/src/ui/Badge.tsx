@@ -1,5 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cx } from "./cx";
+import { useReadOnly } from "./readOnly";
 
 export type BadgeTone = "draft" | "live" | "done" | "alert" | "quiet";
 
@@ -65,6 +66,10 @@ const KEY_LABELS: Record<string, string> = { Enter: "↵", Escape: "Esc" };
 
 /** The shortcut key of a control. It takes the colour of the control it is in. */
 export function Kbd({ children }: { children: string }) {
+  // Read-only content has no keys.
+  if (useReadOnly()) {
+    return null;
+  }
   return (
     <kbd
       aria-hidden

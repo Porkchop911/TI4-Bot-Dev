@@ -83,7 +83,7 @@ const VIEW: LobbyView = {
     }),
     row("slot_2", "Bo", { faction: "Sol", sheet: { ...SHEET, title: "The Federation of Sol" } }),
   ],
-  fill: null,
+  bots: null,
   shuffle: null,
   footer: { note: "", main: null, nickname: false },
 };
@@ -118,7 +118,10 @@ it("the faction of the viewer opens its choice in the row, and a row sends its c
   ).toHaveLength(2);
   fireEvent.click(list.getByRole("button", { name: "Hacan" }));
   expect(sent).toEqual([{ type: "faction", player: "ada", faction: "hacan" }]);
-  // The choice stays open: the table says the new faction, and it can be changed again.
+  // A pick closes the choice; the opener opens it again, and a second click closes it.
+  expect(editor()).toBeNull();
+  expect(opener()).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(opener());
   expect(editor()).not.toBeNull();
   fireEvent.click(opener());
   expect(editor()).toBeNull();

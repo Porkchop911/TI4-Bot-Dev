@@ -90,12 +90,18 @@ async function open({ memory = false } = {}) {
   };
   const dispatch = (intent: Intent) => act(async () => result.current.session!.dispatch(intent));
   const button = (label: string) => flow().footer.actions.find((item) => item.label === label);
-  /** The list of the seats, when the panel is a strategic action. */
+  /** The list of the seats, when the panel is a strategic action: the part of the Log. */
   const seats = (): SeatRowView[] | null => {
-    const block = flow().blocks.find((item) => item.kind === "seats");
+    const block = flow().blocks.find((item) => item.kind === "seats" && item.role === "inform");
     return block?.kind === "seats" ? block.rows : null;
   };
-  const mine = () => seats()?.find((row) => row.you) ?? null;
+  /** The row of the viewer: with its editor, the decision of the step sheet, when it has one. */
+  const mine = () => {
+    const sheet = flow().blocks.find((item) => item.kind === "seats" && item.role === "decide");
+    return (
+      (sheet?.kind === "seats" ? sheet.rows[0] : null) ?? seats()?.find((row) => row.you) ?? null
+    );
+  };
   const menu = (blocks: BlockView[] | undefined) =>
     (blocks ?? []).flatMap((block) => (block.kind === "menu" ? block.rows : []));
   /** Answers the open choice of the game with the option of this id. */
@@ -160,7 +166,9 @@ it.skipIf(!built)(
     await stepUntil(() => flow().heading === "Politics" && !!mine()?.open);
     const rows = game.seats()!;
     expect(rows[0]).toMatchObject({ order: "P", status: { sign: "▶", label: "Deciding" } });
-    expect(rows.filter((row) => row.open)).toHaveLength(1);
+    // The list of the Log has nothing open; the row of the viewer with its draft is the sheet's.
+    expect(rows.filter((row) => row.open)).toHaveLength(0);
+    expect(rows.find((row) => row.you)?.status.label).toBe("Private draft");
     expect(mine()?.status).toEqual({ tone: "draft", sign: "✎", label: "Private draft" });
     expect(flow().pill).toEqual({ tone: "draft", label: "Private draft" });
     // The question is not one of the game: the toolbar says who the game waits for.

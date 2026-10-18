@@ -19,6 +19,7 @@ import {
 } from "../../protocol/transport.ts";
 import { PROTOCOL_VERSION, type ReactionModeSetting, type ServerMessage } from "../../protocol/types.ts";
 import type { TurnRedoCommand, TurnRedoStatus } from "../../protocol/turnRedo.ts";
+import type { HostedGameVersions } from "../../versionInfo.ts";
 import type { Envelope, HostProgress, HostSave, StartConfig } from "@ti4/shared/engine/host.ts";
 import type { HostPort } from "@ti4/shared/engine/protocol.ts";
 import { engineLink, type EngineLink } from "@ti4/shared/link/engineLink.ts";
@@ -64,6 +65,8 @@ export interface LocalTransportOptions {
    * position.
    */
   onSave?: (save: HostSave) => void | Promise<void>;
+  /** The newest bot and rules version of this engine (`describe`); display only. */
+  engineVersions?: { botVersion: number | null; rulesVersion: number | null };
   /** Replay progress, while a saved game (or a rewind) is played again. */
   onProgress?: (progress: HostProgress) => void;
 }
@@ -208,6 +211,22 @@ export class LocalTransport implements GameTransport {
     this.store.set({ ...this.store.get(), status: "connecting", fatal: null, lastError: null });
     const save = this.latest;
     void this.boot(save ? { resume: save } : this.options.config);
+  }
+
+  /** The versions the game plays: from the latest save, else from what the game started from. */
+  gameVersions(): HostedGameVersions {
+    const start = this.options.config as { resume?: Partial<HostSave>; setup?: { bot_version?: number } };
+    const stored = this.latest?.bot_version ?? start.resume?.bot_version;
+    // A resumed save without the field plays bot version 1; a new game plays the newest.
+    const newest = this.options.engineVersions?.botVersion ?? null;
+    const fresh = start.resume === undefined;
+    return {
+      botVersion: stored ?? start.setup?.bot_version ?? (fresh ? (newest ?? 1) : 1),
+      // Whether the save this page opened had the field: the engine writes it back once settled.
+      botRecorded: fresh || start.resume?.bot_version !== undefined,
+      newestBot: newest,
+      newestRules: this.options.engineVersions?.rulesVersion ?? null,
+    };
   }
 
   /** The latest save (the answers so far); null before the first question. */

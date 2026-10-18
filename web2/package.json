@@ -13,8 +13,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test --project=desktop --project=phone",
-    "e2e:slow": "playwright test --project=slow --project=slow-phone",
-    "shots": "WEB2_SHOTS=1 playwright test --project=shots --project=shots-phone"
+    "e2e:slow": "playwright test --project=slow --project=slow-phone"
   },
   "dependencies": {
     "react": "^19.3.0",

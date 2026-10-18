@@ -79,6 +79,7 @@ pub fn abilities(state: &GameState) -> Vec<Ability> {
         .map(|seat| (seat.id.clone(), seat.faction.to_string()))
         .collect();
 
+    let owners = owner_abilities(state);
     borrowers
         .into_iter()
         .flat_map(|borrower| {
@@ -137,7 +138,60 @@ pub fn abilities(state: &GameState) -> Vec<Ability> {
                     ))
                 })
         })
+        .chain(owners)
         .collect()
+}
+
+/// Sol's own Evelyn Delouis ("At the start of a ground combat round: exhaust to choose 1 ground
+/// force in the active system: it rolls 1 additional die during this combat round"), rules version
+/// 16. It runs through the same selection, mark and roll reader as a Ssruu copy, so the owner
+/// chooses the ground force and `extra_die_for` finds it; the card that exhausts is the agent.
+fn owner_abilities(state: &GameState) -> Vec<Ability> {
+    if state.rules_version < ti4_model::state::RULES_FACTION_EFFECTS {
+        return Vec::new();
+    }
+    state
+        .players
+        .iter()
+        .filter(|seat| seat.faction.as_str() == "sol")
+        .map(|seat| {
+            let owner = seat.id.clone();
+            let (effect_owner, condition_owner) = (owner.clone(), owner.clone());
+            Ability::stateful(
+                format!("leader:sol:{SOL_AGENT}:GROUND_COMBAT_ROUND_STARTED:after"),
+                owner,
+                "GROUND_COMBAT_ROUND_STARTED".to_owned(),
+                Relation::After,
+                Arc::new(move |event, _, context| {
+                    resolve_copy(event, context, &effect_owner, &effect_owner, SOL_AGENT)
+                }),
+            )
+            .with_optional(true)
+            .with_stateful_condition(Arc::new(move |event, _, context| {
+                copy_plan(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    event,
+                    &condition_owner,
+                    &condition_owner,
+                    SOL_AGENT,
+                )
+                .is_some()
+            }))
+        })
+        .collect()
+}
+
+/// Whether any seat holds a readied Sol agent of its own (rules version 16), for the producer's
+/// gating of `GROUND_COMBAT_ROUND_STARTED`.
+#[must_use]
+pub fn has_owner_round_agent(state: &GameState) -> bool {
+    state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS
+        && state.players.iter().any(|seat| {
+            seat.faction.as_str() == "sol"
+                && seat.leaders.get(&LeaderId::new(SOL_AGENT)) == Some(&ti4_model::state::LeaderStatus::Readied)
+        })
 }
 
 /// Whether any Yssaril can currently borrow this exact agent, for event-producer gating.
@@ -213,6 +267,17 @@ fn source_is_borrowable(
     source_owner: &PlayerId,
     source_agent: &str,
 ) -> bool {
+    if borrower == source_owner {
+        // The owner's own agent (rules version 16), only while readied.
+        return state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS
+            && state
+                .player(borrower)
+                .is_some_and(|seat| {
+                    seat.faction.as_str() == "sol"
+                        && seat.leaders.get(&LeaderId::new(source_agent))
+                            == Some(&ti4_model::state::LeaderStatus::Readied)
+                });
+    }
     crate::factions::hooks_cards::borrowable_agents(state, content, borrower)
         .iter()
         .any(|(owner, agent)| owner == source_owner && agent.as_str() == source_agent)
@@ -371,14 +436,22 @@ fn resolve_copy(
         .collect();
     let choice = Choice::new(
         borrower.clone(),
-        format!("Ssruu copying {source_agent}: choose one unit for +1 combat die"),
+        if borrower == source_owner {
+            format!("{source_agent}: choose one unit for +1 combat die")
+        } else {
+            format!("Ssruu copying {source_agent}: choose one unit for +1 combat die")
+        },
         options,
     )
     .offered(
         crate::strategy_cards::leader_card(
             context.content,
             source_agent,
-            "agent (copied by Ssruu)",
+            if borrower == source_owner {
+                "agent"
+            } else {
+                "agent (copied by Ssruu)"
+            },
         ),
         Vec::new(),
         &captions
@@ -448,7 +521,12 @@ fn resolve_copy(
         .retain(|existing, _| !existing.starts_with(&borrower_prefix));
     context.state.faction_marks.insert(key, value);
     // Through `leaders::exhaust` so a watching Nomad's Temporal Command Suite hears it.
-    crate::leaders::exhaust(context.state, borrower, &LeaderId::new("yssarilagent"));
+    let own_agent = borrower == source_owner;
+    crate::leaders::exhaust(
+        context.state,
+        borrower,
+        &LeaderId::new(if own_agent { source_agent } else { "yssarilagent" }),
+    );
     if borrower != &target.owner {
         crate::diplomacy::evaluate_event(
             context.state,
@@ -460,11 +538,13 @@ fn resolve_copy(
         )
         .expect("validated diplomacy promises settle deterministically");
     }
-    crate::factions::hooks_cards::borrowed_agent_used(
-        context,
-        borrower,
-        &LeaderId::new(source_agent),
-    );
+    if !own_agent {
+        crate::factions::hooks_cards::borrowed_agent_used(
+            context,
+            borrower,
+            &LeaderId::new(source_agent),
+        );
+    }
     Ok(())
 }
 

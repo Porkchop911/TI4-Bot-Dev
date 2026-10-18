@@ -23,7 +23,6 @@ export type StepStatus =
   | "done"
   | "decision"
   | "needs-review"
-  | "boundary"
   | "battle"
   | "draft";
 export type TrailStatus = "complete" | "active" | "todo" | "skipped";
@@ -32,12 +31,29 @@ export interface StepTabView {
   name: string;
   status: StepStatus;
   caption: string;
+  /**
+   * The tab is no control: a resolved step of the live game, whose result is in the live turn of
+   * the Log.
+   */
+  locked?: boolean;
 }
+
+/**
+ * Whom a part of the open action serves. "decide": what the viewer needs for the choice that is
+ * open now (the question, the source that asks, the options, the costs, what is staged, the odds):
+ * the step sheet on the map. "inform": what happened, or what the other seats do (their rows in a
+ * strategic action, "Then: …", the turn of another seat, a combat that the viewer watches): the
+ * live turn of the Log. The selectors set it; a block without it decides.
+ */
+export type BlockRole = "decide" | "inform";
+
+/** A block informs: it is of the Log while the viewer decides, never of the step sheet. */
+export const informs = (block: { role?: BlockRole }): boolean => block.role === "inform";
 
 /** A button that the data source offers. Compare `ChoiceOptionDto`. */
 export interface ActionButtonView {
   label: string;
-  tone?: "default" | "primary" | "quiet" | "demo";
+  tone?: "default" | "primary" | "quiet";
   disabled?: boolean;
   pressed?: boolean;
   arrow?: boolean;
@@ -63,8 +79,12 @@ export interface DieView {
 }
 
 export interface BattleRowView {
-  unit: UnitType;
-  count: number;
+  /** Null for dice whose units the game does not name: `label` says what rolled. */
+  unit: UnitType | null;
+  /** The name of the row, when it is not the name of its unit. */
+  label?: string;
+  /** Null when the units are not known. */
+  count: number | null;
   /** Shown as "7+". Null when the unit does not roll. */
   target: number | null;
   targetTitle: string;
@@ -75,9 +95,6 @@ export interface BattleRowView {
   hits: string;
   scored: boolean;
   pills: { tone: "damage" | "loss" | "staged"; label: string; title?: string }[];
-  gone: boolean;
-  /** Hit assignment offered on this row. */
-  assign: { kind: "sustain" | "destroy" | "destroy-damaged"; label: string; disabled: boolean }[];
 }
 
 export interface BattleSideView {
@@ -85,10 +102,6 @@ export interface BattleSideView {
   role: "Attacker" | "Defender";
   isViewer: boolean;
   hits: number | null;
-  /** Limits and modifiers, on one line. */
-  meta: { text: string; tone?: "bad" | "accent" }[];
-  /** Action cards, on their own line. The viewer sees the names of their cards. */
-  cards: string;
   rows: BattleRowView[];
 }
 
@@ -98,9 +111,6 @@ export interface BattleTableView {
   score: string;
   owed: { hits: number; seat: SeatId } | null;
   sides: BattleSideView[];
-  notes: string[];
-  /** A rule of this roll. It is behind "?". */
-  hint?: string;
 }
 
 export interface OddsView {
@@ -118,10 +128,10 @@ export interface OddsView {
 }
 
 /**
- * The odds of the space combat that a staged movement starts, as `ti4-calc` computes them in the
- * page. The attacker is the seat that moves.
+ * The odds of a combat that the staged units start, as `ti4-calc` computes them in the page. The
+ * attacker is the seat that moves or lands.
  */
-export interface SpaceOddsView {
+export interface CombatOddsView {
   defender: SeatId;
   /** Whole percentages of the attacker, which sum to 100. Null before the first answer. */
   win: number | null;
@@ -130,44 +140,29 @@ export interface SpaceOddsView {
   loss: number | null;
   /** How many rollouts the numbers are of. 0 before the first answer. */
   rollouts: number;
-  /** The numbers are of another movement: the answer for this one is on its way. */
+  /** The numbers are of other staged units: the answer for these is on its way. */
   pending: boolean;
-  /** The attacker, then the defender: the ships by kind, in the order of the units. */
+  /** The attacker, then the defender: the units by kind, in the order of the units. */
   sides: {
     seat: SeatId;
-    ships: {
+    units: {
       unit: UnitType;
-      /** The ships that are expected to survive, with one decimal ("1.8"). Null before the first answer. */
+      /** The printed name of the unit ("Fighter II"). Without it the unit is named by its kind. */
+      name?: string;
+      /** The units that are expected to survive, with one decimal ("1.8"). Null before the first answer. */
       expected: string | null;
-      /** The ships that fight. */
+      /** The units that fight. */
       fielded: number;
     }[];
   }[];
 }
 
-export interface OutcomeView {
-  title: string;
-  subtitle: string;
-  sides: { seat: SeatId; lost: Force; kept: Force; keptLabel: string }[];
-  note?: string;
-}
-
-export type BattleOfferView =
-  | {
-      kind: "note";
-      tone: "accent" | "success";
-      alert?: boolean;
-      strong: string;
-      text?: string;
-      /** The rule behind the note. It is behind "?". */
-      hint?: string;
-    }
-  | { kind: "offer"; eyebrow: string; title: string; text: string; actions: ActionButtonView[] };
+/** The odds of the space combat that a staged movement starts. */
+export type SpaceOddsView = CombatOddsView;
 
 export interface BattleRecordView {
   key: string;
   label: string;
-  odds?: OddsView;
   table: BattleTableView;
 }
 
@@ -194,6 +189,8 @@ export interface ActivationView {
   active: { system: SystemId; name: string } | null;
   /** The tactic pool of the acting player, before and after the token of this activation. */
   tacticPool: [now: number, after: number];
+  /** The activation places a command token. False: a tactical action without one (Warfare). */
+  costsToken: boolean;
   draft: boolean;
 }
 
@@ -300,7 +297,7 @@ export interface OriginView {
   capacity: number;
   /** What stays in the system after the staged ships left. */
   stays: string;
-  /** Units that stay with no ship to carry them. They are removed. */
+  /** Units that use capacity and that no ship can load: they stay, with the reason. */
   warning: string | null;
   /** The player is done with this system: something leaves it, or the player marked it. */
   handled: boolean;
@@ -309,7 +306,8 @@ export interface OriginView {
 }
 
 export interface RiftRowView {
-  unit: UnitType;
+  /** Null when the game does not name the ship that rolled. */
+  unit: UnitType | null;
   name: string;
   text: string;
   /** Null before the roll. */
@@ -318,7 +316,6 @@ export interface RiftRowView {
 
 export interface MovementView {
   kind: "movement";
-  editing: boolean;
   /** The active system. */
   target: { system: SystemId; label: string };
   origins: OriginView[];
@@ -328,44 +325,46 @@ export interface MovementView {
     rows: { unit: UnitType; name: string; text: string; system: SystemId }[];
   } | null;
   /** The fleet of the player in the active system, before and after the staged movement. */
-  arrival: { unit: UnitType; now: number; after: number }[];
+  arrival: { unit: UnitType; name?: string; now: number; after: number }[];
   gauges: GaugeView[];
   excessShips: number;
   riftRolls: number;
   rift: RiftRowView[] | null;
-  removed: UnitType[];
+  /** The names of the units that a rift destroyed: "Carrier II", "Infantry I". */
+  removed: string[];
+  /** What the space cannon offense rolled, else the guns that will roll, without dice. */
   cannon: BattleTableView | null;
-  cannonSkipped: boolean;
   /** The space combat that the staged ships start. Null when no other seat has ships there, or no ship moves. */
   odds: SpaceOddsView | null;
 }
 
 export interface CombatView {
   kind: "combat";
-  skipped: string | null;
-  outcome: OutcomeView | null;
-  offers: BattleOfferView[];
+  /**
+   * The open question of the viewer that has no shape on the rows yet, as the list of a
+   * decision: its prompt and its blocks. Null when the viewer is not asked, or when the question
+   * is a reaction window (the band on top of the panel).
+   */
+  decision?: { prompt: string; blocks: BlockView[] } | null;
   records: BattleRecordView[];
   /** Changes when the battle moves on; the view then shows the latest record again. */
   revision: string;
 }
 
-export interface InvasionPlanetView {
-  id: PlanetId;
-  name: string;
-  heading: string;
-  counters: { unit: UnitType; left: number; counter: CounterView }[];
-  owner: SeatId | null;
-  facts: { label?: string; strong?: string; text?: string }[];
-  result: { text: string; failed: boolean } | null;
-  outcome: OutcomeView | null;
-  /** What ground combat will roll with the staged forces, with the simulated odds in its headers. */
-  projection: { note: string } | { table: BattleTableView; odds: OddsView } | null;
-  offers: BattleOfferView[];
-  records: BattleRecordView[];
-  /** A table that shows what will roll before ground combat, where the draft stops. */
-  preview: BattleTableView | null;
+/**
+ * The odds of the ground combat that the staged landings start on a planet. The numbers are of
+ * the last answer; `preview` is what the first round rolls with the units of that answer.
+ */
+export interface GroundOddsView extends CombatOddsView {
+  /** The planet has a defense that the odds cannot count: there is no number. */
+  unavailable: boolean;
+  /** The table of the first round, with the odds in its headers. Null before the first answer. */
+  preview: { table: BattleTableView; odds: OddsView } | null;
 }
+
+/** What the ground odds count and leave out: the end of the hint of the odds. */
+export const GROUND_ODDS_COUNT =
+  "Counted: the ground forces of both sides on the planet and those that land, the damaged ones, the SPACE CANNON of the defender against the landing, and the ships that fire during the combat (Harrow). Left out: action cards, promissory notes and leaders.";
 
 /** One planet of the active system while the landings are staged. */
 export interface LandingPlanetView {
@@ -385,6 +384,8 @@ export interface LandingPlanetView {
   lands: string;
   /** Why nothing can land here. */
   reason: string | null;
+  /** The odds of the ground combat that the staged units start here. Null: no ground combat. */
+  odds: GroundOddsView | null;
 }
 
 /**
@@ -408,13 +409,13 @@ export interface LandingView {
 
 export interface InvasionView {
   kind: "invasion";
-  /** The landings while they are staged. Null in every other state of the step. */
-  landing: LandingView | null;
-  skipped: string | null;
-  planets: InvasionPlanetView[];
-  gauges: GaugeView[];
-  plannedNote: boolean;
-  revision: string;
+  /** The landings, staged at the active system. */
+  landing: LandingView;
+  /**
+   * The rolls of the invasion as they resolved (bombardment, space cannon defense, each ground
+   * round): a turn of the Log that is opened. Absent while the landings are staged.
+   */
+  records?: BattleRecordView[];
 }
 
 /** The total of a payment. The player chooses the planets on the board, not in the panel. */
@@ -432,6 +433,8 @@ export interface PaymentView {
    * that pays exactly what the planets leave; null when the trade goods cannot do that.
    */
   goods: { id: string; value: number; max: number; rest: number | null } | null;
+  /** Commodities that pay as trade goods (the Keleres agent): a counter next to the trade goods. */
+  commodities?: { id: string; value: number; max: number } | null;
   /** Auto-pay and "Clear payment". They change the staged payment on the map; nothing is sent. */
   actions: ActionButtonView[];
 }
@@ -517,22 +520,10 @@ export interface BuildSheetView {
 
 export interface ProductionView {
   kind: "production";
-  /** The production while it is staged on the map. Absent in every other state of the step. */
-  sheet?: BuildSheetView;
-  skipped: string | null;
-  title: string;
-  subtitle: string;
-  rows: {
-    unit: UnitType;
-    name: string;
-    subtitle: string;
-    counter: CounterView | null;
-    quantity: number | null;
-    placement: { options: { id: string; label: string }[]; selected: string } | null;
-  }[];
-  gauges: GaugeView[];
+  /** The production, staged on the map. */
+  sheet: BuildSheetView;
+  /** The payment of the build. The footer has its line, and the board its controls. */
   payment: PaymentView;
-  done: { strong: string; text: string } | null;
 }
 
 export type StepContentView =
@@ -542,14 +533,34 @@ export type StepContentView =
   | InvasionView
   | ProductionView;
 
+/** The parts of a step, in its heading. */
+export type TrailView = { label: string; status: TrailStatus; reason?: string }[];
+
+/** An entry of a draft that no longer fits: the row that marks it in its step. */
+export interface ReviewView {
+  /** The unit that the entry names. */
+  icon: UnitType | null;
+  /** What the entry is: "Carrier from Jord · #01". */
+  title: string;
+  /** Why it no longer fits. */
+  reason: string;
+  /** Takes the entry out. Null when only a change of the step fixes it. */
+  remove: ActionButtonView | null;
+}
+
 export interface TaskView {
   step: number;
   title: string;
-  pill: PillView;
-  trail: { label: string; status: TrailStatus; reason?: string }[];
+  /** The state of the step; null when the content says it already (the stage of a watched round). */
+  pill: PillView | null;
+  trail: TrailView;
   edit: { label: string; step: number; disabled: boolean; hint?: string } | null;
+  /** The entry of a draft that no longer fits, when it is of this step. */
+  review?: ReviewView | null;
   /** Rules and explanations of this step. */
   help: HelpView[];
+  /** Whom the content of the step serves: a combat that the viewer watches informs. */
+  role: BlockRole;
   content: StepContentView;
   footer: FooterView;
 }
@@ -585,6 +596,8 @@ export interface MenuRowView {
   state?: string;
   /** Rule text, shown on hover or click. */
   hint?: string;
+  /** Printed text in titled parts, shown on hover or click: the primary and the secondary of a strategy card. */
+  help?: HelpView[];
   /** The printed text of a card, shown under the title. For a list that has the room for it. */
   text?: string;
   /** The staged choice of a list where the player chooses one row. */
@@ -607,6 +620,11 @@ export interface SeatRowView {
   text?: string;
   /** The editor of the viewer, in place under the row. */
   open?: BlockView[];
+  /**
+   * What the seat did, line by line, under the row when the viewer opens it ("▸"): a resolved
+   * strategic action of the Log. Absent: the row does not open.
+   */
+  details?: string[];
 }
 
 /** One technology of the tree. The cell is the control. */
@@ -631,11 +649,42 @@ export interface TechColumnView {
   cells: TechCellView[];
 }
 
-export type BlockView =
+/** One thing that a side of a deal hands over: an amount, or a card. */
+export interface DealItemView {
+  /** "Trade goods", "Ceasefire (Hacan)". */
+  name: string;
+  /** The group of a card, named once for its cards: "Promissory notes", "Action cards". */
+  group?: string;
+  /** The printed text of a card, shown on hover or click. */
+  help?: HelpView;
+  /** An amount that is staged. */
+  counter?: CounterView;
+  /** An amount of a deal that is read-only. */
+  count?: number;
+  /** A card that is staged with a tap. Absent in a deal that is read-only. */
+  toggle?: { on: boolean; intent: Intent };
+}
+
+/** One side of a deal: the seat, what it holds now, and what it hands over. */
+export interface DealSideView {
+  /** "You give", "You get". */
+  title: string;
+  seat: SeatId;
+  name: string;
+  /** "Trade goods 3 · Commodities 2". */
+  holds: string;
+  items: DealItemView[];
+}
+
+export type BlockView = (
   | { kind: "note"; tone: "accent" | "success" | "quiet"; strong?: string; text: string }
   | { kind: "menu"; title?: string; rows: MenuRowView[] }
-  /** The card or ability that asks for the decision, as printed. It is on top of the decision. */
-  | { kind: "source"; name: string; type: string; text: string }
+  /**
+   * The card or ability that asks for the decision, as printed. It is on top of the decision.
+   * `choices` are a choice of one about this card, a segmented toggle on the line of its name
+   * (the agenda deck of Politics: "Top", "Bottom"); they have keys as the rows of a menu do.
+   */
+  | { kind: "source"; name: string; type: string; text: string; choices?: MenuRowView[] }
   | { kind: "gauges"; gauges: GaugeView[] }
   /** The technology tree: one column for each colour, and a band for the unit upgrades. */
   | {
@@ -648,8 +697,11 @@ export type BlockView =
       /** Rows under the columns: the unit upgrades, and the faction technologies if there are any. */
       bands: { label: string; cells: TechCellView[] }[];
     }
-  /** The seat order of a strategy card: the primary, then the secondaries, with what each did. */
-  | { kind: "seats"; rows: SeatRowView[] }
+  /**
+   * The seat order of a strategy card: the primary, then the secondaries, with what each did. A
+   * phase of the Log has several, each with its title ("Picks", "Scored", "Votes").
+   */
+  | { kind: "seats"; title?: string; rows: SeatRowView[] }
   | {
       kind: "card";
       title: string;
@@ -657,7 +709,8 @@ export type BlockView =
       bad?: boolean;
       rows: RowView[];
     }
-  | { kind: "payment"; payment: PaymentView }
+  /** A transaction: what the viewer gives, and what the viewer gets, side by side. */
+  | { kind: "deal"; sides: DealSideView[] }
   | {
       kind: "draft";
       title: string;
@@ -666,28 +719,45 @@ export type BlockView =
       text?: string;
       hint?: string;
       blocks: BlockView[];
-    };
+    }
+) & {
+  /** Whom the block serves. Absent: it decides. */
+  role?: BlockRole;
+};
 
 /**
- * A reaction window: the viewer may play a card now, or pass. It sits on top of the open action,
- * which shows what happened. The main button of the footer is Pass, or Play for a staged card.
+ * A window on top of the open action: a reaction window (the viewer may play a card now, or pass)
+ * or an ability that asks the viewer in the middle of another action (Scheming in a Politics).
+ * The action under it shows what happened. The main button of the footer is Pass or Play, or
+ * the answer of the ability. On a phone it is a sheet on the map too, where its system is marked.
  */
 export interface InterruptView {
-  /** The trigger, in game values: "Reaction · After Blair plays Mining Initiative". */
-  eyebrow: string;
+  /**
+   * What opened it, in game values: "Reaction · After Blair plays Mining Initiative". The name
+   * of the band; the heading and its context say it on the screen.
+   */
+  label: string;
+  /**
+   * The ability that asks, as printed, in one line: its name, its kind, its text behind "?".
+   * Null for a reaction window, whose rows are its cards.
+   */
+  source: { name: string; type: string; text: string } | null;
+  /** What the ability asks, without its name: "Choose and discard 1 action card from your hand." */
+  question: string | null;
   link: LinkToken[];
   blocks: BlockView[];
-  actions: ActionButtonView[];
 }
 
 // ---- The panel ----------------------------------------------------------------------------------
 
 interface PanelFrame {
-  title: string;
-  subtitle: string;
+  /**
+   * What the panel is about that the heading does not say, muted beside it: the kind of action, its
+   * system and its seat ("Tactical action · #26 · Hacan"), or "Turn ended". Null when the heading says it all.
+   */
+  context: string | null;
+  /** "Not sent" while a choice is staged, beside the pill of the heading. Null in any other state. */
   badge: PillView | null;
-  /** Set when the panel shows a past action, read-only. */
-  past: { label: string } | null;
   tabs: StepTabView[];
   selected: number;
   current: number | null;
@@ -701,8 +771,6 @@ interface PanelFrame {
 
 export interface TacticalActionView extends PanelFrame {
   kind: "tactical";
-  /** A step with staged changes that is not in view. */
-  uncommitted: { step: number; name: string } | null;
   task: TaskView;
 }
 

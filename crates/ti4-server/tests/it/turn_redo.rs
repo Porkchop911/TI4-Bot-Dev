@@ -1345,7 +1345,10 @@ fn replay_with_extra_draws(
                 assert!(drawn.is_some(), "the deck has cards left");
             }
         }
-        if result.error.is_some() || result.finished {
+        // The step that answers the last recorded decision may go on to ask the next one, which the
+        // script has no answer for: that is the end of the history, not a failure.
+        let past_the_end = game.table.log.records.len() >= decisions.len();
+        if (result.error.is_some() && !past_the_end) || result.finished {
             completed = false;
             break;
         }

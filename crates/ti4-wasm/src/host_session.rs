@@ -65,12 +65,13 @@ use ti4_host::protocol::client::ClientMessage;
 use ti4_host::protocol::error::ErrorKind;
 use ti4_host::protocol::reach::ReachIntoMsg;
 use ti4_host::protocol::server::{
-    ActionAcceptedMsg, ActionRejectedMsg, AutoResolvedNote, DraftAppliedMsg, EventVisibility,
-    GameEvent, GameEventKind, GameEventMsg, GameOverMsg, MovementFact, PongMsg, ProtocolErrorMsg,
-    SeatDecisionDetail, SecondaryPreviewMsg, ServerMessage, StateUpdateMsg, current_log_path,
-    public_roll, verified_decision_facts,
+    ActionAcceptedMsg, ActionRejectedMsg, AutoResolvedNote, DecisionFacts, DraftAppliedMsg,
+    EventVisibility, GameEvent, GameEventKind, GameEventMsg, GameOverMsg, PongMsg,
+    ProtocolErrorMsg, SecondaryPreviewMsg, ServerMessage, StateUpdateMsg, current_log_path,
+    public_roll, verified_event_facts,
 };
 use ti4_host::protocol::staged::StagedSlot;
+use ti4_host::protocol::state_fact::{PublicTally, observe_step};
 use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 use ti4_host::protocol::view::BoardTileView;
 use ti4_host::setup::TableSeats;
@@ -220,11 +221,17 @@ pub enum HistoryAction {
     Redo,
     RedoBatch,
     RedoPipeline,
-    RestoreCursor { cursor: usize },
-    Restore { event_id: String },
+    RestoreCursor {
+        cursor: usize,
+    },
+    Restore {
+        event_id: String,
+    },
     /// Go back to the start of the shown seat's last `turns` turns (1 or 2): the turn redo of
     /// the server, without its auto-play (the bots simply play on from there).
-    UndoTurn { turns: u8 },
+    UndoTurn {
+        turns: u8,
+    },
 }
 
 /// A batch (a staged movement, production or payment) that answers the person's choices.
@@ -275,6 +282,8 @@ struct Mark {
     events: usize,
     event_counter: u64,
     rolls_seen: usize,
+    tally: PublicTally,
+    observed_to: usize,
     answers: usize,
     phase: Phase,
     round: u32,
@@ -327,6 +336,10 @@ pub struct HostSession {
     events: Vec<GameEvent>,
     event_counter: u64,
     rolls_seen: usize,
+    /// The public state that the facts of the state were last taken from, and the end of the
+    /// events that they saw ([`ti4_host::protocol::state_fact`]).
+    tally: PublicTally,
+    observed_to: usize,
     prev_phase: Phase,
     prev_round: u32,
     selected: VecDeque<Selected>,
@@ -422,6 +435,8 @@ impl HostSession {
             events: Vec::new(),
             event_counter: 0,
             rolls_seen: 0,
+            tally: PublicTally::of(state),
+            observed_to: 0,
             prev_phase: state.phase,
             prev_round: state.round,
             selected: VecDeque::new(),
@@ -486,9 +501,7 @@ impl HostSession {
                 speaker: state.speaker.clone(),
             },
             0,
-            None,
-            None,
-            None,
+            DecisionFacts::default(),
         );
         session
     }
@@ -624,9 +637,7 @@ impl HostSession {
         visibility: EventVisibility,
         event: GameEventKind,
         decision_count: usize,
-        detail: Option<String>,
-        movement: Option<MovementFact>,
-        seat_detail: Option<SeatDecisionDetail>,
+        facts: DecisionFacts,
     ) {
         self.event_counter += 1;
         let entry = journal::build_event(
@@ -639,9 +650,7 @@ impl HostSession {
                 event,
                 version: Some(self.version),
                 decision_count,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             },
         );
         self.emit_event(entry);
@@ -721,7 +730,7 @@ impl HostSession {
             let selected = self.selected_for(record, true);
             self.decision_log.push(record.clone());
             let option = selected.as_ref().map(|selected| &selected.option);
-            let (detail, movement, seat_detail) = verified_decision_facts(
+            let facts = verified_event_facts(
                 record,
                 option,
                 state.active_system.as_ref().map(|id| id.as_str()),
@@ -731,9 +740,7 @@ impl HostSession {
                 EventVisibility::Public,
                 GameEventKind::DecisionResolved,
                 index + 1,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             );
             let own = selected
                 .as_ref()
@@ -842,6 +849,7 @@ impl HostSession {
                     self.clock.as_ref(),
                     &self.identity.game_id,
                     self.event_counter,
+                    &self.decision_log,
                     cursor,
                     game.state.round,
                     game.state.phase,
@@ -852,6 +860,7 @@ impl HostSession {
             }
             self.rolls_seen = rolled;
         }
+        self.observe_state(&game.state);
         if game.state.phase != self.prev_phase || game.state.round != self.prev_round {
             self.push_event(
                 EventVisibility::Public,
@@ -860,9 +869,7 @@ impl HostSession {
                     round: game.state.round,
                 },
                 self.decision_log.len(),
-                None,
-                None,
-                None,
+                DecisionFacts::default(),
             );
             self.prev_phase = game.state.phase;
             self.prev_round = game.state.round;
@@ -876,6 +883,48 @@ impl HostSession {
             .scripts
             .after_step(tactical_over, game.state.active.as_ref());
         self.tell_scripts(ended);
+    }
+
+    /// The facts of the state that the step changed and no event of it told, and the change of
+    /// the public board.
+    fn observe_state(&mut self, state: &GameState) {
+        let start = self.observed_to.min(self.events.len());
+        let observation = observe_step(&mut self.tally, state, &self.events[start..]);
+        let cursor = journal::roll_cursor(&self.events);
+        if !observation.facts.is_empty() {
+            for observed in observation.facts {
+                self.event_counter += 1;
+                let entry = journal::build_state_event(
+                    self.clock.as_ref(),
+                    &self.identity.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    Some(self.version),
+                    observed,
+                );
+                self.emit_event(entry);
+            }
+        }
+        // The board after the facts that told the step: the last event of the step.
+        if let Some(board) = observation.board {
+            self.event_counter += 1;
+            let entry = journal::build_board_event(
+                self.clock.as_ref(),
+                &self.identity.game_id,
+                self.event_counter,
+                &self.decision_log,
+                cursor,
+                state.round,
+                state.phase,
+                Some(self.version),
+                board,
+            );
+            self.emit_event(entry);
+        }
+        self.observed_to = self.events.len();
     }
 
     fn finish(&mut self, state: &GameState) {
@@ -894,9 +943,7 @@ impl HostSession {
                 winner: winner.clone(),
             },
             self.decision_log.len(),
-            None,
-            None,
-            None,
+            DecisionFacts::default(),
         );
         self.version += 1;
         let update = self.state_update();
@@ -1108,6 +1155,8 @@ impl HostSession {
             events: self.events.len(),
             event_counter: self.event_counter,
             rolls_seen: self.rolls_seen,
+            tally: self.tally.clone(),
+            observed_to: self.observed_to,
             answers: self.answers.len(),
             phase: self.prev_phase,
             round: self.prev_round,
@@ -1147,6 +1196,8 @@ impl HostSession {
         self.events.truncate(mark.events);
         self.event_counter = mark.event_counter;
         self.rolls_seen = mark.rolls_seen;
+        self.tally = mark.tally;
+        self.observed_to = mark.observed_to;
         self.prev_phase = mark.phase;
         self.prev_round = mark.round;
         self.selected.clear();
@@ -1404,7 +1455,7 @@ impl HostSession {
         let (choice, _) = self.pending.clone()?;
         let first = first_answer(&script, &choice, &choice.player).and_then(|first| {
             match self.precheck(&choice, &script) {
-                Check::Refused { reason, .. } => Err(reason),
+                Check::Refused { refusal } => Err(refusal),
                 Check::Plays | Check::Unknown => Ok(first),
             }
         });
@@ -1414,12 +1465,12 @@ impl HostSession {
             script: ordered,
         } = match first {
             Ok(first) => first,
-            Err(reason) => {
+            Err(refusal) => {
                 self.out.push(ServerMessage::DraftApplied(DraftAppliedMsg {
                     protocol_version: PROTOCOL_VERSION,
                     game_id: self.identity.game_id.clone(),
                     nonce: nonce.to_owned(),
-                    stopped: Some(refused(&script, reason)),
+                    stopped: Some(refused(&script, refusal)),
                 }));
                 return None;
             }

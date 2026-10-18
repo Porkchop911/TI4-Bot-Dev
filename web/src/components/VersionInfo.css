@@ -1,0 +1,56 @@
+.version-info {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #1e293b;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+.version-info__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+.version-info__list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+.version-info__list dt {
+  color: #94a3b8;
+}
+.version-info__list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.version-info__muted {
+  color: #94a3b8;
+}
+.version-info__note {
+  display: block;
+  margin-top: 2px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.version-info__note--warn {
+  color: #fbbf24;
+}
+.version-info__lead {
+  margin: 0 0 4px;
+  color: #94a3b8;
+}
+.version-info-dialog {
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px));
+  padding: 16px 18px;
+}
+.version-info-dialog .version-info {
+  border-top: 0;
+  margin-top: 8px;
+}
+.version-info-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

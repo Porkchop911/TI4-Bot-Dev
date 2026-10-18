@@ -16,6 +16,11 @@ pub const ACTION_KIND: &str = "action";
 pub const FOLLOW_SECONDARY_ID: &str = "follow";
 /// The choice kind for a strategic-action secondary response.
 pub const STRATEGY_KIND: &str = "strategy";
+/// The subtype of a follower's secondary question (every card but Leadership, whose question is
+/// the purchase question `buy_token_with_influence`). Its source is
+/// [`DecisionSource::StrategyCard`](crate::decision_context::DecisionSource::StrategyCard) with
+/// the card's id and `secondary: true`.
+pub const FOLLOW_SUBTYPE: &str = "strategy_secondary";
 /// Prefix of an option that follows a secondary without spending a strategy token, offered only
 /// when a faction module has a waiver (Winnu Acquiescence). The full id is
 /// `follow|waived|<module index>|<waiver id>`.
@@ -92,35 +97,77 @@ fn secondary_choice(
 ) -> Choice {
     let tokens_left = state.player(player).map_or(0, |seat| seat.strategic_tokens);
     let mut question = secondary_question(content, card, player, costs_token);
+    // The source names the card by its id: the follow question of every card is the same
+    // question, and a log tells which card a seat followed from it.
+    let source = crate::decision_context::DecisionSource::StrategyCard {
+        card: card.to_string(),
+        secondary: true,
+    };
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Leadership") {
         // The window's question is the purchase question itself: typed like the loop's later
-        // asks, and carrying what a client needs to plan every purchase at once.
+        // asks (whose source is the rule, 52.3), and carrying what a client needs to plan every
+        // purchase at once.
         question = question.contextualized(crate::decision_context::DecisionContext::new(
             player.clone(),
-            crate::decision_context::DecisionSource::Rule("52.3".to_owned()),
+            source,
             "buy_token_with_influence",
             state.phase,
             state.round,
         ));
         if let Some(purchase) =
-            crate::strategy_cards::purchase_details(state, content, sources, player)
+            crate::strategy_cards::purchase_hints(state, content, sources, player)
         {
-            question = crate::tokens::with_pool_details(question, state, "buy", Some(0))
-                .detailed("purchase", purchase);
+            question = crate::tokens::with_pool_details(question, state, content, "buy", Some(0))
+                .hinted("purchase", &purchase);
         }
+    } else {
+        question = question.contextualized(
+            crate::decision_context::DecisionContext::new(
+                player.clone(),
+                source,
+                FOLLOW_SUBTYPE,
+                state.phase,
+                state.round,
+            )
+            .optional(true),
+        );
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Diplomacy") {
-        question = question.detailed(
-            "ready_hints",
-            crate::strategy_cards::ready_hints(state, content, sources, player),
+        question = question.hinted_fields(&crate::strategy_cards::ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            crate::strategy_cards::DIPLOMACY_READIES,
+        ));
+    }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Construction") {
+        // Display only: the structure that "yes" places, so that a client can stage it with the
+        // window.
+        question = question.hinted(
+            "structures",
+            &crate::strategy_cards::structure_hints(
+                state,
+                content,
+                sources,
+                player,
+                &crate::strategy_cards::ONE_STRUCTURE,
+            ),
         );
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Trade") {
         // Display only: the follower's commodities now and at the limit the replenish fills to.
-        question = question.detailed(
+        question = question.hinted(
             "commodities",
-            crate::strategy_cards::commodity_standing(state, content, player),
+            &crate::strategy_cards::commodity_standing(state, content, player),
         );
+    }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Imperial") {
+        // Display only: the secret objectives that the follower holds now, scored ones included,
+        // against the limit, as the primary's question says them.
+        question = question.hinted_fields(&crate::strategy_cards::imperial_hints(
+            state, content, player,
+        ));
     }
     question
         .detailed("kind", "strategy_secondary")
@@ -147,8 +194,16 @@ fn secondary_question(
             player.clone(),
             format!("spend {n} influence for a command token"),
             vec![
-                ChoiceOption::labelled("no", STRATEGY_KIND, "spend nothing further"),
-                ChoiceOption::labelled("yes", STRATEGY_KIND, format!("spend {n} influence")),
+                ChoiceOption::labelled(
+                    crate::strategy_cards::STOP_BUYING,
+                    STRATEGY_KIND,
+                    "spend nothing further",
+                ),
+                ChoiceOption::labelled(
+                    crate::strategy_cards::BUY_TOKEN,
+                    STRATEGY_KIND,
+                    format!("spend {n} influence"),
+                ),
             ],
         );
     }
@@ -268,27 +323,37 @@ fn with_waivers(
     if tokenless {
         choice.options.retain(|option| option.id != "yes");
     }
-    choice.options.extend(waivers);
+    let phrased: Vec<(String, crate::phrases::Worded)> = waivers
+        .iter()
+        .filter_map(|(option, worded)| Some((option.id.clone(), worded.clone()?)))
+        .collect();
     choice
+        .options
+        .extend(waivers.into_iter().map(|(option, _)| option));
+    choice.phrased_options(&phrased)
 }
 
-/// Token-free ways for `follower` to follow `card` (faction waivers), as offered options.
+/// Token-free ways for `follower` to follow `card` (faction waivers), as offered options, with
+/// what each label names by id.
 fn waiver_options(
     state: &GameState,
     content: &ContentStore,
     follower: &PlayerId,
     primary: &PlayerId,
     card: &StrategyCardId,
-) -> Vec<ChoiceOption> {
+) -> Vec<(ChoiceOption, Option<crate::phrases::Worded>)> {
     let name = crate::strategy_cards::card_name(content, card.as_str())
         .unwrap_or_else(|| card.to_string());
     crate::factions::hooks_strategy::secondary_waivers(state, content, follower, primary, &name)
         .into_iter()
         .map(|(index, waiver)| {
-            ChoiceOption::labelled(
-                format!("{WAIVED_SECONDARY_PREFIX}{index}|{}", waiver.id),
-                STRATEGY_KIND,
-                waiver.label,
+            (
+                ChoiceOption::labelled(
+                    format!("{WAIVED_SECONDARY_PREFIX}{index}|{}", waiver.id),
+                    STRATEGY_KIND,
+                    waiver.label,
+                ),
+                waiver.worded,
             )
         })
         .collect()
@@ -1110,6 +1175,21 @@ mod tests {
         assert_eq!(choice.details["played_by"], "a");
         assert_eq!(choice.details["tokens_left"], 3);
         assert_eq!(choice.details["costs_token"], true);
+        // The context says which card's secondary this is, so that a log can tell the follow.
+        let context = choice
+            .context
+            .as_ref()
+            .expect("a follow question has a context");
+        assert_eq!(context.subtype, FOLLOW_SUBTYPE);
+        assert_eq!(
+            context.source,
+            crate::decision_context::DecisionSource::StrategyCard {
+                card: card.to_string(),
+                secondary: true,
+            }
+        );
+        assert_eq!(context.actor, PlayerId::new("b"));
+        assert!(context.optional);
     }
 
     #[test]
@@ -1138,9 +1218,49 @@ mod tests {
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
             .expect("the follower is offered the secondary");
+        assert_eq!(
+            choice.hint::<crate::strategy_cards::CommodityStanding>("commodities"),
+            Some(crate::strategy_cards::CommodityStanding {
+                have: 1,
+                max: limit,
+                trade_goods: 2,
+            })
+        );
+        // The JSON keys that the clients read.
         assert_eq!(choice.details["commodities"]["have"], 1);
         assert_eq!(choice.details["commodities"]["max"], limit);
         assert_eq!(choice.details["commodities"]["trade_goods"], 2);
+    }
+
+    #[test]
+    fn the_imperial_secondary_states_the_followers_secret_objectives() {
+        let (mut state, card) = drafted_with_first_pick("Imperial");
+        if let Some(seat) = state.player_mut(&PlayerId::new("b")) {
+            seat.strategic_tokens = 2;
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("dhw")];
+        }
+        let window = StrategySecondaryWindow {
+            primary_player: PlayerId::new("a"),
+            card,
+            followers: vec![PlayerId::new("b")],
+            next_follower: 0,
+            resolutions: Vec::new(),
+            exhausts_card: false,
+            preview: false,
+        };
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the follower is offered the secondary");
+        assert_eq!(
+            choice.hint_fields::<crate::strategy_cards::ImperialHints>(),
+            Some(crate::strategy_cards::ImperialHints {
+                secrets_held: 1,
+                secrets_max: crate::secrets::HAND_LIMIT,
+            })
+        );
+        // The JSON keys that the clients read.
+        assert_eq!(choice.details["secrets_held"], 1);
+        assert_eq!(choice.details["secrets_max"], crate::secrets::HAND_LIMIT);
     }
 
     #[test]
@@ -1493,11 +1613,22 @@ mod tests {
             choice.context.as_ref().map(|c| c.subtype.as_str()),
             Some("buy_token_with_influence")
         );
+        // Its source is the card's secondary, which tells it from the loop's later asks.
+        assert_eq!(
+            choice.context.as_ref().map(|c| c.source.clone()),
+            Some(crate::decision_context::DecisionSource::StrategyCard {
+                card: card.to_string(),
+                secondary: true,
+            })
+        );
         assert_eq!(choice.details["kind"], "strategy_secondary");
         assert_eq!(choice.details["mode"], "buy");
         assert_eq!(choice.details["tokens_to_place"], 0);
-        assert_eq!(choice.details["purchase"]["influence_available"], 3);
-        assert_eq!(choice.details["purchase"]["max"], 1);
+        let purchase: crate::strategy_cards::PurchaseHints =
+            choice.hint("purchase").expect("typed purchase");
+        assert_eq!(purchase.influence_available, 3);
+        assert_eq!(purchase.max, 1);
+        assert_eq!(purchase.payment.cost, 3);
 
         let resolution = window
             .take_choice(
@@ -1821,9 +1952,12 @@ mod bf00d_tests {
         let hooks = StrategyHooks {
             secondary_waivers: Some(|_, _, follower, primary, card| {
                 if follower.as_str() == "b" && primary.as_str() == "a" && card == "Imperial" {
+                    let worded = crate::phrases::Phrase::of("follow {primary} using Acquiescence")
+                        .with("primary", primary, crate::phrases::Subject::seat(primary));
                     vec![SecondaryWaiver {
                         id: "acq".to_owned(),
-                        label: "follow using Acquiescence".to_owned(),
+                        label: worded.label(),
+                        worded: Some(worded),
                     }]
                 } else {
                     Vec::new()
@@ -1855,6 +1989,16 @@ mod bf00d_tests {
                 .find(|id| id.starts_with(WAIVED_SECONDARY_PREFIX) && id.ends_with("|acq"))
                 .map(|id| (*id).to_owned())
                 .expect("the waiver is offered");
+            // What its label names rides with the question (`details.phrases`).
+            let phrase = &pending.phrases().options[&waived];
+            assert_eq!(
+                pending.option(&waived).map(|option| option.label.as_str()),
+                Some("follow a using Acquiescence")
+            );
+            assert_eq!(
+                phrase.refs["primary"],
+                crate::phrases::Subject::seat(&pid("a"))
+            );
             let resolved = window
                 .take_choice(
                     &mut state,

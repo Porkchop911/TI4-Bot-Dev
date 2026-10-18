@@ -21,7 +21,6 @@
     clippy::many_single_char_names
 )]
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use ti4_engine::choice::{Choice, ChoiceOption, Observed};
@@ -161,7 +160,13 @@ impl<'a> Ctx<'a> {
                 .strategy_cards
                 .iter()
                 .any(|c| technology.iter().any(|t| c.as_str().contains(t)));
-            techs.push(public.technologies.iter().map(ToString::to_string).collect());
+            techs.push(
+                public
+                    .technologies
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            );
             seats.push(Seat {
                 id: (*p).clone(),
                 faction: public.faction.to_string(),
@@ -185,14 +190,20 @@ impl<'a> Ctx<'a> {
                 let info = cache
                     .entry(unit.type_id.to_string())
                     .or_insert_with(|| {
-                        let t = ti4_content::units::unit_type(content, unit.type_id.as_str(), sources);
+                        let t =
+                            ti4_content::units::unit_type(content, unit.type_id.as_str(), sources);
                         (
-                            t.as_ref().map_or(String::new(), |t| t.base_type().to_owned()),
+                            t.as_ref()
+                                .map_or(String::new(), |t| t.base_type().to_owned()),
                             t.as_ref().is_some_and(|t| t.is_ship()),
                             t.as_ref().is_some_and(|t| t.is_fighter()),
                             t.as_ref().is_some_and(|t| t.is_ground_force()),
                             t.as_ref().is_some_and(|t| t.is_structure()),
-                            ti4_engine::valuation::unit_value(content, sources, unit.type_id.as_str()),
+                            ti4_engine::valuation::unit_value(
+                                content,
+                                sources,
+                                unit.type_id.as_str(),
+                            ),
                         )
                     })
                     .clone();
@@ -279,7 +290,11 @@ impl<'a> Ctx<'a> {
     }
 
     fn near_wormhole(&self, system: &str) -> bool {
-        self.wormhole_system(system) || self.adjacent(system).iter().any(|s| self.wormhole_system(s))
+        self.wormhole_system(system)
+            || self
+                .adjacent(system)
+                .iter()
+                .any(|s| self.wormhole_system(s))
     }
 
     fn planet_owner(&self, planet: &str) -> Option<usize> {
@@ -317,14 +332,31 @@ fn elect_gain(ctx: &Ctx<'_>, agenda: &str, i: usize) -> f64 {
         "arbiter" => 3.0,
         "minister_commerce" => ctx.neighbours() * rl * 0.7 * if s.is("hacan") { 1.5 } else { 1.0 },
         "minister_exploration" => {
-            0.8 * rl * if matches!(s.faction.as_str(), "saar" | "arborec" | "sol") { 1.3 } else { 1.0 }
+            0.8 * rl
+                * if matches!(s.faction.as_str(), "saar" | "arborec" | "sol") {
+                    1.3
+                } else {
+                    1.0
+                }
         }
         "minister_industry" => 2.5,
         "minister_peace" => 4.0,
-        "minister_policy" => 1.5 * rl * 0.9 * if matches!(s.faction.as_str(), "yssaril" | "nekro") { 1.3 } else { 1.0 },
+        "minister_policy" => {
+            1.5 * rl
+                * 0.9
+                * if matches!(s.faction.as_str(), "yssaril" | "nekro") {
+                    1.3
+                } else {
+                    1.0
+                }
+        }
         "minister_sciences" => {
             2.5 * if s.technology_card { 1.6 } else { 1.0 }
-                * if matches!(s.faction.as_str(), "jolnar" | "nekro" | "hacan") { 1.3 } else { 1.0 }
+                * if matches!(s.faction.as_str(), "jolnar" | "nekro" | "hacan") {
+                    1.3
+                } else {
+                    1.0
+                }
         }
         "minister_war" => 3.0,
         "prophecy" => {
@@ -345,13 +377,23 @@ fn elect_gain(ctx: &Ctx<'_>, agenda: &str, i: usize) -> f64 {
             held.max(vp_gain(s.vp, 1) * 0.6)
         }
         "crown_of_emphidia" => 8.0,
-        "crown_of_thalnos" => 3.0 + if matches!(s.faction.as_str(), "sardakk" | "jolnar") { 0.5 } else { 0.0 },
+        "crown_of_thalnos" => {
+            3.0 + if matches!(s.faction.as_str(), "sardakk" | "jolnar") {
+                0.5
+            } else {
+                0.0
+            }
+        }
         "standardization" => {
             let total = s.tactic + s.fleet + s.strategy;
             CT * 0.7 * f64::from(8 - total)
         }
         "censure" => {
-            if s.is("yssaril") { 4.0 } else { 8.5 }
+            if s.is("yssaril") {
+                4.0
+            } else {
+                8.5
+            }
         }
         "grant_reallocation" => {
             if s.fleet >= 2 {
@@ -361,11 +403,20 @@ fn elect_gain(ctx: &Ctx<'_>, agenda: &str, i: usize) -> f64 {
             }
         }
         "warrant" => 4.5,
-        "minister_antiquities" => 7.0 * if matches!(s.faction.as_str(), "empyrean" | "naaz") { 1.3 } else { 1.0 },
+        "minister_antiquities" => {
+            7.0 * if matches!(s.faction.as_str(), "empyrean" | "naaz") {
+                1.3
+            } else {
+                1.0
+            }
+        }
         _ => 0.0,
     };
     // Cards worth a victory point carry the win pressure of the point.
-    if matches!(agenda, "shard_of_the_throne" | "crown_of_emphidia" | "censure") {
+    if matches!(
+        agenda,
+        "shard_of_the_throne" | "crown_of_emphidia" | "censure"
+    ) {
         let pressure = vp_gain(s.vp, 1) / VP;
         g *= pressure.max(1.0).min(2.5);
     }
@@ -442,7 +493,13 @@ fn law_standing(ctx: &Ctx<'_>, law: &str, outcome: &str) -> Vec<f64> {
         "regulations" => d = ctx.all(|s, _| -CT * f64::from((s.fleet - 4).max(0))),
         "sanctions" => d = ctx.all(|s, _| -0.7 * f64::from((s.ac - 3).max(0))),
         "conventions" => {
-            d = ctx.all(|s, _| if matches!(s.faction.as_str(), "letnev" | "muaat") { -3.0 } else { 0.0 });
+            d = ctx.all(|s, _| {
+                if matches!(s.faction.as_str(), "letnev" | "muaat") {
+                    -3.0
+                } else {
+                    0.0
+                }
+            });
         }
         "travel_ban" => d = ctx.all(|s, _| if s.is("ghost") { -6.0 } else { -0.5 }),
         "defense_act" => d = ctx.all(|s, _| 0.3 * s.count("pds")),
@@ -459,7 +516,12 @@ fn law_standing(ctx: &Ctx<'_>, law: &str, outcome: &str) -> Vec<f64> {
         "articles_war" => d = ctx.all(|s, _| -1.5 * s.count("mech")),
         "checks" => d = ctx.all(|_, _| -4.0),
         "rep_govt" | "representative_government" => {
-            let avg: f64 = ctx.seats.iter().map(|s| s.influence_ready() as f64).sum::<f64>() / ctx.n() as f64;
+            let avg: f64 = ctx
+                .seats
+                .iter()
+                .map(|s| s.influence_ready() as f64)
+                .sum::<f64>()
+                / ctx.n() as f64;
             d = ctx.all(|s, _| 0.4 * (avg - s.influence_ready() as f64));
         }
         _ => {}
@@ -479,7 +541,13 @@ fn planet_gain(ctx: &Ctx<'_>, agenda: &str, planet: &str, owner: usize) -> f64 {
     match agenda {
         "core_mining" => 1.1 * rl - 1.5,
         "terraforming_initiative" => 1.1 * rl,
-        "senate_sanctuary" => rl * if matches!(s.faction.as_str(), "hacan" | "xxcha") { 1.3 } else { 1.0 },
+        "senate_sanctuary" => {
+            rl * if matches!(s.faction.as_str(), "hacan" | "xxcha") {
+                1.3
+            } else {
+                1.0
+            }
+        }
         "holy_planet_of_ixth" => vp_gain(s.vp, 1) * 0.9 - if dock { 4.0 } else { 0.0 },
         "rt_biotic" | "rt_cybernetic" | "rt_propulsion" => 2.5,
         "rt_warfare" => 2.5 * if s.is("muaat") { 1.5 } else { 1.0 },
@@ -532,7 +600,11 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
                         .filter(|u| u.ship && !u.fighter)
                         .map(|u| u.value)
                         .fold(f64::INFINITY, f64::min);
-                    if cheapest.is_finite() { -cheapest * (rl * 0.8).min(4.0) } else { 0.0 }
+                    if cheapest.is_finite() {
+                        -cheapest * (rl * 0.8).min(4.0)
+                    } else {
+                        0.0
+                    }
                 })
             } else {
                 ctx.all(|s, _| {
@@ -571,7 +643,12 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
                 ctx.all(|s, _| {
                     let mut loss = 0.0;
                     if let Some(m) = &mr {
-                        loss += s.units.iter().filter(|u| &u.system == m).map(|u| u.value).sum::<f64>();
+                        loss += s
+                            .units
+                            .iter()
+                            .filter(|u| &u.system == m)
+                            .map(|u| u.value)
+                            .sum::<f64>();
                     }
                     for a in &adj {
                         let mut vals: Vec<f64> = s
@@ -612,7 +689,11 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
             let owner_exists = (0..n).any(|i| ctx.seats[i].owns_war_sun_tech(&ctx.techs[i]));
             if f {
                 ctx.all(|s, i| {
-                    let mut v = if owner_exists && !s.owns_war_sun_tech(&ctx.techs[i]) { 2.0 } else { 0.0 };
+                    let mut v = if owner_exists && !s.owns_war_sun_tech(&ctx.techs[i]) {
+                        2.0
+                    } else {
+                        0.0
+                    };
                     v -= 3.5 * s.war_suns();
                     if s.is("muaat") {
                         v -= 15.0;
@@ -621,7 +702,11 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
                 })
             } else {
                 ctx.all(|s, i| {
-                    if s.owns_war_sun_tech(&ctx.techs[i]) { -AC * f64::from(s.ac) } else { 0.0 }
+                    if s.owns_war_sun_tech(&ctx.techs[i]) {
+                        -AC * f64::from(s.ac)
+                    } else {
+                        0.0
+                    }
                 })
             }
         }
@@ -635,7 +720,11 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         "conscription" => {
             if f {
                 ctx.all(|s, _| {
-                    let cheap = s.units.iter().filter(|u| u.fighter || u.base == "infantry").count() as f64;
+                    let cheap = s
+                        .units
+                        .iter()
+                        .filter(|u| u.fighter || u.base == "infantry")
+                        .count() as f64;
                     -(0.3 * cheap).min(5.0)
                 })
             } else {
@@ -680,7 +769,12 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         }
         "rep_govt" | "representative_government" => {
             if f {
-                let avg: f64 = ctx.seats.iter().map(|s| s.influence_ready() as f64).sum::<f64>() / n as f64;
+                let avg: f64 = ctx
+                    .seats
+                    .iter()
+                    .map(|s| s.influence_ready() as f64)
+                    .sum::<f64>()
+                    / n as f64;
                 ctx.all(|s, _| 0.4 * rl * (avg - s.influence_ready() as f64) * 0.5)
             } else {
                 ctx.zero()
@@ -740,7 +834,11 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
                 - (ctx.seats.iter().map(|s| s.vp).sum::<i32>() as f64 / n as f64).round() as i32;
             // The old rule (For) unless I clearly lead.
             let mut d = ctx.zero();
-            d[ctx.me] = if f { 0.3 } else { 0.4 * f64::from(lead - 1).max(0.0) };
+            d[ctx.me] = if f {
+                0.3
+            } else {
+                0.4 * f64::from(lead - 1).max(0.0)
+            };
             d
         }
         "travel_ban" => {
@@ -748,11 +846,7 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
                 ctx.all(|s, _| {
                     if s.is("ghost") {
                         -10.0
-                    } else if s
-                        .planets
-                        .iter()
-                        .any(|p| ctx.wormhole_system(&p.system))
-                    {
+                    } else if s.planets.iter().any(|p| ctx.wormhole_system(&p.system)) {
                         -3.0
                     } else {
                         0.0
@@ -777,7 +871,13 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         }
         "wormhole_recon" => {
             if f {
-                ctx.all(|s, _| if matches!(s.faction.as_str(), "ghost" | "cabal" | "empyrean") { 3.0 } else { 0.0 })
+                ctx.all(|s, _| {
+                    if matches!(s.faction.as_str(), "ghost" | "cabal" | "empyrean") {
+                        3.0
+                    } else {
+                        0.0
+                    }
+                })
             } else {
                 ctx.all(|s, _| {
                     let mut systems: Vec<&str> = s
@@ -822,7 +922,13 @@ fn for_against(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         }
         "conventions" => {
             if f {
-                ctx.all(|s, _| if matches!(s.faction.as_str(), "letnev" | "muaat") { -3.0 } else { 0.0 })
+                ctx.all(|s, _| {
+                    if matches!(s.faction.as_str(), "letnev" | "muaat") {
+                        -3.0
+                    } else {
+                        0.0
+                    }
+                })
             } else {
                 ctx.zero()
             }
@@ -879,7 +985,13 @@ fn rival_conditional(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
 fn is_voter_conditional(agenda: &str) -> bool {
     matches!(
         agenda,
-        "mutiny" | "unconventional" | "articles_war" | "conventions" | "rep_govt" | "representative_government" | "wormhole_research"
+        "mutiny"
+            | "unconventional"
+            | "articles_war"
+            | "conventions"
+            | "rep_govt"
+            | "representative_government"
+            | "wormhole_research"
     )
 }
 
@@ -891,7 +1003,11 @@ fn outcome_deltas(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         let mut d = ctx.zero();
         if let Some(x) = ctx.idx(outcome) {
             let s = &ctx.seats[x];
-            let speaker = if ctx.seen.speaker().as_str() == outcome { 2.0 } else { 0.0 };
+            let speaker = if ctx.seen.speaker().as_str() == outcome {
+                2.0
+            } else {
+                0.0
+            };
             d[x] = -(AC * f64::from(s.ac) + 0.6 * s.influence_ready() as f64 + speaker);
         }
         return d;
@@ -914,7 +1030,10 @@ fn outcome_deltas(ctx: &Ctx<'_>, agenda: &str, outcome: &str) -> Vec<f64> {
         "abolishment" | "miscount" => {
             let k = if agenda == "abolishment" { 1.0 } else { 0.5 };
             let law_outcome = ctx.seen.law_outcome(outcome).unwrap_or("for").to_owned();
-            law_standing(ctx, outcome, &law_outcome).into_iter().map(|v| -k * v).collect()
+            law_standing(ctx, outcome, &law_outcome)
+                .into_iter()
+                .map(|v| -k * v)
+                .collect()
         }
         _ => {
             let mut d = for_against(ctx, agenda, outcome);
@@ -1027,7 +1146,11 @@ impl Ballot {
                     .filter(|(j, _)| *j != o)
                     .map(|(_, t)| *t)
                     .fold(f64::NEG_INFINITY, f64::max);
-                if rival.is_finite() { phi((totals[o] - rival) / sd) } else { 1.0 }
+                if rival.is_finite() {
+                    phi((totals[o] - rival) / sd)
+                } else {
+                    1.0
+                }
             })
             .collect();
         let sum: f64 = p.iter().sum();
@@ -1114,7 +1237,10 @@ fn ballot_for(
     }
     Ballot {
         outcomes: outcomes.to_vec(),
-        tally: outcomes.iter().map(|o| tally.get(o).copied().unwrap_or(0.0)).collect(),
+        tally: outcomes
+            .iter()
+            .map(|o| tally.get(o).copied().unwrap_or(0.0))
+            .collect(),
         forecast,
         var,
     }
@@ -1135,109 +1261,12 @@ fn my_planet_influences(seen: &Observed<'_>, me: &PlayerId) -> Vec<i64> {
     seen.controlled_planets(me)
         .into_iter()
         .filter(|(_, p)| seen.planet_is_ready(p))
-        .filter_map(|(_, p)| ti4_content::galaxy::planet(seen.content(), p.as_str(), seen.sources()))
+        .filter_map(|(_, p)| {
+            ti4_content::galaxy::planet(seen.content(), p.as_str(), seen.sources())
+        })
         .map(|r| r.influence())
         .filter(|i| *i > 0)
         .collect()
-}
-
-// -- memory across the decisions of one agenda phase ------------------------------------------
-
-#[derive(Default)]
-struct Memory {
-    /// Agendas this seat voted on (or was asked about) in the round: `(seat, round, alias)`.
-    asked: Vec<(String, u32, String)>,
-    /// Politics placements by this seat: `(seat, round, alias, on top)`.
-    placed: Vec<(String, u32, String, bool)>,
-    /// The vote plan under way for the seat.
-    plan: Option<Plan>,
-    /// Rider played: `(seat, round, agenda)`.
-    rider: Option<(String, u32, String)>,
-}
-
-#[derive(Clone)]
-struct Plan {
-    seat: String,
-    outcome: String,
-    target: f64,
-    cast: f64,
-}
-
-thread_local! {
-    static MEMORY: RefCell<Memory> = RefCell::new(Memory::default());
-}
-
-/// Forget everything (tests).
-pub fn reset() {
-    MEMORY.with(|m| *m.borrow_mut() = Memory::default());
-}
-
-impl Memory {
-    /// A round lower than one remembered means a new game started on this thread: forget.
-    fn sync(&mut self, round: u32) {
-        let newest = self
-            .asked
-            .iter()
-            .map(|e| e.1)
-            .chain(self.placed.iter().map(|e| e.1))
-            .chain(self.rider.iter().map(|e| e.1))
-            .max()
-            .unwrap_or(0);
-        if newest > round {
-            self.asked.clear();
-            self.placed.clear();
-            self.rider = None;
-        }
-    }
-}
-
-/// Record a Politics placement the seat made.
-pub fn note_placement(seat: &PlayerId, round: u32, agenda: &str, top: bool) {
-    MEMORY.with(|m| {
-        let mut m = m.borrow_mut();
-        m.sync(round);
-        m.placed.retain(|(_, r, _, _)| *r + 1 >= round);
-        m.placed
-            .push((seat.to_string(), round, agenda.to_owned(), top));
-    });
-}
-
-/// The agendas the seat expects on top of the deck, from its own Politics placements this round
-/// (the last card placed on top is revealed first).
-fn expected_top(seat: &PlayerId, round: u32) -> Vec<String> {
-    MEMORY.with(|m| {
-        let m = m.borrow();
-        let mut deck: Vec<String> = Vec::new();
-        for (s, r, alias, top) in &m.placed {
-            if s == seat.as_str() && *r == round {
-                if *top {
-                    deck.insert(0, alias.clone());
-                }
-            }
-        }
-        deck
-    })
-}
-
-/// Whether the seat was already asked about another agenda this round (so this is the second).
-fn is_second(seat: &PlayerId, round: u32, agenda: &str) -> bool {
-    MEMORY.with(|m| {
-        let mut m = m.borrow_mut();
-        m.sync(round);
-        m.asked.retain(|(_, r, _)| *r + 1 >= round);
-        let second = m
-            .asked
-            .iter()
-            .any(|(s, r, a)| s == seat.as_str() && *r == round && a != agenda);
-        if !m
-            .asked
-            .iter()
-            .any(|(s, r, a)| s == seat.as_str() && *r == round && a == agenda)
-        {
-            m.asked.push((seat.to_string(), round, agenda.to_owned()));
-        }
-        second
-    })
 }
 
 // -- target agenda targets ---------------------------------------------------------------------
@@ -1251,7 +1280,12 @@ fn outcomes_of(seen: &Observed<'_>, agenda: &str) -> Vec<String> {
     let Some((_, target)) = crate::backward::agenda::agenda_kind(seen, agenda) else {
         return vec!["for".to_owned(), "against".to_owned()];
     };
-    let head = target.split('(').next().unwrap_or(&target).trim().to_owned();
+    let head = target
+        .split('(')
+        .next()
+        .unwrap_or(&target)
+        .trim()
+        .to_owned();
     if !head.starts_with("Elect") {
         return vec!["for".to_owned(), "against".to_owned()];
     }
@@ -1282,21 +1316,14 @@ fn outcomes_of(seen: &Observed<'_>, agenda: &str) -> Vec<String> {
     Vec::new()
 }
 
-/// The margin of the next agenda for the seat (its stake), when that agenda is known.
-fn known_stake(seen: &Observed<'_>, me: &PlayerId, agenda: &str) -> f64 {
-    let outcomes = outcomes_of(seen, agenda);
-    let refs: Vec<&str> = outcomes.iter().map(String::as_str).collect();
-    evaluate(agenda, &refs, seen, me)
-        .and_then(|v| v.best().map(|(_, m)| m))
-        .unwrap_or(0.0)
-}
-
 // -- the vote itself ---------------------------------------------------------------------------
 
 /// What `cast_vote` decided.
 pub struct Cast {
     /// The option to pick (an outcome or the abstention).
     pub index: usize,
+    /// The votes the seat plans to cast in all (0: abstain).
+    pub votes: i64,
 }
 
 /// Decide the outcome and the number of votes of a cast-vote decision. Stores the plan the
@@ -1313,9 +1340,8 @@ pub fn plan_vote(
     if !value && !budget {
         return None;
     }
-    clear_plan();
     let round = choice.context.as_ref().map_or(seen.round(), |c| c.round);
-    let second = is_second(me, round, agenda);
+    let second = seen.agendas_resolved_this_round() > 0;
     let outcomes: Vec<String> = choice
         .options
         .iter()
@@ -1330,13 +1356,22 @@ pub fn plan_vote(
     let after = voting_order_after_me(seen, me);
 
     // Which outcomes to consider, with their scores.
-    let verdict = if value { evaluate(agenda, &refs, seen, me)? } else { Verdict { scores: Vec::new() } };
+    let verdict = if value {
+        evaluate(agenda, &refs, seen, me)?
+    } else {
+        Verdict { scores: Vec::new() }
+    };
     let ctx = Ctx::build(seen, me);
     let conditional_agenda = value && is_voter_conditional(agenda);
 
     // Without the valuation the old table names the outcome; the stake is a default.
     let candidates: Vec<String> = if value {
-        verdict.scores.iter().take(3).map(|(o, _)| o.clone()).collect()
+        verdict
+            .scores
+            .iter()
+            .take(3)
+            .map(|(o, _)| o.clone())
+            .collect()
     } else {
         old.iter().cloned().collect()
     };
@@ -1353,7 +1388,11 @@ pub fn plan_vote(
         }
     };
     // Unconditional preference: margin of the best over the rest.
-    let margin = if value { verdict.best()?.1 } else { old.as_ref().map(|_| 3.0)? };
+    let margin = if value {
+        verdict.best()?.1
+    } else {
+        old.as_ref().map(|_| 3.0)?
+    };
     let ballot = ballot_for(agenda, &outcomes, &tally, &after, seen, me);
     // The chance the old table's outcome would win with every planet (for the experiment log).
     let p_old = old
@@ -1363,27 +1402,10 @@ pub fn plan_vote(
     if !conditional_agenda && margin < tuning::agenda_min_margin() {
         // No opinion: abstain and keep every planet.
         log_vote(seen, me, agenda, round, second, &old, None, 0, available, margin, None, p_old);
-        return abstain.map(|index| Cast { index });
+        return abstain.map(|index| Cast { index, votes: 0 });
     }
 
-    let lambda = if budget && !second {
-        let stake2 = {
-            let next = expected_top(me, round);
-            match next.get(1) {
-                Some(a) if next.first().map(String::as_str) == Some(agenda) => known_stake(seen, me, a).abs(),
-                _ => tuning::agenda_second_prior(),
-            }
-        };
-        let rivals: f64 = seen
-            .players()
-            .iter()
-            .filter(|p| **p != me)
-            .map(|p| (0.35 * influence_ready_of(seen, p)).powi(2))
-            .sum();
-        stake2 * 0.4 / rivals.sqrt().max(2.0)
-    } else {
-        0.0
-    };
+    let lambda = second_agenda_price(seen, me, budget, second);
 
     // Subset sums reachable with my planets.
     let mut levels: Vec<i64> = vec![0];
@@ -1411,7 +1433,9 @@ pub fn plan_vote(
         (ev, None, 0)
     };
     for cand in &candidates {
-        let Some(x) = outcomes.iter().position(|o| o == cand) else { continue };
+        let Some(x) = outcomes.iter().position(|o| o == cand) else {
+            continue;
+        };
         for &v in &levels {
             if v == 0 {
                 continue;
@@ -1436,7 +1460,7 @@ pub fn plan_vote(
     }
     let Some(x) = best_choice.1 else {
         log_vote(seen, me, agenda, round, second, &old, None, 0, available, margin, None, p_old);
-        return abstain.map(|index| Cast { index });
+        return abstain.map(|index| Cast { index, votes: 0 });
     };
     // Never cast more than needed for the same probability: the smallest level within 1% of EV.
     let mut v = best_choice.2;
@@ -1468,24 +1492,26 @@ pub fn plan_vote(
     } else {
         v = available;
     }
-    store_plan(me, &outcomes[x], v as f64);
     let p_new = ballot.probabilities(Some(x), v as f64)[x];
-    log_vote(seen, me, agenda, round, second, &old, Some(&outcomes[x]), v, available, margin, Some(p_new), p_old);
+    log_vote(
+        seen,
+        me,
+        agenda,
+        round,
+        second,
+        &old,
+        Some(&outcomes[x]),
+        v,
+        available,
+        margin,
+        Some(p_new),
+        p_old,
+    );
     choice
         .options
         .iter()
         .position(|o| o.id == outcomes[x])
-        .map(|index| Cast { index })
-}
-
-/// Whether a vote plan of this seat is in force.
-#[must_use]
-pub fn has_plan(me: &PlayerId) -> bool {
-    MEMORY.with(|m| m.borrow().plan.as_ref().is_some_and(|p| p.seat == me.as_str()))
-}
-
-fn clear_plan() {
-    MEMORY.with(|m| m.borrow_mut().plan = None);
+        .map(|index| Cast { index, votes: v })
 }
 
 /// Append a line to the file named by `AGENDA_VOTE_LOG` (experiments only).
@@ -1510,30 +1536,28 @@ fn log_vote(
         let Some(path) = std::env::var_os("AGENDA_VOTE_LOG") else {
             return;
         };
-        let faction = seen.seat(me).map(|s| s.faction.to_string()).unwrap_or_default();
+        let faction = seen
+            .seat(me)
+            .map(|s| s.faction.to_string())
+            .unwrap_or_default();
         let line = serde_json::json!({
             "k": "vote", "agenda": agenda, "round": round, "seat": me.as_str(), "faction": faction,
             "second": second, "old": old, "new": chosen, "votes": votes, "available": available,
             "margin": margin, "p_win": p_win, "p_old": p_old,
             "value": tuning::agenda_value(), "budget": tuning::agenda_budget(),
         });
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = f.write_all(format!("{line}\n").as_bytes());
         }
     }
     #[cfg(target_arch = "wasm32")]
-    let _ = (seen, me, agenda, round, second, old, chosen, votes, available, margin, p_win, p_old);
-}
-
-fn store_plan(me: &PlayerId, outcome: &str, target: f64) {
-    MEMORY.with(|m| {
-        m.borrow_mut().plan = Some(Plan {
-            seat: me.to_string(),
-            outcome: outcome.to_owned(),
-            target,
-            cast: 0.0,
-        });
-    });
+    let _ = (
+        seen, me, agenda, round, second, old, chosen, votes, available, margin, p_win, p_old,
+    );
 }
 
 fn votes_of(option: &ChoiceOption) -> i64 {
@@ -1546,15 +1570,157 @@ fn votes_of(option: &ChoiceOption) -> i64 {
         .unwrap_or(0)
 }
 
-/// The planet decision that follows the plan: the cheapest subset of planets reaching the target,
-/// one planet at a time; decline once the target is reached. `None`: no plan for this decision.
-pub fn pick_planet(choice: &Choice, me: &PlayerId, outcome: &str) -> Option<usize> {
-    let plan = MEMORY.with(|m| m.borrow().plan.clone())?;
-    if plan.seat != me.as_str() || plan.outcome != outcome {
+/// What holding a vote back costs: the price of one vote on the first agenda of a round, where
+/// the influence is also wanted on the second (the budget knob). The second agenda is never
+/// known (both are drawn before the first is voted), so the prior stands for its stake.
+fn second_agenda_price(seen: &Observed<'_>, me: &PlayerId, budget: bool, second: bool) -> f64 {
+    if !budget || second {
+        return 0.0;
+    }
+    let rivals: f64 = seen
+        .players()
+        .iter()
+        .filter(|p| **p != me)
+        .map(|p| (0.35 * influence_ready_of(seen, p)).powi(2))
+        .sum();
+    tuning::agenda_second_prior() * 0.4 / rivals.sqrt().max(2.0)
+}
+
+/// The planet decision that follows the cast of `outcome`: the plan is **recomputed from the
+/// observation** at every step (the ledger before this seat's votes and the votes cast so far ride
+/// on the question as `details.tally` / `details.votes_so_far`), so it needs no memory between
+/// decisions and an undo, a rewind or a resumed game decide the same. The cheapest subset of the
+/// remaining planets that reaches the best total, one planet at a time; decline once it is
+/// reached. `None`: no plan for this decision (the old logic answers).
+pub fn pick_planet(
+    choice: &Choice,
+    seen: &Observed<'_>,
+    me: &PlayerId,
+    agenda: &str,
+    outcome: &str,
+    old: Option<String>,
+) -> Option<usize> {
+    let value = tuning::agenda_value();
+    let budget = tuning::agenda_budget();
+    if !value && !budget {
         return None;
     }
     let decline = choice.options.iter().position(ChoiceOption::is_decline);
-    let need = plan.target - plan.cast;
+    let rows: Vec<(String, f64)> = choice
+        .details
+        .get("tally")?
+        .as_array()?
+        .iter()
+        .filter_map(|row| {
+            let row = row.as_array()?;
+            Some((row.first()?.as_str()?.to_owned(), row.get(1)?.as_f64()?))
+        })
+        .collect();
+    let cast = choice.details.get("votes_so_far").and_then(serde_json::Value::as_i64)?;
+    let outcomes: Vec<String> = rows.iter().map(|r| r.0.clone()).collect();
+    let x = outcomes.iter().position(|o| o == outcome)?;
+    let tally: BTreeMap<String, f64> = rows.into_iter().collect();
+    let refs: Vec<&str> = outcomes.iter().map(String::as_str).collect();
+    let verdict = if value { evaluate(agenda, &refs, seen, me)? } else { Verdict { scores: Vec::new() } };
+    if !value && old.is_none() {
+        return None;
+    }
+    let score_of = |o: &str| -> f64 {
+        if value {
+            verdict.score_of(o)
+        } else if Some(o) == old.as_deref() {
+            3.0
+        } else {
+            0.0
+        }
+    };
+    let ctx = Ctx::build(seen, me);
+    let conditional_agenda = value && is_voter_conditional(agenda);
+    let after = voting_order_after_me(seen, me);
+    let ballot = ballot_for(agenda, &outcomes, &tally, &after, seen, me);
+    let second = seen.agendas_resolved_this_round() > 0;
+    let lambda = second_agenda_price(seen, me, budget, second);
+    let influences = my_planet_influences(seen, me);
+    let remaining: i64 = influences.iter().sum();
+    let ev_of = |total: i64| -> f64 {
+        let p = if total == 0 {
+            ballot.probabilities(None, 0.0)
+        } else {
+            ballot.probabilities(Some(x), total as f64)
+        };
+        let mut ev: f64 = (0..outcomes.len()).map(|o| p[o] * score_of(&outcomes[o])).sum();
+        if let Some(ctx) = &ctx
+            && conditional_agenda
+        {
+            ev += (0..outcomes.len())
+                .map(|o| p[o] * conditional(ctx, agenda, &outcomes[x], &outcomes[o]))
+                .sum::<f64>();
+        }
+        ev - lambda * total as f64
+    };
+    // The totals this seat can still reach: what it cast plus a subset sum of what is left.
+    let extra: Vec<i64> = if budget {
+        let mut reach = vec![false; (remaining + 1) as usize];
+        reach[0] = true;
+        for &i in &influences {
+            for s in (0..=(remaining - i).max(-1)).rev() {
+                if s >= 0 && reach[s as usize] {
+                    reach[(s + i) as usize] = true;
+                }
+            }
+        }
+        (0..=remaining).filter(|&s| reach[s as usize]).collect()
+    } else {
+        vec![remaining]
+    };
+    let mut best: Option<(f64, i64)> = None;
+    for &s in &extra {
+        let total = cast + s;
+        if total == 0 {
+            continue;
+        }
+        let ev = ev_of(total);
+        if best.is_none_or(|(b, _)| ev > b + 1e-9) {
+            best = Some((ev, total));
+        }
+    }
+    let (top, mut target) = best?;
+    if budget {
+        // Never cast more than needed for the same probability: the smallest total within 1% of EV.
+        for &s in &extra {
+            let total = cast + s;
+            if total == 0 || total >= target {
+                continue;
+            }
+            if ev_of(total) >= top - 0.01 * top.abs().max(0.5) {
+                target = total;
+                break;
+            }
+        }
+    }
+    let need = (target - cast) as f64;
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(path) = std::env::var_os("AGENDA_VOTE_LOG") {
+        use std::io::Write;
+        let line = serde_json::json!({
+            "k": "planet", "agenda": agenda, "seat": me.as_str(), "outcome": outcome,
+            "cast": cast, "target": target,
+        });
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = f.write_all(format!("{line}\n").as_bytes());
+        }
+    }
+    if need <= 0.0 {
+        return decline;
+    }
+    cheapest_planet(choice, need)
+}
+
+/// The next planet towards `need` more votes: the smallest subset of the planets on offer that
+/// reaches it (fewest planets on a tie), its biggest planet first; everything when out of reach;
+/// decline when nothing is needed or offered.
+fn cheapest_planet(choice: &Choice, need: f64) -> Option<usize> {
+    let decline = choice.options.iter().position(ChoiceOption::is_decline);
     if need <= 0.0 {
         return decline;
     }
@@ -1573,7 +1739,10 @@ pub fn pick_planet(choice: &Choice, me: &PlayerId, outcome: &str) -> Option<usiz
     let n = planets.len().min(16);
     let mut best: Option<(i64, usize, u32)> = None;
     for mask in 1u32..(1u32 << n) {
-        let total: i64 = (0..n).filter(|b| mask >> b & 1 == 1).map(|b| planets[b].1).sum();
+        let total: i64 = (0..n)
+            .filter(|b| mask >> b & 1 == 1)
+            .map(|b| planets[b].1)
+            .sum();
         if (total as f64) < need {
             continue;
         }
@@ -1587,13 +1756,11 @@ pub fn pick_planet(choice: &Choice, me: &PlayerId, outcome: &str) -> Option<usiz
             .filter(|b| mask >> b & 1 == 1)
             .map(|b| planets[b])
             .max_by_key(|(i, v)| (*v, std::cmp::Reverse(*i))),
-        None => planets.iter().copied().max_by_key(|(i, v)| (*v, std::cmp::Reverse(*i))),
+        None => planets
+            .iter()
+            .copied()
+            .max_by_key(|(i, v)| (*v, std::cmp::Reverse(*i))),
     }?;
-    MEMORY.with(|m| {
-        if let Some(p) = m.borrow_mut().plan.as_mut() {
-            p.cast += chosen.1 as f64;
-        }
-    });
     Some(chosen.0)
 }
 
@@ -1610,7 +1777,11 @@ fn rider_benefit(ctx: &Ctx<'_>, alias: &str) -> f64 {
         "tech_rider" => 0.0,
         "trade_rider" => 5.0 * TG,
         "war_rider" => {
-            if me.units.iter().any(|u| u.ship) { 4.0 } else { 0.0 }
+            if me.units.iter().any(|u| u.ship) {
+                4.0
+            } else {
+                0.0
+            }
         }
         "const_rider" => {
             let docks: Vec<&str> = me
@@ -1619,7 +1790,11 @@ fn rider_benefit(ctx: &Ctx<'_>, alias: &str) -> f64 {
                 .filter(|u| u.base == "spacedock")
                 .filter_map(|u| u.planet.as_deref())
                 .collect();
-            if me.planets.iter().any(|p| !docks.contains(&p.id.as_str())) { 4.0 } else { 0.0 }
+            if me.planets.iter().any(|p| !docks.contains(&p.id.as_str())) {
+                4.0
+            } else {
+                0.0
+            }
         }
         "diplo_rider" => 1.5,
         _ => 0.0,
@@ -1628,7 +1803,11 @@ fn rider_benefit(ctx: &Ctx<'_>, alias: &str) -> f64 {
 
 fn rider_aliases(option: &ChoiceOption) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(card) = option.payload.get("card").and_then(serde_json::Value::as_str) {
+    if let Some(card) = option
+        .payload
+        .get("card")
+        .and_then(serde_json::Value::as_str)
+    {
         out.push(card.to_owned());
     }
     out
@@ -1637,7 +1816,14 @@ fn rider_aliases(option: &ChoiceOption) -> Vec<String> {
 fn is_rider_alias(alias: &str) -> bool {
     matches!(
         alias,
-        "imp_rider" | "lead_rider" | "politic_rider" | "tech_rider" | "trade_rider" | "war_rider" | "const_rider" | "diplo_rider"
+        "imp_rider"
+            | "lead_rider"
+            | "politic_rider"
+            | "tech_rider"
+            | "trade_rider"
+            | "war_rider"
+            | "const_rider"
+            | "diplo_rider"
     )
 }
 
@@ -1660,7 +1846,12 @@ fn rider_view(seen: &Observed<'_>, me: &PlayerId, agenda: &str) -> Option<RiderV
     let refs: Vec<&str> = outcomes.iter().map(String::as_str).collect();
     let verdict = evaluate(agenda, &refs, seen, me)?;
     // Everybody else votes in some order: all rivals are "after" for the forecast.
-    let rivals: Vec<PlayerId> = seen.players().iter().filter(|p| **p != me).map(|p| (*p).clone()).collect();
+    let rivals: Vec<PlayerId> = seen
+        .players()
+        .iter()
+        .filter(|p| **p != me)
+        .map(|p| (*p).clone())
+        .collect();
     let tally = BTreeMap::new();
     let ballot = ballot_for(agenda, &outcomes, &tally, &rivals, seen, me);
     let p0 = ballot.probabilities(None, 0.0);
@@ -1669,8 +1860,12 @@ fn rider_view(seen: &Observed<'_>, me: &PlayerId, agenda: &str) -> Option<RiderV
     let best = verdict.best()?;
     let x = outcomes.iter().position(|o| o == best.0)?;
     let p1 = ballot.probabilities(Some(x), influence);
-    let ev1: f64 = (0..outcomes.len()).map(|o| p1[o] * verdict.score_of(&outcomes[o])).sum();
-    let ev0: f64 = (0..outcomes.len()).map(|o| p0[o] * verdict.score_of(&outcomes[o])).sum();
+    let ev1: f64 = (0..outcomes.len())
+        .map(|o| p1[o] * verdict.score_of(&outcomes[o]))
+        .sum();
+    let ev0: f64 = (0..outcomes.len())
+        .map(|o| p0[o] * verdict.score_of(&outcomes[o]))
+        .sum();
     let ctx = Ctx::build(seen, me)?;
     let mut vote_cost = (ev1 - ev0).max(0.0);
     if is_voter_conditional(agenda) {
@@ -1685,7 +1880,11 @@ fn rider_view(seen: &Observed<'_>, me: &PlayerId, agenda: &str) -> Option<RiderV
         outcomes,
         p_without: p0,
         vote_cost,
-        freed: if tuning::agenda_budget() { 0.2 * influence } else { 0.0 },
+        freed: if tuning::agenda_budget() {
+            0.2 * influence
+        } else {
+            0.0
+        },
     })
 }
 
@@ -1713,7 +1912,7 @@ pub fn rider_pick(
     match subtype {
         "predict_agenda_outcome" => {
             // The outcome with the best forecast (the seat's own preference on a tie).
-            let agenda = agenda.or_else(|| last_agenda_of(seen))?;
+            let agenda = agenda.or_else(|| seen.agenda_in_play().map(str::to_owned))?;
             let view = rider_view(seen, me, &agenda)?;
             let mut best: Option<(usize, f64)> = None;
             for (i, o) in choice.options.iter().enumerate() {
@@ -1736,23 +1935,16 @@ pub fn rider_pick(
         {
             let agenda = agenda?;
             let play = rider_decision(seen, me, &agenda, context.round, &held);
-            // The slot that holds a rider card, else decline.
+            // The slot that plays exactly that rider card, else decline. A slot that holds
+            // several cards is left alone: the card question behind it can come back without
+            // the card, and with no memory between decisions the window would then ask again
+            // for ever (6p golden seed 21).
             if let Some(alias) = play {
-                let slot = choice.options.iter().position(|o| {
-                    !o.is_decline()
-                        && (rider_aliases(o).iter().any(|a| a == &alias)
-                            || o
-                                .payload
-                                .get("card_names")
-                                .and_then(serde_json::Value::as_array)
-                                .is_some_and(|names| names.iter().any(|n| n.as_str().is_some_and(|n| n.ends_with("Rider")))))
-                });
-                if let Some(index) = slot {
-                    // One card in the slot: it is played now. Several: the card question follows
-                    // and marks the play.
-                    if !rider_aliases(&choice.options[index]).is_empty() {
-                        mark_rider(me, context.round, &agenda);
-                    }
+                let slot = choice
+                    .options
+                    .iter()
+                    .position(|o| !o.is_decline() && rider_aliases(o).iter().any(|a| *a == alias));
+                if slot.is_some() {
                     return slot;
                 }
             }
@@ -1767,25 +1959,14 @@ pub fn rider_pick(
             let picked = choice
                 .options
                 .iter()
-                .position(|o| rider_aliases(o).iter().any(|a| *a == card));
+                .position(|o| rider_aliases(o).contains(&card));
             if picked.is_some() {
-                mark_rider(me, context.round, &agenda);
                 return picked;
             }
             decline
         }
         _ => None,
     }
-}
-
-fn last_agenda_of(_seen: &Observed<'_>) -> Option<String> {
-    MEMORY.with(|m| m.borrow().rider.as_ref().map(|(_, _, a)| a.clone()))
-}
-
-fn mark_rider(me: &PlayerId, round: u32, agenda: &str) {
-    MEMORY.with(|m| {
-        m.borrow_mut().rider = Some((me.to_string(), round, agenda.to_owned()));
-    });
 }
 
 /// Which rider card (alias) to play on this agenda, if any: the best expected net value.
@@ -1797,12 +1978,7 @@ fn rider_decision(
     held: &[String],
 ) -> Option<String> {
     // One prediction per agenda: do not play a second rider on the agenda already predicted.
-    let already = MEMORY.with(|m| {
-        m.borrow()
-            .rider
-            .as_ref()
-            .is_some_and(|(s, r, a)| s == me.as_str() && *r == round && a == agenda)
-    });
+    let already = seen.agenda_prediction_of(me).is_some();
     if already {
         return None;
     }
@@ -1839,13 +2015,20 @@ fn log_rider(
         let Some(path) = std::env::var_os("AGENDA_VOTE_LOG") else {
             return;
         };
-        let faction = seen.seat(me).map(|s| s.faction.to_string()).unwrap_or_default();
+        let faction = seen
+            .seat(me)
+            .map(|s| s.faction.to_string())
+            .unwrap_or_default();
         let line = serde_json::json!({
             "k": "rider", "agenda": agenda, "round": round, "seat": me.as_str(), "faction": faction,
             "p": p, "vote_cost": view.vote_cost, "card": chosen.map(|c| c.0.clone()),
             "net": chosen.map(|c| c.1),
         });
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = f.write_all(format!("{line}\n").as_bytes());
         }
     }
@@ -1876,7 +2059,12 @@ mod tests {
 
     fn table() -> ti4_model::state::GameState {
         seated_game(
-            &[("a", "muaat"), ("b", "sol"), ("c", "letnev"), ("d", "hacan")],
+            &[
+                ("a", "muaat"),
+                ("b", "sol"),
+                ("c", "letnev"),
+                ("d", "hacan"),
+            ],
             POK,
         )
     }
@@ -1892,7 +2080,10 @@ mod tests {
     #[test]
     fn muaat_never_wants_the_war_sun_schematics() {
         let state = table();
-        assert_eq!(prefer(&state, "a", "schematics").as_deref(), Some("against"));
+        assert_eq!(
+            prefer(&state, "a", "schematics").as_deref(),
+            Some("against")
+        );
     }
 
     #[test]
@@ -1987,15 +2178,8 @@ mod tests {
         choice
     }
 
-    fn stored_target() -> f64 {
-        MEMORY
-            .with(|m| m.borrow().plan.clone())
-            .map_or(0.0, |p| p.target)
-    }
-
     #[test]
     fn budget_casts_nothing_when_the_outcome_is_decided_either_way() {
-        reset();
         let state = table();
         let me = PlayerId::new("b");
         let safe = vote(
@@ -2009,17 +2193,15 @@ mod tests {
             &[("a", 40.0), ("b", 0.0), ("c", 0.0), ("d", 0.0)],
         );
         tuning::with(on(), || {
-            let _ = plan_vote(&safe, &seen(&state), &me, "minister_policy", None);
-            assert!(stored_target() <= 2.0, "safe: target {}", stored_target());
-            reset();
-            let _ = plan_vote(&lost, &seen(&state), &me, "minister_policy", None);
-            assert!(stored_target() <= 2.0, "lost: target {}", stored_target());
+            let cast = plan_vote(&safe, &seen(&state), &me, "minister_policy", None).expect("cast");
+            assert!(cast.votes <= 2, "safe: target {}", cast.votes);
+                let cast = plan_vote(&lost, &seen(&state), &me, "minister_policy", None).expect("cast");
+            assert!(cast.votes <= 2, "lost: target {}", cast.votes);
         });
     }
 
     #[test]
     fn budget_backs_its_own_name_when_the_vote_is_close() {
-        reset();
         let state = table();
         let me = PlayerId::new("b");
         let close = vote(
@@ -2028,68 +2210,67 @@ mod tests {
             &[("a", 0.0), ("b", 0.0), ("c", 1.0), ("d", 0.0)],
         );
         tuning::with(on(), || {
-            let _ = plan_vote(&close, &seen(&state), &me, "minister_policy", None);
-            let plan = MEMORY.with(|m| m.borrow().plan.clone()).expect("plan");
-            assert_eq!(plan.outcome, "b");
+            let cast = plan_vote(&close, &seen(&state), &me, "minister_policy", None).expect("cast");
+            assert_eq!(close.options[cast.index].id, "b");
         });
     }
 
     #[test]
     fn mutiny_joins_a_for_side_that_passes_with_one_cheap_planet() {
-        reset();
         let state = table();
         let me = PlayerId::new("b");
         let choice = vote(&me, "mutiny", &[("for", 12.0), ("against", 0.0)]);
         tuning::with(on(), || {
             let cast = plan_vote(&choice, &seen(&state), &me, "mutiny", Some("for".to_owned()));
-            assert!(cast.is_some());
-            let plan = MEMORY.with(|m| m.borrow().plan.clone()).expect("plan");
-            assert_eq!(plan.outcome, "for");
-            assert!(plan.target >= 1.0 && plan.target <= 2.0, "{}", plan.target);
+            let cast = cast.expect("cast");
+            assert_eq!(choice.options[cast.index].id, "for");
+            assert!(cast.votes >= 1 && cast.votes <= 2, "{}", cast.votes);
         });
     }
 
     #[test]
     fn mutiny_stays_out_of_a_for_side_that_fails() {
-        reset();
         let state = table();
         let me = PlayerId::new("b");
         let choice = vote(&me, "mutiny", &[("for", 0.0), ("against", 40.0)]);
         tuning::with(on(), || {
-            let _ = plan_vote(&choice, &seen(&state), &me, "mutiny", Some("for".to_owned()));
-            let plan = MEMORY.with(|m| m.borrow().plan.clone());
-            assert!(plan.is_none() || plan.is_some_and(|p| p.outcome != "for"));
+            let cast = plan_vote(&choice, &seen(&state), &me, "mutiny", Some("for".to_owned()));
+            assert!(cast.is_none_or(|c| choice.options[c.index].id != "for"));
         });
     }
 
     #[test]
     fn the_planets_chosen_waste_least_influence() {
-        reset();
         let a = PlayerId::new("a");
-        store_plan(&a, "x", 4.0);
         let options: Vec<ChoiceOption> = ["m|3", "n|2", "o|2", "p|4"]
             .iter()
             .map(|id| {
                 let votes: i64 = id[2..].parse().unwrap();
-                ChoiceOption::labelled(*id, "vote_planet", format!("exhaust {id} for {votes} votes"))
+                ChoiceOption::labelled(
+                    *id,
+                    "vote_planet",
+                    format!("exhaust {id} for {votes} votes"),
+                )
             })
             .chain(std::iter::once(ChoiceOption::decline()))
             .collect();
         let choice = Choice::new(a.clone(), "exhaust a planet to vote x", options);
-        let first = pick_planet(&choice, &a, "x").expect("a planet");
+        // Need 4: the 4 alone (no waste) or 2 + 2; never the 3.
+        let first = cheapest_planet(&choice, 4.0).expect("a planet");
         let first_votes = votes_of(&choice.options[first]);
         assert!(first_votes == 4 || first_votes == 2, "{first_votes}");
-        let second = pick_planet(&choice, &a, "x").expect("next");
-        if first_votes == 4 {
-            assert!(choice.options[second].is_decline());
-        } else {
-            assert_eq!(votes_of(&choice.options[second]), 2);
+        // Same inputs, same answer: nothing is remembered between decisions.
+        assert_eq!(cheapest_planet(&choice, 4.0), Some(first));
+        // Once the need is met the planet question is declined.
+        assert!(choice.options[cheapest_planet(&choice, 0.0).expect("decline")].is_decline());
+        if first_votes == 2 {
+            let rest = cheapest_planet(&choice, 2.0).expect("next");
+            assert_eq!(votes_of(&choice.options[rest]), 2);
         }
     }
 
     #[test]
     fn a_rider_waits_while_the_outcome_is_a_toss_up() {
-        reset();
         let state = table();
         tuning::with(on(), || {
             let held = vec!["imp_rider".to_owned()];
@@ -2101,7 +2282,6 @@ mod tests {
 
     #[test]
     fn a_rider_is_played_on_a_predictable_agenda_the_seat_does_not_care_about() {
-        reset();
         let state = table();
         tuning::with(on(), || {
             let held = vec!["imp_rider".to_owned(), "tech_rider".to_owned()];
@@ -2111,12 +2291,9 @@ mod tests {
                 rider_decision(&seen(&state), &me, "incentive", 4, &held).as_deref(),
                 Some("imp_rider")
             );
-            // The same card is not played twice on one agenda, and the Technology Rider is worth
-            // nothing in this engine.
-            mark_rider(&me, 4, "incentive");
-            assert!(rider_decision(&seen(&state), &me, "incentive", 4, &held).is_none());
-            reset();
-            assert!(
+            // The Technology Rider is worth nothing in this engine. (A card already played on
+            // the agenda shows as the seat's prediction in the game state, which ends the play.)
+                assert!(
                 rider_decision(&seen(&state), &me, "incentive", 4, &["tech_rider".to_owned()])
                     .is_none()
             );

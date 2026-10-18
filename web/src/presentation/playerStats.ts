@@ -1,5 +1,5 @@
 import { BoardView, PlayerView, PlanetValueBoost } from "../protocol/types.ts";
-import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "@ti4/shared/planets/values.ts";
 import { getUnitBaseType } from "../components/UnitIcon.tsx";
 import {
   findPlanetMeta,

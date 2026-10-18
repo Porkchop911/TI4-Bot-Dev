@@ -52,7 +52,7 @@ pub fn key_of(jobs: &[Job]) -> (String, String) {
     // The shipped numbers: a changed default is a changed bot.
     text.push_str(&format!(
         "{:?}\n",
-        ti4_rule_bot::tuning::Tuning::default().entries()
+        ti4_rule_bot::tuning::current().entries()
     ));
     if let Ok(salt) = std::env::var("SELFPLAY_SALT") {
         text.push_str(&format!("salt {salt}\n"));

@@ -140,6 +140,6 @@ it("has the hand without the facts and the catalogue, and nothing for a spectato
 
 it("counts the scored secrets of a seat in the player table", () => {
   const rows = selectPlayers(withFacts({ d: ["te", "dp"] })).rows;
-  expect(rows.find((row) => row.seat === "d")?.secrets).toEqual([2, 1]);
+  expect(rows.find((row) => row.seat === "d")?.secrets).toEqual([2, 2]);
   expect(rows.find((row) => row.seat === "a")?.secrets).toEqual([0, 2]);
 });

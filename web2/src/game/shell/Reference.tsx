@@ -13,7 +13,7 @@ import type {
   AgendasView,
 } from "../../model";
 import { plural } from "../../model";
-import { Button, Drawer, Eyebrow, Icon, Peek, cx } from "../../ui";
+import { Button, Drawer, Eyebrow, GroupHeading, Icon, Peek, cx } from "../../ui";
 import { TYPE_COLOR } from "../board/PlanetTraits";
 import { RichText, SeatSymbol, useDispatch, useSeat, useSeats } from "../context";
 import { OfferSelect } from "../OfferSelect";
@@ -149,35 +149,6 @@ export function PrintedCard({
       )}
       {children}
     </div>
-  );
-}
-
-/** The heading of a group of a deck. It opens and closes the group, as a round of the log. */
-function GroupHeading({
-  open,
-  onToggle,
-  name,
-  count,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  name: string;
-  /** How many the group has, or how many of them are unseen. */
-  count: ReactNode;
-}) {
-  return (
-    <h4>
-      <button
-        type="button"
-        className="mt-3 flex w-full items-baseline gap-2 border-b border-line py-1.5 text-left font-strong"
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-        {name}
-        <span className="text-xs font-normal text-muted tabular-nums">{count}</span>
-      </button>
-    </h4>
   );
 }
 

@@ -20,7 +20,11 @@ export type UnitType =
   | "dock";
 
 /** Counts per unit type, in display order. Compare `PlacedUnitView[]`, grouped by type. */
-export type Force = { unit: UnitType; count: number; damaged: number }[];
+/**
+ * Units by kind. `name` is the printed name of the unit ("Cruiser II"); without it the row is
+ * named by its base unit.
+ */
+export type Force = { unit: UnitType; name?: string; count: number; damaged: number }[];
 
 export interface SeatView {
   id: SeatId;
@@ -95,7 +99,7 @@ export const forceText = (force: Force) =>
     .filter((item) => item.count)
     .map(
       (item) =>
-        `${item.count} ${unitName(item.unit, item.count)}${item.damaged ? ` (${item.count > 1 ? item.damaged + " " : ""}damaged)` : ""}`,
+        `${item.count} ${item.name ?? unitName(item.unit, item.count)}${item.damaged ? ` (${item.count > 1 ? item.damaged + " " : ""}damaged)` : ""}`,
     )
     .join(" · ") || "None";
 

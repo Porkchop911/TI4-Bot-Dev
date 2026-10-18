@@ -49,6 +49,15 @@ describe("agenda result toasts", () => {
     expect(text({ agenda: "mutiny", name: "Mutiny", outcome: null })).toBe("Mutiny\nResolved with no outcome.");
   });
 
+  it("a card discarded without a vote says why", () => {
+    expect(
+      text({ agenda: "classified", name: "Classified Document Leaks", outcome: null, discarded: true, discard_reason: "no_choice" }),
+    ).toBe("Classified Document Leaks\nDiscarded: nothing to elect. The next agenda is revealed.");
+    expect(
+      text({ agenda: "standardization", name: "Standardization", outcome: null, discarded: true, discard_reason: "replaced" }),
+    ).toBe("Standardization\nDiscarded and replaced by the next agenda.");
+  });
+
   it("toasts only records past the cursor, once each", () => {
     const log: AgendaRecordDto[] = [
       { round: 2, agenda: "mutiny", outcome: "for" },

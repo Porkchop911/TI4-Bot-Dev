@@ -19,6 +19,12 @@ import {
   planBuilds,
   produceStep,
 } from "../presentation/productionDraft.ts";
+import {
+  capacityMeter,
+  capacityMeterText,
+  readCapacityFacts,
+  readCapacityNow,
+} from "../presentation/productionCapacity.ts";
 import { usePreparedHint } from "../presentation/PreparedHint.tsx";
 import { useSinglePaymentSetting } from "../hooks/useSinglePaymentSetting.ts";
 import { ProductionTotal } from "./ProductionTotal.tsx";
@@ -74,9 +80,11 @@ const BuildOptionCard: React.FC<{
   blockedReason: React.ReactNode;
   disabledAdd: boolean;
   disabledRemove: boolean;
+  /** Units of this build that would not fit the system's capacity and would be removed. */
+  capacityOver?: boolean;
   onAdd: () => void;
   onRemove: () => void;
-}> = ({ option, seat, count, blockedReason, disabledAdd, disabledRemove, onAdd, onRemove }) => {
+}> = ({ option, seat, count, blockedReason, disabledAdd, disabledRemove, capacityOver, onAdd, onRemove }) => {
   const unit = unitKeyOf(option);
   const built = useBuildUnit(unit, seat);
   // The Amalgamation exchange is the same unit bought another way: no resources, one captured
@@ -92,6 +100,7 @@ const BuildOptionCard: React.FC<{
       data-testid={`produce-option-${option.id}`}
       data-blocked={blockedReason ? "true" : undefined}
       data-exchange={exchange ? "true" : undefined}
+      data-capacity-over={capacityOver ? "true" : undefined}
     >
       <div className="production-drawer__unit-head">
         <span className="production-drawer__unit-name">
@@ -146,6 +155,11 @@ const BuildOptionCard: React.FC<{
           free: payload.free_this_use === true || exchange,
         }}
       />
+      {capacityOver && (
+        <p className="production-drawer__capacity-warning" data-testid={`produce-capacity-warning-${option.id}`}>
+          Over capacity: these would be removed.
+        </p>
+      )}
       {blockedReason && (
         <p className="production-drawer__blocked" data-testid="produce-blocked">
           {blockedReason}
@@ -253,6 +267,15 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
     ? `These builds would put ${fleetNow.used + stagedShips} ships in this system against a fleet supply of ${fleetNow.limit}. You may still build them, but at the end of your turn you must remove the ships above the limit.`
     : "";
 
+  // Capacity (LRR 16) of the producing system with the staged builds. The engine names the
+  // present position and what each build gives and takes; this only adds them up.
+  const capacityNow = readCapacityNow(choice?.details?.capacity);
+  const capacity = capacityNow ? capacityMeter(capacityNow, productionOptions, draft) : null;
+  const overCapacity = !!capacity && capacity.over > 0 && capacity.queuedFighters + capacity.queuedGround > 0;
+  const overCapacityText = capacity
+    ? `${capacityMeterText(capacity)}. You may still build them, but the units above the capacity are removed when production ends.`
+    : "";
+
   const optionGroups = groupOptions(productionOptions);
   const multiGroup = optionGroups.length > 1;
 
@@ -324,19 +347,60 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                             "Data unavailable"
                           )}
                         </span>
-                        {(readFleetSupply(fleetSupply)?.armada ?? 0) > 0 && (
+                        {(readFleetSupply(fleetSupply)?.fleetSupplyBonus ?? 0) > 0 && (
                           <span
                             className="token-panel__armada"
                             data-testid="production-armada"
                             title={ARMADA_TEXT}
                             aria-label={ARMADA_TEXT}
                           >
-                            incl. +{readFleetSupply(fleetSupply)?.armada} Armada
+                            incl. +{readFleetSupply(fleetSupply)?.fleetSupplyBonus} Armada
                           </span>
                         )}
                         </span>
                       </div>
                     </div>
+
+                    {/* Ship capacity: transport of the ships there + queued, against what rides in it */}
+                    {capacity && (
+                      <div className="workflow-card production-drawer__meter" data-testid="capacity-meter">
+                        <div className="workflow-card--row">
+                          <span
+                            data-testid="capacity-counter"
+                            className={overCapacity ? "production-drawer__fleet--over" : "text-success"}
+                            data-over={overCapacity ? "true" : undefined}
+                          >
+                            {capacityMeterText(capacity)}
+                          </span>
+                        </div>
+                        <p className="production-drawer__split" data-testid="capacity-breakdown">
+                          <span>
+                            Ships there: <strong>{capacity.existing}</strong>
+                          </span>
+                          {capacity.fromQueued > 0 && (
+                            <span>
+                              Queued ships: <strong className="production-drawer__fleet-staged">+{capacity.fromQueued}</strong>
+                            </span>
+                          )}
+                          <span>
+                            Needing it: <strong>{capacity.consumed}</strong>
+                            {capacity.queuedFighters + capacity.queuedGround > 0 && (
+                              <>
+                                {" "}
+                                (<span className="production-drawer__fleet-staged">
+                                  +{capacity.queuedFighters + capacity.queuedGround} queued
+                                </span>)
+                              </>
+                            )}
+                          </span>
+                        </p>
+                        {capacity.maybeGround > 0 && (
+                          <p className="text-muted" data-testid="capacity-maybe">
+                            +{capacity.maybeGround} more if you place the ground forces in space.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Capacity Progress Meter */}
                     {capacityLimit > 0 && (
@@ -449,6 +513,12 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                                     resourceBlocked
                                   }
                                   disabledRemove={!count || queued || isSubmitting}
+                                  capacityOver={
+                                    overCapacity &&
+                                    count > 0 &&
+                                    readCapacityFacts(opt)?.placement === "always" &&
+                                    readCapacityFacts(opt)?.role !== "none"
+                                  }
                                   onAdd={() =>
                                     setDraft((prev) => ({ ...prev, [opt.id]: count + 1 }))
                                   }
@@ -499,12 +569,17 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                       <button
                         type="button"
                         className={
-                          overFleetSupply
+                          overFleetSupply || overCapacity
                             ? "button button--primary production-drawer__build--over"
                             : "button button--primary"
                         }
                         data-over-fleet-supply={overFleetSupply ? "true" : undefined}
-                        title={overFleetSupply ? overFleetText : undefined}
+                        data-over-capacity={overCapacity ? "true" : undefined}
+                        title={
+                          [overFleetSupply ? overFleetText : "", overCapacity ? overCapacityText : ""]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
                         aria-label={queued || preparing ? undefined : "Confirm builds"}
                         disabled={!stagedBatches || queued || isSubmitting || batchRunning}
                         onClick={async () => {

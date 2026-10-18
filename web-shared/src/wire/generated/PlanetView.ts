@@ -12,4 +12,18 @@ export type PlanetView = { planet_id: PlanetId, controlled_by: PlayerId | null, 
  * laws such as Core Mining, Helios docks), from the engine's own planet value function.
  * Display only: the printed values are in the map tile metadata. Empty when nothing does.
  */
-value_boosts?: Array<PlanetValueBoost>, };
+value_boosts?: Array<PlanetValueBoost>, 
+/**
+ * The resources of the planet now, when they differ from the printed value: with its
+ * attachments and the laws on it (`ti4_engine::production::planet_value_now`).
+ */
+resources?: number, 
+/**
+ * The influence of the planet now, when it differs from the printed value.
+ */
+influence?: number, 
+/**
+ * The technology specialties of the planet now ("warfare"), when they differ from the
+ * printed ones: with its attachments (`ti4_engine::planets::tech_specialties_now`).
+ */
+tech_specialties?: Array<string>, };

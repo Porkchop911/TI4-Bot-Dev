@@ -306,8 +306,10 @@ export class RedoExercise {
         timeout: 15_000,
       })
       .catch(() => null);
-    if (!r || !r.ok()) return undefined;
-    const body = (await r.json().catch(() => null)) as { status: RedoStatusJson | null } | null;
+    if (!r) return undefined;
+    // Playwright keeps the body in the worker until the response is disposed.
+    const body = r.ok() ? ((await r.json().catch(() => null)) as { status: RedoStatusJson | null } | null) : null;
+    await r.dispose().catch(() => {});
     return body ? body.status : undefined;
   }
 

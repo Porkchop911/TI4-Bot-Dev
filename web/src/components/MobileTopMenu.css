@@ -82,7 +82,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 14px 14px;
+  /* Room under the last block for the bottom dock, which sits over the sheet's lower edge. */
+  padding: 8px 14px 76px;
 }
 .top-menu__head {
   display: flex;

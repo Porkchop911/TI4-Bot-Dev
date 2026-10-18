@@ -1,5 +1,6 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
 import type { PlayerId } from "./PlayerId.ts";
+import type { RollSubject } from "./RollSubject.ts";
 
 /**
  * One public die roll: who rolled, what for, what showed, and what it did.
@@ -41,4 +42,9 @@ system?: string,
 /**
  * What it did ("ship destroyed", "2 hits").
  */
-outcome?: string, };
+outcome?: string, 
+/**
+ * The unit that rolled, when the engine said: the ship of a gravity rift roll (with where it
+ * started and what it carried), the gun of a space cannon roll (with the seat it fires at).
+ */
+subject?: RollSubject, };

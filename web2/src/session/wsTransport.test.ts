@@ -7,6 +7,7 @@ import {
   type Catalog,
   type ClientMessage,
   type DraftOutcome,
+  type GameEvent,
   PROTOCOL_VERSION,
   type ReactionFacts,
   type ServerMessage,
@@ -682,6 +683,40 @@ it("tells who the game waits for while a seat of the server takes its time", () 
   // The status of another version belongs to an update that is on its way.
   game.tell({ ...message, game_version: opponent.game_version + 1 });
   expect(game.take()).toEqual([]);
+});
+
+it("tells the public events of the game with each update: those of the snapshot, then each that came", () => {
+  const game = server();
+  game.open();
+  const entry = (id: number, visibility: GameEvent["visibility"] = { visibility: "public" }) =>
+    ({
+      id: `e-${id}`,
+      timestamp: "",
+      visibility,
+      event: { kind: "decision_resolved" },
+    }) satisfies GameEvent;
+  const ids = () => {
+    const told = game.take().at(-1);
+    return told?.kind === "update" ? told.events?.map((item) => item.id) : null;
+  };
+  game.tell({ ...actor, events: [entry(1), entry(2, { visibility: "seat", seat: "seat_a" })] });
+  expect(ids()).toEqual(["e-1"]);
+  const told = (id: number) =>
+    game.tell({
+      type: "event",
+      protocol_version: PROTOCOL_VERSION,
+      game_id: GAME.gameId,
+      entry: entry(id),
+    });
+  told(3);
+  // An event alone is no update: it comes with the next one.
+  expect(game.take()).toEqual([]);
+  told(3);
+  game.tell({ ...actor, type: "state_update", game_version: actor.game_version + 1 });
+  expect(ids()).toEqual(["e-1", "e-3"]);
+  // A snapshot has every event of the game: an undo took the later ones back.
+  game.tell({ ...actor, game_version: actor.game_version + 2, events: [entry(1)] });
+  expect(ids()).toEqual(["e-1"]);
 });
 
 /** A `seat_staged` of the server: the slots of the seat, by revision. */

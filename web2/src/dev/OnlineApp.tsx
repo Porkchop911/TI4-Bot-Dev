@@ -14,6 +14,7 @@ import {
   playersOf,
   validNickname,
 } from "../session/onlineKeys";
+import { useChosenBot } from "../session/chosenBot";
 import { hostChange, nextNickname, selectLobby } from "../session/select/lobby";
 import {
   type Seat,
@@ -200,6 +201,7 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
   const [offline, setOffline] = useState(false);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [inspected, setInspected] = useState<string | null>(null);
+  const [bot, chooseBot] = useChosenBot();
   const [mine, setMine] = useState<string[]>([]);
   const [nickname, setNickname] = useState(
     () => localStorage.getItem(NICKNAME_KEY) ?? DEFAULT_NICKNAME,
@@ -266,8 +268,8 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
   }, [gameId, who, inGame, say]);
 
   const view = useMemo(
-    () => state && selectLobby(state, { mine, inspected, offline }, engine?.catalog ?? null),
-    [state, mine, inspected, offline, engine],
+    () => state && selectLobby(state, { mine, inspected, offline, bot }, engine?.catalog ?? null),
+    [state, mine, inspected, offline, engine, bot],
   );
 
   if (failure) {
@@ -325,6 +327,8 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
       }
       case "become":
         return location.assign(tableAddress(gameId, intent.player));
+      case "chooseBot":
+        return chooseBot(intent.kind);
       case "addBot":
         return table?.addBots(intent.kind);
       case "fillBots":

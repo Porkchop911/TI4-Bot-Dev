@@ -623,7 +623,9 @@ pub fn annexable(
         };
         for planet_id in system_record.strings("planets") {
             let planet = ti4_model::id::PlanetId::new(planet_id);
-            if crate::seating::is_mecatol_planet(planet.as_str()) || board.planet_control.contains_key(&planet) {
+            if crate::seating::is_mecatol_planet(planet.as_str())
+                || board.planet_control.contains_key(&planet)
+            {
                 continue; // somebody holds it
             }
             // Space Stations rule 7 keeps them out of the scoring view and rule 5 keeps
@@ -2130,7 +2132,9 @@ mod tests {
     #[test]
     fn the_mech_ledger_uses_the_active_printing() {
         let content = ContentStore::embedded();
-        assert!(unimplemented_mechs(content, ti4_model::content_types::DEFAULT, &["naalu"]).is_empty());
+        assert!(
+            unimplemented_mechs(content, ti4_model::content_types::DEFAULT, &["naalu"]).is_empty()
+        );
         assert_eq!(
             unimplemented_mechs(content, ti4_model::content_types::POK, &["naalu"]),
             ["naalu_mech"]

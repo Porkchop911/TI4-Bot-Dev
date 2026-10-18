@@ -352,6 +352,10 @@ pub fn infer_check(len: usize) -> i32 {
 ///   `ti4_calc::odds::BattleResponse` (2000 rollouts of `ti4_calc` from a fixed seed).
 /// - `{"query":"ground_odds", ...GroundOddsRequest}`: the odds of a ground combat, a
 ///   `ti4_calc::odds::GroundOddsResponse` of `ti4_calc::odds::ground_odds`.
+/// - `{"query":"fleet_standing", ...FleetCounts}`: the fleet supply and the capacity of some
+///   counts, the `ti4_engine::fleet::Standing` of `ti4_engine::fleet::FleetCounts::standing`
+///   (`FleetStanding` on the wire): the counts of a production with the units that the page
+///   stages.
 ///
 /// Nothing of a game is read or changed: the host may ask while a game waits for the page, and
 /// with no game at all.
@@ -369,6 +373,7 @@ pub fn query(len: usize) -> i32 {
         Catalog,
         SpaceOdds(crate::SpaceOddsRequest),
         GroundOdds(ti4_calc::odds::GroundOddsRequest),
+        FleetStanding(ti4_engine::fleet::FleetCounts),
     }
     let text = match input(len) {
         Ok(text) => text,
@@ -406,6 +411,9 @@ pub fn query(len: usize) -> i32 {
                 Ok(odds) => write_json(&odds),
                 Err(error) => write_error(format_args!("space odds: {error}")),
             };
+        }
+        Query::FleetStanding(counts) => {
+            return write_json(&counts.standing());
         }
         Query::GroundOdds(request) => {
             return match ti4_calc::odds::ground_odds(
@@ -465,7 +473,8 @@ pub fn prepare(len: usize) -> Result<Prepared, String> {
             crate::host_setup::SAVE_FORMAT
         ));
     }
-    let mut start: Start = serde_json::from_value(start).map_err(|error| format!("start: {error}"))?;
+    let mut start: Start =
+        serde_json::from_value(start).map_err(|error| format!("start: {error}"))?;
     let bot_version = start.settle_bot_version()?;
     let mut built = start.build()?;
     // A new game plays the current rules; a resumed save (or a restart of this host) plays the

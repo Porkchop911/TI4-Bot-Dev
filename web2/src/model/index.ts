@@ -5,3 +5,4 @@ export * from "./intents";
 export * from "./shell";
 export * from "./shortcuts";
 export * from "./lobby";
+export * from "./log";

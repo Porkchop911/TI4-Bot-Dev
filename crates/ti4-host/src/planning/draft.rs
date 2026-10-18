@@ -29,7 +29,7 @@ use super::audit::{
     PlanScope, SafePublication, StopReason, audit_offer, audit_secondary_offer, validate_knowledge,
 };
 use super::fork::{TACTICAL_COMPLETE, activity_stop, guard_fork};
-use super::steps::{INTERRUPTED, PlanAnswer, PlanStep, plan_answer};
+use super::steps::{INTERRUPTED, PlanAnswer, PlanStep, RefusalCode, plan_answer};
 use crate::projection::{FactsContext, SessionUpdate, project_game_view, project_session_update};
 use crate::protocol::status::ViewerRole;
 use crate::protocol::view::{BoardTileView, GameView};
@@ -93,7 +93,38 @@ pub enum ScriptAnswer {
     /// seat). Entries are left.
     Interrupted { reason: String },
     /// The game does not offer what entry `step` asks for.
-    Mismatch { step: usize, reason: String },
+    Mismatch {
+        step: usize,
+        reason: String,
+        code: RefusalCode,
+    },
+}
+
+/// Which entry of a script the game refused, and why: what the page marks. The entry names the
+/// unit, its system or the planet; the text of the refusal stays for a person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct EntryRefusal {
+    /// The place of the entry in the script, in the order the game played it (a payment may
+    /// have moved to the purchase that it pays).
+    pub step: usize,
+    pub code: RefusalCode,
+    /// The entry itself. `None` when the script has none at `step`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<DraftStep>,
+}
+
+impl EntryRefusal {
+    /// The refusal of entry `step` of `script`.
+    #[must_use]
+    pub fn of(script: &[DraftStep], step: usize, code: RefusalCode) -> Self {
+        Self {
+            step,
+            code,
+            entry: script.get(step).cloned(),
+        }
+    }
 }
 
 /// What `script` answers to `choice`, from entry `next` on, for the seat `actor`.
@@ -164,10 +195,11 @@ pub fn script_answer(
             // The game needs no more of these steps: what follows them is next.
             PlanAnswer::Done => next = end,
             PlanAnswer::Interrupted { reason } => return ScriptAnswer::Interrupted { reason },
-            PlanAnswer::Mismatch { step, reason } => {
+            PlanAnswer::Mismatch { step, reason, code } => {
                 return ScriptAnswer::Mismatch {
                     step: start + step,
                     reason,
+                    code,
                 };
             }
         }
@@ -188,6 +220,7 @@ pub fn script_answer(
                 None => ScriptAnswer::Mismatch {
                     step: next,
                     reason: format!("The game does not offer \"{option_id}\" here."),
+                    code: RefusalCode::NotOffered,
                 },
             }
         }
@@ -208,6 +241,7 @@ pub fn needless(entries: &[DraftStep]) -> bool {
                     | PlanStep::Pay { .. }
                     | PlanStep::Place { .. }
                     | PlanStep::DoneProducing
+                    | PlanStep::Purchase { buy: false }
             )
         )
     })
@@ -222,8 +256,16 @@ pub enum DraftStop {
     Open,
     /// The game played the whole script, and the tactical action or the secondary is over.
     Complete,
-    /// The game does not offer what step `step` of the script asks for.
-    Refused { step: usize, reason: String },
+    /// The game does not offer what step `step` of the script asks for. `entry` is that step
+    /// (a payment may have moved, so it is of the script as the game played it), and `code`
+    /// says why.
+    Refused {
+        step: usize,
+        reason: String,
+        code: RefusalCode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry: Option<DraftStep>,
+    },
     /// The run reached something a draft cannot show: dice, a card that is drawn, a combat, a
     /// question of another seat or one outside the audited offers.
     Stopped { reason: StopReason },
@@ -366,8 +408,14 @@ impl Run {
                 self.end(DraftStop::Open);
                 None
             }
-            ScriptAnswer::Mismatch { step, reason } => {
-                self.end(DraftStop::Refused { step, reason });
+            ScriptAnswer::Mismatch { step, reason, code } => {
+                let entry = self.script.get(step).cloned();
+                self.end(DraftStop::Refused {
+                    step,
+                    reason,
+                    code,
+                    entry,
+                });
                 None
             }
         }
@@ -387,6 +435,8 @@ impl Run {
         } else {
             self.end(DraftStop::Refused {
                 step: self.next,
+                code: RefusalCode::Over,
+                entry: self.script.get(self.next).cloned(),
                 reason: match self.scope {
                     PlanScope::Tactical => "The action is over before this.",
                     PlanScope::Secondary { .. } => "The secondary is over before this.",
@@ -890,7 +940,14 @@ mod tests {
         // Nothing is left of a script when the secondary is over.
         let long = [pass.clone(), pass];
         let over = run_secondary(&game, &tiles, Some(&watch), &scope, &long);
-        assert!(matches!(over.stop, DraftStop::Refused { step: 1, .. }));
+        assert!(matches!(
+            over.stop,
+            DraftStop::Refused {
+                step: 1,
+                code: RefusalCode::Over,
+                ..
+            }
+        ));
         let wrong = run_secondary(&game, &tiles, Some(&watch), &scope, &[choose("nothing")]);
         assert!(matches!(wrong.stop, DraftStop::Refused { step: 0, .. }));
 
@@ -1231,11 +1288,17 @@ mod tests {
             step(PlanStep::DoneMoving),
         ];
         let outcome = run(&game, &tiles, &script);
-        assert!(
-            matches!(outcome.stop, DraftStop::Refused { step: 2, .. }),
-            "{:?}",
-            outcome.stop
-        );
+        // The refusal names the entry, with what it names, and why.
+        let DraftStop::Refused {
+            step: 2,
+            code: RefusalCode::NotOffered,
+            entry: Some(entry),
+            ..
+        } = &outcome.stop
+        else {
+            panic!("{:?}", outcome.stop);
+        };
+        assert_eq!(entry, &script[2]);
         assert_eq!(outcome.consumed, 2);
         assert!(outcome.movement.is_some());
 
@@ -1318,7 +1381,14 @@ mod tests {
         unpaid.extend([produce.clone(), step(PlanStep::DoneProducing)]);
         let refused = run(&game, &tiles, &unpaid);
         assert!(
-            matches!(refused.stop, DraftStop::Refused { step: 5, .. }),
+            matches!(
+                refused.stop,
+                DraftStop::Refused {
+                    step: 5,
+                    code: RefusalCode::Unpaid,
+                    ..
+                }
+            ),
             "{:?}",
             refused.stop
         );

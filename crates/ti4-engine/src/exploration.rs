@@ -225,9 +225,9 @@ fn ask_decorated(
     let mut choice = decorate(choice);
     if COMMODITY_REWARDS.contains(&card) {
         // Display only: what the seat holds now, so "gain 2" or "convert" reads against it.
-        choice = choice.detailed(
+        choice = choice.hinted(
             "commodities",
-            crate::strategy_cards::commodity_standing(state, ctx.content, player),
+            &crate::strategy_cards::commodity_standing(state, ctx.content, player),
         );
     }
     ctx.ask_seeing(state, &choice).ok().map(|answer| answer.id)
@@ -714,8 +714,8 @@ fn resolve_instant(
     card: &str,
 ) -> bool {
     let (content, sources) = (ctx.content, ctx.sources);
-    // Command tokens go to the strategy pool. LRR 52.4 lets the player choose, and this does
-    // not ask — recorded as a simplification rather than passed off as the rule.
+    // Command tokens: LRR 52.4 lets the player choose the pool. Rules version 12 asks
+    // (`gain_command_tokens`); older games put them in the strategy pool.
     let (tokens, goods) = match card {
         "minent" => (1, 1),
         "ent" => (1, 2),
@@ -1007,7 +1007,7 @@ fn resolve_instant(
                 card,
                 "gain 1 command token",
             ) {
-                state.gain_token(player, ti4_model::state::TokenPool::Strategic, 1);
+                gain_command_tokens(state, ctx, player, 1);
             }
             return true;
         }
@@ -1021,9 +1021,43 @@ fn resolve_instant(
         }
         _ => return false,
     };
-    state.gain_token(player, ti4_model::state::TokenPool::Strategic, tokens);
+    gain_command_tokens(state, ctx, player, tokens);
     crate::supply::gain_trade_goods_announced(state, ctx, player, goods, "exploration");
     true
+}
+
+/// "Gain N command tokens" from an exploration card: 52.4 lets the player place each into any
+/// of the three pools, so from rules version 12 (`RULES_COMMAND_TOKEN_POOL`) each token is asked
+/// (`strategy_cards::gain_tokens`). Older games put them all into the strategy pool, which is what
+/// their logs recorded.
+fn gain_command_tokens(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    count: u32,
+) {
+    if count == 0 {
+        return;
+    }
+    if state.rules_version >= ti4_model::state::RULES_COMMAND_TOKEN_POOL
+        && crate::strategy_cards::gain_tokens(
+            state,
+            ctx.content,
+            ctx.sources,
+            None,
+            ctx.table,
+            player,
+            count,
+        )
+        .is_ok()
+    {
+        return;
+    }
+    state.gain_token(
+        player,
+        ti4_model::state::TokenPool::Strategic,
+        i32::try_from(count).unwrap_or(0),
+    );
 }
 
 /// Systems with nothing to land on, which is where a frontier token goes (35.5).
@@ -1559,6 +1593,7 @@ pub fn purge_for_relic(
         *seat.relic_fragments.entry(FRONTIER.to_owned()).or_insert(0) -= from_frontier;
     }
     seat.relics.push(relic.clone());
+    crate::relics::log_gain(state, player, &relic, 0);
     Some(relic)
 }
 
@@ -2822,6 +2857,10 @@ mod tests {
         assert_eq!(seat.relic_fragments.get("CULTURAL"), Some(&0));
         assert_eq!(seat.relics.len(), 1);
         assert!(state.relic_deck.is_empty());
+        let logged = &state.relic_log;
+        assert_eq!(logged.len(), 1);
+        assert_eq!((logged[0].relic.as_str(), logged[0].victory_points), ("some_relic", 0));
+        assert_eq!(logged[0].player, player());
     }
 
     #[test]
@@ -3176,5 +3215,102 @@ mod bf_f3_tests {
                 .collect::<Vec<_>>(),
             vec!["gain"]
         );
+    }
+
+    /// Run `resolve_instant` for `card` at `rules_version`, answering with `script`. Returns the
+    /// seat's (tactic, fleet, strategic) tokens before and after, and the number of questions asked.
+    fn token_card(
+        card: &str,
+        with_mech: bool,
+        rules_version: u32,
+        script: &[&str],
+    ) -> ((i32, i32, i32), (i32, i32, i32), usize) {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        state.rules_version = rules_version;
+        let a = PlayerId::new("a");
+        let planet = if with_mech {
+            let (system, planet) = crate::fixtures::a_placed_planet();
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "mech", &a, 1);
+            Some(planet)
+        } else {
+            None
+        };
+        {
+            let seat = state.player_mut(&a).unwrap();
+            seat.tactic_tokens = 1;
+            seat.fleet_tokens = 1;
+            seat.strategic_tokens = 1;
+        }
+        let pools = |s: &GameState| {
+            let seat = s.player(&a).unwrap();
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+        };
+        let before = pools(&state);
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new(script.iter().copied()),
+        ));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            timing: None,
+        };
+        assert!(resolve_instant(&mut state, &mut ctx, &a, planet.as_ref(), card));
+        let asked = seen
+            .borrow()
+            .iter()
+            .filter(|choice| choice.prompt.contains("command token into which pool"))
+            .count();
+        (before, pools(&state), asked)
+    }
+
+    #[test]
+    fn volatile_fuel_source_asks_which_pool_from_the_command_token_version() {
+        let (before, after, asked) = token_card(
+            "vfs1",
+            true,
+            ti4_model::state::RULES_COMMAND_TOKEN_POOL,
+            &["fleet_tokens"],
+        );
+        assert_eq!(asked, 1);
+        assert_eq!(after, (before.0, before.1 + 1, before.2));
+    }
+
+    #[test]
+    fn volatile_fuel_source_keeps_the_strategy_pool_in_older_games() {
+        let (before, after, asked) = token_card(
+            "vfs1",
+            true,
+            ti4_model::state::RULES_COMMAND_TOKEN_POOL - 1,
+            &[],
+        );
+        assert_eq!(asked, 0);
+        assert_eq!(after, (before.0, before.1, before.2 + 1));
+    }
+
+    #[test]
+    fn a_two_token_exploration_card_asks_once_per_token() {
+        let (before, after, asked) = token_card(
+            "kel1",
+            false,
+            ti4_model::state::RULES_COMMAND_TOKEN_POOL,
+            &["tactic_tokens", "fleet_tokens"],
+        );
+        assert_eq!(asked, 2);
+        assert_eq!(after, (before.0 + 1, before.1 + 1, before.2));
+        let (before, after, asked) = token_card(
+            "kel1",
+            false,
+            ti4_model::state::RULES_COMMAND_TOKEN_POOL - 1,
+            &[],
+        );
+        assert_eq!(asked, 0);
+        assert_eq!(after, (before.0, before.1, before.2 + 2));
     }
 }

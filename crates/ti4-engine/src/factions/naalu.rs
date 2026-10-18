@@ -55,6 +55,7 @@ use super::hooks_strategy::{SecondaryWaiver, StrategyHooks};
 use super::{FactionModule, Hooks};
 use crate::choice::{Choice, ChoiceOption};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::phrases::{Phrase, Subject, Worded};
 use crate::timing::{Ability, Relation, TimingContext, TimingError};
 
 /// The faction alias; also the faction name in promissory note ids (`gift:naalu`).
@@ -710,14 +711,23 @@ fn hero(owner_name: &str, seat: &PlayerId) -> Ability {
                 let note = if let [only] = notes.as_slice() {
                     only.clone()
                 } else {
-                    let options: Vec<ChoiceOption> = notes
+                    let worded: Vec<(String, Worded)> = notes
                         .iter()
                         .map(|note| {
-                            ChoiceOption::labelled(
+                            (
                                 format!("note|{note}"),
-                                "promissory_note",
-                                format!("give {note} to the Naalu player"),
+                                Phrase::of("give {note} to the Naalu player").with(
+                                    "note",
+                                    note,
+                                    Subject::note(context.content, note),
+                                ),
                             )
+                        })
+                        .collect();
+                    let options: Vec<ChoiceOption> = worded
+                        .iter()
+                        .map(|(id, worded)| {
+                            ChoiceOption::labelled(id, "promissory_note", worded.label())
                         })
                         .collect();
                     let choice = Choice::new(
@@ -725,6 +735,7 @@ fn hero(owner_name: &str, seat: &PlayerId) -> Ability {
                         "The Oracle: which promissory note do you give".to_owned(),
                         options,
                     )
+                    .phrased_options(&worded)
                     .contextualized(decision(
                         context.state,
                         &victim,
@@ -762,7 +773,7 @@ const MINDSIEVE_PREFIX: &str = "ms|";
 /// waiver hooks have no table to ask with.
 fn secondary_waivers(
     state: &GameState,
-    _content: &ContentStore,
+    content: &ContentStore,
     follower: &PlayerId,
     primary: &PlayerId,
     _card: &str,
@@ -772,9 +783,16 @@ fn secondary_waivers(
     }
     hand_notes(state, follower)
         .into_iter()
-        .map(|note| SecondaryWaiver {
-            id: format!("{MINDSIEVE_PREFIX}{note}"),
-            label: format!("resolve the secondary by giving {primary} the {note} promissory note"),
+        .map(|note| {
+            let worded =
+                Phrase::of("resolve the secondary by giving {primary} the {note} promissory note")
+                    .with("primary", primary, Subject::seat(primary))
+                    .with("note", &note, Subject::note(content, &note));
+            SecondaryWaiver {
+                id: format!("{MINDSIEVE_PREFIX}{note}"),
+                label: worded.label(),
+                worded: Some(worded),
+            }
         })
         .collect()
 }
@@ -1543,6 +1561,27 @@ mod tests {
         assert_eq!(state.promissory_notes.get(&note), Some(&b()));
     }
 
+    /// Each waiver names its note and the seat that receives it (`details.phrases`).
+    #[test]
+    fn mindsieve_names_the_note_and_the_primary() {
+        let mut state = game();
+        let content = ContentStore::embedded();
+        grant_bt(&mut state);
+        for waiver in secondary_waivers(&state, content, &a(), &b(), "Trade") {
+            let note = waiver.id.strip_prefix(MINDSIEVE_PREFIX).unwrap();
+            let phrase = waiver.worded.expect("named").phrase();
+            assert_eq!(
+                crate::phrases::rendered(&phrase, &[("primary", "b"), ("note", note)]),
+                waiver.label
+            );
+            assert_eq!(phrase.refs["primary"], crate::phrases::Subject::seat(&b()));
+            assert_eq!(
+                phrase.refs["note"],
+                crate::phrases::Subject::note(content, note)
+            );
+        }
+    }
+
     #[test]
     fn mindsieve_is_not_offered_for_ones_own_card_or_without_the_breakthrough() {
         let mut state = game();
@@ -1583,6 +1622,31 @@ mod tests {
             leader_status(&state, &a(), HERO),
             Some(LeaderStatus::Purged)
         );
+    }
+
+    /// Each note of a victim's question says which note it is (`details.phrases`).
+    #[test]
+    fn the_hero_names_each_note_of_its_question() {
+        let mut state = game();
+        unlock_hero(&mut state);
+        let theirs = hand_notes(&state, &b());
+        let (mut table, seen) = crate::phrases::capturing(&[HERO_ABILITY]);
+        emit(&mut state, &mut table, "STATUS_PHASE_ENDED", &[]);
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.player == b() && choice.prompt.starts_with("The Oracle"))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        let content = ContentStore::embedded();
+        for note in &theirs {
+            let phrase = &hints.options[&format!("note|{note}")];
+            assert_eq!(phrase.text, "give {note} to the Naalu player");
+            assert_eq!(
+                phrase.refs["note"],
+                crate::phrases::Subject::note(content, note)
+            );
+        }
     }
 
     #[test]

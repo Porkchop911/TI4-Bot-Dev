@@ -268,8 +268,10 @@ pub fn pick(choice: &Choice, seen: &SeatObservation<'_>, rng: &mut ChaCha8Rng) -
         return Some(index);
     }
     match subtype {
-        // A victory point is never worth declining once the engine offers it.
-        Some("imperial_score_objective" | "remove_custodians") => {
+        // A victory point is never worth declining once the engine offers it. Likewise the free
+        // mech Self-Assembly Routines offers after production (rules version 13): the card
+        // readies again every round.
+        Some("imperial_score_objective" | "remove_custodians" | "self_assembly_mech") => {
             return choice.options.iter().position(|o| !o.is_decline());
         }
         Some("activate_system") => return pick_activation(choice, observed, &me),
@@ -2561,9 +2563,7 @@ fn land_leftover(
             .clone()
             .filter(|u| &u.owner == me && is_ground(seen, u))
             .count();
-        let defended = units
-            .clone()
-            .any(|u| &u.owner != me && is_ground(seen, u));
+        let defended = units.clone().any(|u| &u.owner != me && is_ground(seen, u));
         let held = board.planet_control.get(&planet) == Some(me);
         if defended && mine == 0 && !held {
             continue;
@@ -3778,6 +3778,7 @@ mod tests {
 
     #[test]
     fn landing_commits_until_the_planet_is_outnumbered_and_not_into_a_lost_cause() {
+        tuning::set(tuning::for_version(4));
         let (mut state, hub, centre, planet) = board();
         state.active_system = Some(centre.clone());
         put_on_planet(&mut state, &centre, &planet, "infantry", &foe(), 2);
@@ -3803,6 +3804,7 @@ mod tests {
 
     #[test]
     fn land_all_lands_what_the_winning_force_leaves_aboard() {
+        tuning::set(tuning::for_version(4));
         let (mut state, hub, centre, planet) = board();
         state.active_system = Some(centre.clone());
         // Held and undefended: the old logic leaves the troops aboard, the knob lands them.
@@ -5153,7 +5155,11 @@ mod tests {
         let choice = Choice::new(
             me(),
             "pay 4 more resources",
-            vec![pay("trade_good", 1, 4), pay("exhaust|big", 5, 4), pay("exhaust|fit", 4, 4)],
+            vec![
+                pay("trade_good", 1, 4),
+                pay("exhaust|big", 5, 4),
+                pay("exhaust|fit", 4, 4),
+            ],
         );
         assert!(choice.options.iter().all(|o| o.kind == "pay"));
         let (state, hub, _, _) = board();

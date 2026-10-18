@@ -121,45 +121,57 @@ pub fn enforce_hand_limit(
             return Ok(()); // every one is scored, so there is nothing to hand back
         };
 
-        let chosen =
-            if held.len() == 1 {
-                first
-            } else {
-                let before = i64::try_from(held_count(state, content, player)).unwrap_or(0);
-                let options: Vec<ChoiceOption> =
-                    held.iter()
-                        .map(|alias| {
-                            ChoiceOption::labelled(
-                                alias.to_string(),
-                                RETURN_KIND,
-                                format!("return {alias}"),
-                            )
-                            .previewed(Preview::certain(vec![
-                                Delta::new(Quantity::SecretObjectivesHeld, before, before - 1),
-                            ]))
-                        })
-                        .collect();
-                let choice = Choice::new(
-                    player.clone(),
-                    "return a secret objective to the deck",
-                    options,
-                )
-                .contextualized(DecisionContext::new(
-                    player.clone(),
-                    DecisionSource::Rule("45.4".to_owned()),
-                    "return_over_secret_hand_limit",
-                    state.phase,
-                    state.round,
-                ));
-                SecretObjectiveId::new(
-                    table
-                        .ask_seeing(
-                            &choice,
-                            &Observed::new(state, content, ti4_model::content_types::POK, None),
-                        )?
-                        .id,
-                )
-            };
+        let chosen = if held.len() == 1 {
+            first
+        } else {
+            let before = i64::try_from(held_count(state, content, player)).unwrap_or(0);
+            let worded: Vec<(String, crate::phrases::Worded)> = held
+                .iter()
+                .map(|alias| {
+                    (
+                        alias.to_string(),
+                        crate::phrases::Phrase::of("return {card}").with(
+                            "card",
+                            alias,
+                            crate::phrases::Subject::secret_objective(alias),
+                        ),
+                    )
+                })
+                .collect();
+            let options: Vec<ChoiceOption> = worded
+                .iter()
+                .map(|(alias, worded)| {
+                    ChoiceOption::labelled(alias, RETURN_KIND, worded.label()).previewed(
+                        Preview::certain(vec![Delta::new(
+                            Quantity::SecretObjectivesHeld,
+                            before,
+                            before - 1,
+                        )]),
+                    )
+                })
+                .collect();
+            let choice = Choice::new(
+                player.clone(),
+                "return a secret objective to the deck",
+                options,
+            )
+            .phrased_options(&worded)
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("45.4".to_owned()),
+                "return_over_secret_hand_limit",
+                state.phase,
+                state.round,
+            ));
+            SecretObjectiveId::new(
+                table
+                    .ask_seeing(
+                        &choice,
+                        &Observed::new(state, content, ti4_model::content_types::POK, None),
+                    )?
+                    .id,
+            )
+        };
 
         if let Some(seat) = state.player_mut(player) {
             seat.secret_objectives.retain(|alias| alias != &chosen);
@@ -1520,6 +1532,12 @@ mod tests {
         let ask = seen.borrow();
         let asked = ask.first().expect("the over-limit ask reached");
         let option = asked.option("s0").expect("the secret was offered");
+        // The label names the secret by id, and the question says which card it is.
+        let phrase = &crate::phrases::phrased(asked).options["s0"];
+        assert_eq!(
+            phrase.refs["card"],
+            crate::phrases::Subject::secret_objective(&SecretObjectiveId::new("s0"))
+        );
         assert_eq!(
             option.preview,
             Some(Preview::certain(vec![Delta::new(

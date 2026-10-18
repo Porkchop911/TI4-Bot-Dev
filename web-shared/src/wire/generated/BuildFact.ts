@@ -27,6 +27,11 @@ fleet?: boolean,
  */
 cargo?: boolean, 
 /**
+ * The unit is a fighter: in the space area it counts as a fighter of
+ * [`ti4_engine::fleet::FleetCounts`], else as a ground force that is carried.
+ */
+fighter?: boolean, 
+/**
  * Where the unit can be placed: `space`, or a planet of the system.
  */
 places: Array<string>, 

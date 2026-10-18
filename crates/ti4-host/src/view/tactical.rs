@@ -15,9 +15,10 @@ use ti4_engine::choice::Choice;
 use ti4_engine::decision_context::{ConstraintKind, DecisionTarget};
 use ti4_engine::invasion::COMMIT_KIND;
 use ti4_engine::movement::{Board, MovementRules};
-use ti4_engine::production::{PRODUCE_KIND, Spend};
+use ti4_engine::production::{PRODUCE_KIND, Spend, WITHHELD_KEY, Withheld, WithheldUnit};
 use ti4_engine::tactical::{ACTIVATE_KIND, Movable, effective_move_value_for_ship, movable_into};
-use ti4_engine::transit::{CargoWindow, LOAD_KIND, rifts_exited};
+pub use ti4_engine::transit::Unloadable;
+use ti4_engine::transit::{CargoSource, CargoWindow, LOAD_KIND, Route, rifts_exited};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
@@ -25,6 +26,9 @@ use ti4_model::units::Unit;
 
 /// The subtype of the choice of a system to activate.
 pub const ACTIVATION_SUBTYPE: &str = "activate_system";
+/// The subtype of the choice of a system for a tactical action that places no command token
+/// (Thunder's Edge Warfare).
+pub const FREE_ACTIVATION_SUBTYPE: &str = "warfare_free_tactical";
 /// The subtype of the choice of a ship to move.
 pub const MOVEMENT_SUBTYPE: &str = "movement_step";
 /// The subtype of the choice of a ground force to land.
@@ -68,6 +72,10 @@ pub struct MoveFact {
     pub path: Vec<String>,
     /// The gravity rifts that the ship leaves on this path. It rolls once for each.
     pub rifts: Vec<String>,
+    /// The wormholes that the path goes through, by kind ("ALPHA", "BETA"): a step between two
+    /// systems that are not neighbours.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wormholes: Vec<String>,
 }
 
 /// Why a ship cannot move to the active system.
@@ -123,6 +131,22 @@ pub struct CargoPool {
     pub count: usize,
 }
 
+/// Units of one kind in one place that use capacity, in a system that a ship of the movement
+/// starts in or passes, that no ship can load: they stay where they are
+/// (`ti4_engine::transit::unloadable`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct UnloadableCargo {
+    pub system: String,
+    /// The planet, or `None` for the space area.
+    pub source: Option<String>,
+    pub unit: String,
+    pub damaged: bool,
+    pub count: usize,
+    pub reason: Unloadable,
+}
+
 /// What the seat may keep in the active system (fleet supply).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +161,9 @@ pub struct FleetSupplyFact {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActivationFacts {
     pub tactic_tokens: i32,
+    /// The activation places a command token of the tactic pool. False for a tactical action
+    /// that places none, in any system, also one with the seat's token (Thunder's Edge Warfare).
+    pub costs_token: bool,
     pub systems: Vec<ReachFact>,
 }
 
@@ -154,10 +181,38 @@ pub struct MovementFacts {
     pub fleet_supply: FleetSupplyFact,
     /// How many ships already moved in this activation.
     pub moved: u32,
+    /// The units that use capacity that no ship can load, in the systems that the movement
+    /// starts in or passes, outside the active system.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unloadable: Vec<UnloadableCargo>,
     /// The space combat that ships moving in start: set only when another seat has ships in
     /// the active system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle: Option<BattleFacts>,
+    /// The guns that roll in the space cannon offense after the movement, of every seat, in the
+    /// order in which they roll, as the state is before a ship moves. Empty: no gun fires.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cannon: Vec<CannonFact>,
+}
+
+/// One gun of the space cannon offense of the active system: a unit in the system or one whose
+/// SPACE CANNON reaches it, or the SPACE CANNON of an attachment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CannonFact {
+    pub seat: String,
+    /// The unit, by type id; `None` for an attachment, which names its `planet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planet: Option<String>,
+    pub dice: usize,
+    pub hits_on: u32,
+    /// The seat whose ships the gun fires at: the seat that moves, or for its own guns the seat
+    /// with ships in the system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// One side of a space combat in the active system as the state has it, before a ship moves
@@ -248,6 +303,10 @@ pub struct BuildFact {
     /// The unit uses capacity while it is in a space area: a fighter, a ground force.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cargo: bool,
+    /// The unit is a fighter: in the space area it counts as a fighter of
+    /// [`ti4_engine::fleet::FleetCounts`], else as a ground force that is carried.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fighter: bool,
     /// Where the unit can be placed: `space`, or a planet of the system.
     pub places: Vec<String>,
     /// What the unit hits on in a combat, and with how many dice. `None`: it does not fight.
@@ -280,7 +339,8 @@ pub struct CombatFact {
     pub dice: i64,
 }
 
-/// Why a unit cannot be produced.
+/// Why a unit cannot be produced: the reason of the production window
+/// (`ti4_engine::production::ProductionWindow::withheld`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -293,7 +353,16 @@ pub enum Unavailable {
     Blockade,
     /// The system has no place for the unit.
     NoPlace,
-    /// The game does not offer the unit, for a reason that these facts do not know.
+    /// This use of PRODUCTION makes another unit only (Minister of Industry, Freelancers).
+    OnlyAnother,
+    /// This use of PRODUCTION makes units up to a cost that this unit is above.
+    TooCostly,
+    /// An ability of the seat bars the unit from a production by an ability.
+    Banned,
+    /// An ability of the seat bars the producers in the system from making this unit (Mitosis).
+    Barred,
+    /// The game does not offer the unit, and the question does not say why: it is not one of a
+    /// production window.
     NotOffered,
 }
 
@@ -304,6 +373,11 @@ pub enum Unavailable {
 pub struct PayingPlanet {
     pub planet: String,
     pub worth: i64,
+    /// The kind of value that the planet pays with, when it is not the kind of the bill: its
+    /// influence for resources (Archon's Gift, Freelancers). The payment option of the planet is
+    /// then `exhaust|<planet>|<face>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
 }
 
 /// A limit and what already counts against it.
@@ -331,14 +405,20 @@ pub struct ProductionFacts {
     /// Every unit of this use costs nothing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub free: bool,
-    /// The ready planets of the seat that pay resources.
+    /// The ready planets of the seat that pay resources, each with its best face.
     pub planets: Vec<PayingPlanet>,
     pub trade_goods: i64,
+    /// Commodities that the seat may spend as trade goods in this payment (the Keleres agent).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub commodities: i64,
     /// What one trade good pays.
     pub trade_good_worth: i64,
     pub fleet_supply: FleetSupplyFact,
     /// The capacity of the ships of the seat in the system, and what uses it.
     pub transport: LimitFact,
+    /// What the fleet supply and the capacity in the system are read from, before the build.
+    /// A fighter that the seat produces counts as its own kind (Fighter II).
+    pub fleet: ti4_engine::fleet::FleetCounts,
 }
 
 /// The facts of the pending choice of a tactical action.
@@ -364,9 +444,9 @@ pub fn project_tactical_facts(
 ) -> Option<TacticalFacts> {
     let player = &choice.player;
     match choice.context.as_ref()?.subtype.as_str() {
-        ACTIVATION_SUBTYPE => Some(TacticalFacts::Activation(activation(
-            state, content, sources, galaxy, player, choice,
-        ))),
+        ACTIVATION_SUBTYPE | FREE_ACTIVATION_SUBTYPE => Some(TacticalFacts::Activation(
+            activation(state, content, sources, galaxy, player, choice),
+        )),
         MOVEMENT_SUBTYPE => {
             movement(state, content, sources, galaxy, player).map(TacticalFacts::Movement)
         }
@@ -409,6 +489,10 @@ fn activation(
         .collect();
     ActivationFacts {
         tactic_tokens: state.player(player).map_or(0, |seat| seat.tactic_tokens),
+        costs_token: choice
+            .context
+            .as_ref()
+            .is_none_or(|context| context.subtype != FREE_ACTIVATION_SUBTYPE),
         systems,
     }
 }
@@ -536,6 +620,7 @@ fn movement(
 
     let mut pools: Vec<PoolKey> = Vec::new();
     let mut ships = Vec::new();
+    let mut routes: Vec<(SystemId, Unit, Vec<String>)> = Vec::new();
     for origin in state.systems_with_units_of(player) {
         if *origin == active {
             continue;
@@ -569,12 +654,21 @@ fn movement(
             });
             let mut loads = Vec::new();
             let r#move = path.map(|(found, path)| {
+                routes.push((origin.clone(), hull.clone(), path.clone()));
                 for key in pools_of(state, content, sources, player, origin, hull, &path) {
                     let place = pools.iter().position(|known| *known == key);
                     loads.push(place.unwrap_or_else(|| {
                         pools.push(key);
                         pools.len() - 1
                     }));
+                }
+                let mut wormholes: Vec<String> = Vec::new();
+                for step in path.windows(2) {
+                    for kind in rules.wormholes_between(&step[0], &step[1]) {
+                        if !wormholes.contains(&kind) {
+                            wormholes.push(kind);
+                        }
+                    }
                 }
                 MoveFact {
                     gravity_drive: found.gravity_drive,
@@ -584,6 +678,7 @@ fn movement(
                     } else {
                         Vec::new()
                     },
+                    wormholes,
                     path,
                 }
             });
@@ -618,6 +713,38 @@ fn movement(
         }
     }
 
+    let routes: Vec<Route<'_>> = routes
+        .iter()
+        .map(|(origin, ship, path)| Route { origin, ship, path })
+        .collect();
+    let mut unloadable: Vec<UnloadableCargo> = Vec::new();
+    for cargo in ti4_engine::transit::unloadable(state, content, sources, player, &active, &routes)
+    {
+        let fact = UnloadableCargo {
+            system: cargo.system.to_string(),
+            source: match cargo.source {
+                CargoSource::Space => None,
+                CargoSource::Planet(planet) => Some(planet.to_string()),
+            },
+            unit: cargo.unit.type_id.to_string(),
+            damaged: cargo.unit.sustained_damage,
+            count: cargo.count,
+            reason: cargo.reason,
+        };
+        // The facts do not tell a galvanized unit from another.
+        match unloadable.iter_mut().find(|known| {
+            known.system == fact.system
+                && known.source == fact.source
+                && known.unit == fact.unit
+                && known.damaged == fact.damaged
+        }) {
+            Some(known) => {
+                known.count += fact.count;
+                known.reason = known.reason.min(fact.reason);
+            }
+            None => unloadable.push(fact),
+        }
+    }
     let standing = ti4_engine::fleet::standing(state, content, sources, player, &active, None);
     let battle = battle(state, content, sources, galaxy, player, &active);
     Some(MovementFacts {
@@ -645,7 +772,26 @@ fn movement(
             .get(&format!("private:#moved:{}", state.activation_seq))
             .and_then(|count| count.parse().ok())
             .unwrap_or(0),
+        unloadable,
         battle,
+        cannon: ti4_engine::combat::space_cannon_shots(
+            state,
+            content,
+            sources,
+            &active,
+            player,
+            Some(galaxy),
+        )
+        .into_iter()
+        .map(|shot| CannonFact {
+            seat: shot.owner.to_string(),
+            unit: shot.unit.map(|unit| unit.type_id.to_string()),
+            planet: shot.planet.map(|planet| planet.to_string()),
+            dice: shot.dice,
+            hits_on: shot.hits_on,
+            target: shot.target.map(|seat| seat.to_string()),
+        })
+        .collect(),
     })
 }
 
@@ -856,6 +1002,7 @@ fn build_fact(
         }),
         fleet: kind.is_ship() && !kind.is_fighter(),
         cargo: kind.consumes_capacity(),
+        fighter: kind.is_fighter(),
         places,
         combat: kind.combat_hits_on().map(|hits_on| CombatFact {
             hits_on,
@@ -940,54 +1087,48 @@ fn production(
         .first()
         .and_then(|option| number(option, "credit"))
         .unwrap_or(0);
-    // Every other unit that a production makes, with why the game does not offer it. A unit that
-    // the seat only cannot afford has no reason: the resources are a limit that the client shows.
+    // Every other unit that a production makes, with why the game does not offer it
+    // (`ProductionWindow::withheld`). A unit that the seat only cannot afford now, or that the
+    // limit of this use leaves out, has no reason: these are limits that the client shows.
+    // A kind that the window does not name was never considered.
+    let withheld: Vec<WithheldUnit> = choice.hint(WITHHELD_KEY).unwrap_or_default();
     let buildable = ti4_engine::production::buildable_for(state, content, sources, player);
-    let funds =
-        ti4_engine::production::available(state, content, sources, player, Spend::Resources)
-            + credit;
     for base in ti4_engine::production::BUILDABLE {
-        let listed = |unit: &BuildFact| {
-            types
-                .get(unit.unit.as_str())
-                .is_some_and(|kind| kind.base_type() == base)
-        };
-        if units.iter().any(listed) {
+        let of_base = |unit: &str| types.get(unit).is_some_and(|kind| kind.base_type() == base);
+        if units.iter().any(|unit| of_base(&unit.unit)) {
             continue;
         }
-        let owned = buildable
-            .iter()
-            .filter_map(|id| types.get(id.as_str()))
-            .find(|kind| kind.base_type() == base);
-        // A unit behind a technology is shown as its printed generic form.
-        let Some(kind) = owned.or_else(|| types.get(base)) else {
+        let (kind, unavailable) = match withheld.iter().find(|known| of_base(&known.unit)) {
+            Some(known) => (
+                types.get(known.unit.as_str()),
+                match known.reason {
+                    Withheld::Technology => Some(Unavailable::Technology),
+                    Withheld::OnlyAnother => Some(Unavailable::OnlyAnother),
+                    Withheld::TooCostly => Some(Unavailable::TooCostly),
+                    Withheld::Banned => Some(Unavailable::Banned),
+                    Withheld::Blockade => Some(Unavailable::Blockade),
+                    Withheld::NoPlace => Some(Unavailable::NoPlace),
+                    Withheld::Barred => Some(Unavailable::Barred),
+                    Withheld::Supply => Some(Unavailable::Supply),
+                    Withheld::Unaffordable | Withheld::Limit => None,
+                },
+            ),
+            // A unit behind a technology is shown as its printed generic form.
+            None => (
+                buildable
+                    .iter()
+                    .filter_map(|id| types.get(id.as_str()))
+                    .find(|kind| kind.base_type() == base)
+                    .or_else(|| types.get(base)),
+                Some(Unavailable::NotOffered),
+            ),
+        };
+        let Some(kind) = kind else {
             continue;
         };
         let (cost, per) = ti4_engine::production::price_of_under(Some(state), kind);
         let places =
             ti4_engine::production::placements(state, content, sources, player, system, kind);
-        let left = ti4_engine::supply::remaining(
-            state,
-            content,
-            sources,
-            player,
-            &ti4_model::id::UnitTypeId::new(kind.id()),
-        );
-        let unavailable = if owned.is_none() {
-            Some(Unavailable::Technology)
-        } else if places.is_empty() {
-            Some(if kind.is_ship() {
-                Unavailable::Blockade
-            } else {
-                Unavailable::NoPlace
-            })
-        } else if left == 0 {
-            Some(Unavailable::Supply)
-        } else if cost - discount > funds || limit.paid >= limit.amount {
-            None
-        } else {
-            Some(Unavailable::NotOffered)
-        };
         units.push(build_fact(
             state,
             content,
@@ -1011,6 +1152,18 @@ fn production(
     };
     units.sort_by_key(rank);
     let standing = ti4_engine::fleet::standing(state, content, sources, player, system, None);
+    let mut fleet = ti4_engine::fleet::counts(state, content, sources, player, system);
+    // A fighter that the seat produces brings its own rule (Fighter II) to the fighters there.
+    for unit in &units {
+        if let Some(kind) = types
+            .get(unit.unit.as_str())
+            .filter(|kind| kind.is_fighter())
+        {
+            let (to_pool, half) = ti4_engine::fleet::fighter_rules(state, content, player, kind);
+            fleet.fighters_to_fleet_pool |= to_pool;
+            fleet.half_fighters |= half;
+        }
+    }
     Some(ProductionFacts {
         system: system.to_string(),
         capacity: LimitFact {
@@ -1027,7 +1180,7 @@ fn production(
                 .and_then(serde_json::Value::as_bool)
                 == Some(true)
         }),
-        planets: ti4_engine::production::native_payment_planets(
+        planets: ti4_engine::production::best_payment_faces(
             state,
             content,
             sources,
@@ -1035,11 +1188,14 @@ fn production(
             Spend::Resources,
         )
         .into_iter()
-        .map(|(planet, worth)| PayingPlanet {
+        .map(|(planet, worth, face)| PayingPlanet {
             planet: planet.to_string(),
             worth,
+            face: (face != Spend::Resources)
+                .then(|| ti4_engine::production::spend_name(face).to_owned()),
         })
         .collect(),
+        commodities: ti4_engine::factions::keleres::spendable_commodities(state, player),
         trade_goods: state
             .player(player)
             .map_or(0, |seat| i64::from(seat.trade_goods)),
@@ -1052,6 +1208,7 @@ fn production(
             limit: standing.transport,
             used: standing.consumed,
         },
+        fleet,
     })
 }
 
@@ -1240,6 +1397,75 @@ mod tests {
         put(&mut state, &next, "pds2", "a");
         assert_eq!(guns(&state, &home), near + 1);
         assert_eq!(guns(&state, &next), 2);
+    }
+
+    #[test]
+    fn the_movement_names_the_guns_of_another_seat_in_a_system_with_only_planets() {
+        let (mut state, galaxy) = game();
+        let content = ContentStore::embedded();
+        let home = home(&state);
+        let (next, planet) = galaxy
+            .adjacent(home.as_str())
+            .into_iter()
+            .filter(|id| !ti4_content::galaxy::is_home_system(content, id, POK))
+            .find_map(|id| {
+                ti4_content::galaxy::planets_in(content, id, POK)
+                    .first()
+                    .map(|planet| (SystemId::new(id), PlanetId::new(planet.id())))
+            })
+            .expect("a system with a planet next to home");
+        assert!(
+            facts_into(&mut state, &galaxy, next.as_str())
+                .cannon
+                .is_empty()
+        );
+
+        // A PDS of another seat on a planet, with no ships of that seat: it fires at the fleet.
+        state
+            .system_mut(&next)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), PlayerId::new("b")));
+        let facts = facts_into(&mut state, &galaxy, next.as_str());
+        assert!(facts.battle.is_none(), "no ships to fight");
+        // Antimass Deflectors of the target (rules version 15) ask 1 more of the die.
+        let deflected = u32::from(ti4_engine::technology::owns_technology(
+            &state,
+            &PlayerId::new("a"),
+            "amd",
+        ));
+        assert_eq!(
+            facts.cannon,
+            vec![CannonFact {
+                seat: "b".to_owned(),
+                unit: Some("pds".to_owned()),
+                planet: None,
+                dice: 1,
+                hits_on: 6 + deflected,
+                target: Some("a".to_owned()),
+            }]
+        );
+
+        // A PDS II next door reaches the active system; a PDS does not.
+        let far = galaxy
+            .adjacent(next.as_str())
+            .into_iter()
+            .find(|id| *id != home.as_str())
+            .map(SystemId::new)
+            .expect("a neighbour");
+        for kind in ["pds", "pds2"] {
+            state
+                .system_mut(&far)
+                .units
+                .push(Unit::new(UnitTypeId::new(kind), PlayerId::new("c")));
+        }
+        let guns = facts_into(&mut state, &galaxy, next.as_str()).cannon;
+        let units: Vec<(&str, Option<&str>)> = guns
+            .iter()
+            .map(|gun| (gun.seat.as_str(), gun.unit.as_deref()))
+            .collect();
+        assert_eq!(units, vec![("b", Some("pds")), ("c", Some("pds2"))]);
     }
 
     #[test]

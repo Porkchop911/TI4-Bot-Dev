@@ -138,6 +138,16 @@ pub fn commander_unlocked(
                     })
             })
         }
+        // Watchful Ojz (rules version 16): "Be the last person to pass during the Action Phase".
+        // `Game` records `Feat::LastToPass` on the pass that closes the phase; the check made at
+        // the next step opens the commander, and an unlocked leader is never locked again.
+        "ralnelcommander" if state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS => state
+            .player(player)
+            .is_some_and(|seat| {
+                seat.event_feats
+                    .iter()
+                    .any(|(feat, _)| *feat == ti4_model::state::Feat::LastToPass)
+            }),
         other => {
             return crate::factions::commander_unlocked(
                 state,
@@ -1485,9 +1495,9 @@ fn dispatch_leader(
                 context.state.round,
             ))
             // Display only: the seat's own commodities, which the "gain 2" branch adds to.
-            .detailed(
+            .hinted(
                 "commodities",
-                crate::strategy_cards::commodity_standing(context.state, context.content, player),
+                &crate::strategy_cards::commodity_standing(context.state, context.content, player),
             );
             let Ok(answer) = context.ask_seeing(&choice) else {
                 return false;
@@ -2963,8 +2973,7 @@ mod tests {
         // until Z'eu was delivered (2026-10-12); across every faction one is still left (the
         // Keleres' Orlando hero, 2026-10-12), so the whole roster stands in now.
         assert!(
-            !unimplemented(ContentStore::embedded(), POK, &["naalu"])
-                .contains(&LeaderId::new(ZEU)),
+            !unimplemented(ContentStore::embedded(), POK, &["naalu"]).contains(&LeaderId::new(ZEU)),
             "Z'eu is delivered by the game"
         );
         let all: Vec<&str> =

@@ -20,6 +20,7 @@ fn setup(players: usize, seeds: Vec<u64>) -> SetupSpec {
         speaker: "random".to_owned(),
         card_set: None,
         starting_tech: false,
+        rules_version: None,
         seeds: Seeds::List(seeds),
     }
 }

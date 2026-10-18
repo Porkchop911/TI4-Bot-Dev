@@ -1,0 +1,13 @@
+{
+  "title": "Agenda Discard Toast",
+  "description": "Alpha feedback fb_1792301444_7526f5e2: the second agenda of a phase (Classified Document Leaks, with no scored secret objective) was dropped silently and the phase ended after one agenda. From rules version 14 the engine reveals the next card instead and lists every card discarded without a vote in the agenda log, so the corner toast and the toast history say what happened.",
+  "tag": "web/e2e/screenshots/FL-agenda-discard-toast",
+  "shots": [
+    { "file": "out/no-choice-desktop.png", "heading": "Nothing to elect", "caption": "Classified Document Leaks has no scored secret objective to elect: discarded, the next agenda is revealed." },
+    { "file": "out/replaced-desktop.png", "heading": "Replaced (Veto, Quash, Political Favor)", "caption": "A card replaced by Veto or the like is listed too." },
+    { "file": "out/no-choice-390x844.png", "heading": "Phone", "caption": "The same toast at 390 px." }
+  ],
+  "notes": [
+    { "title": "Display only", "text": "The new agenda_log fields (discarded without an outcome, discard_reason) are written only from rules version 14 and left out of the JSON when empty. A discarded card does not count as a resolved agenda for the bot." }
+  ]
+}

@@ -10,9 +10,11 @@ import {
   setLoad,
   setShip,
   loadKey,
+  shipId,
   shipKey,
 } from "./movementDraft";
 import { type MovementStep, draftOf, stepOf, stepsOf } from "./movementPlan";
+import { selectMovement, selectMovementBoard, selectOrigin } from "./select/movement";
 import type { MovementFacts, SessionUpdate } from "./wire";
 
 // Updates of a real game, written by the engine (seat a is Sol; it activated the system next
@@ -151,4 +153,81 @@ it("reads the step back from the option that answered it", () => {
     expect(new Set(steps).size).toBe(steps.length);
   }
   expect(stepOf({ id: "tactical", kind: "action", payload: {} })).toBeNull();
+});
+
+it("ties the row of each ship to its system and its own path on the map", () => {
+  const origin = selectOrigin(moving, facts, staged(ship(CARRIER)), "01")!;
+  const units = origin.ships.flatMap((row) => row.units);
+  for (const unit of units) {
+    const fact = facts.ships.find((item) => shipKey(shipId(item)) === unit.key);
+    expect(unit.link).toEqual([`rt:${fact!.move!.path.join(">")}`, "sys:01"]);
+  }
+  expect(units).toHaveLength(3);
+});
+
+it("says what no ship can load, and why: in the card of an origin, or under the movement", () => {
+  // The facts as the engine writes them for a wormhole on the path and cargo that stays.
+  const more: MovementFacts = {
+    ...facts,
+    ships: facts.ships.map((item, index) =>
+      index === 0 ? { ...item, move: { ...item.move!, wormholes: ["BETA"] } } : item,
+    ),
+    unloadable: [
+      {
+        system: "01",
+        source: null,
+        unit: "fighter",
+        damaged: false,
+        count: 2,
+        reason: "no_capacity",
+      },
+      {
+        system: "70",
+        source: "kraag",
+        unit: "sol_infantry",
+        damaged: false,
+        count: 1,
+        reason: "command_token",
+      },
+    ],
+  };
+  const origin = selectOrigin(moving, more, {}, "01")!;
+  expect(origin.warning).toBe(
+    "Stay: 2 Fighters (Space area) · No ship with capacity starts or passes here",
+  );
+  expect(origin.ships[0].units[0].route).toContain("β wormhole");
+  const view = selectMovement(moving, more, {});
+  expect(view.unreachable?.rows).toEqual([
+    {
+      unit: "infantry",
+      name: "1 Infantry · Planet Kraag",
+      text: expect.stringContaining("· Your command token is here · no pickup"),
+      system: "70",
+    },
+  ]);
+  const board = selectMovementBoard(moving, more, {}, null);
+  expect(board.notes["70"]).toEqual({
+    sign: "cargo",
+    text: "1 Infantry · Planet Kraag cannot be loaded · Your command token is here · no pickup",
+  });
+  expect(board.notes["01"]).toBeUndefined();
+});
+
+it("says that the ships of an origin that pass other ships carry nothing", () => {
+  const more: MovementFacts = {
+    ...facts,
+    unloadable: [
+      {
+        system: "01",
+        source: null,
+        unit: "fighter",
+        damaged: false,
+        count: 1,
+        reason: "unladen_route",
+      },
+    ],
+  };
+  expect(selectOrigin(moving, more, {}, "01")!.warning).toBe(
+    "Stay: 1 Fighter (Space area) · The ships here pass other players' ships · they carry nothing",
+  );
 });

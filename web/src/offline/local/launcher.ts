@@ -91,6 +91,7 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
   const feedback = options.feedback;
   /** Known after the first engine load; lets an import say whether the file's engine differs. */
   let currentEngine: EngineIdentity | undefined;
+  let currentVersions: { botVersion: number | null; rulesVersion: number | null } | undefined;
 
   /** Serialised writes per game: a slow store never reorders saves. The store never throws for storage problems. */
   const writes = new Map<string, Promise<void>>();
@@ -141,6 +142,7 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
       engineHash: engine.hash,
       wasmSha256: engine.wasmSha256,
       viewOnly: entry.viewOnly,
+      engineVersions: currentVersions,
       config,
       onSave: (save) => {
         noteFactions(save);
@@ -212,6 +214,8 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
       current = { build: saved?.build ?? "unknown", contentDigest: saved?.contentDigest ?? "unknown", wasmSha256: engine.wasmSha256 };
     }
     currentEngine = current;
+    // Display only (settings menu): not knowing the newest versions never stops a game.
+    currentVersions = await (session.engineVersions?.(engine) ?? Promise.resolve(undefined)).catch(() => undefined);
     return { session, engine, current };
   }
 

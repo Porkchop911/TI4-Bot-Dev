@@ -1,5 +1,6 @@
 import { visibilityKind } from "../protocol/eventVisibility.ts";
 import type { GameEvent, LobbyDto, PendingChoiceDto, ViewerRole } from "../protocol/types.ts";
+import { feedbackVersions, WEB_COMMIT, type VersionSummary } from "../versionInfo.ts";
 import type { SnapshotState } from "../protocol/client.ts";
 
 /**
@@ -19,6 +20,8 @@ export interface FeedbackSourceData {
   /** The roster, for nicknames. Only nicknames, seats and positions are read from it. */
   lobby?: LobbyDto | null;
   events?: GameEvent[];
+  /** Bot and rules version of the game on screen (see `summarizeVersions`). */
+  versions?: VersionSummary;
 }
 
 export interface FeedbackEnvironment {
@@ -83,6 +86,7 @@ export function buildFeedbackContext(
 ): Record<string, unknown> {
   const context: Record<string, unknown> = {
     build_commit: env.commit,
+    web_commit: WEB_COMMIT,
     server_protocol_version: env.serverProtocol,
     client_protocol_version: env.clientProtocol,
     viewport: env.viewport,
@@ -94,6 +98,7 @@ export function buildFeedbackContext(
   if (sender) context.sender = sender;
   if (!includeGameInfo) return context;
   if (source.gameId) context.game_id = source.gameId;
+  if (source.versions) context.game_versions = feedbackVersions(source.versions);
   const viewer = source.viewer;
   if (viewer) {
     context.viewer_role = viewer.role;

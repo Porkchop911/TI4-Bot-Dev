@@ -94,6 +94,18 @@ export function engineIdentity(engine: LoadedEngine): Promise<EngineIdentity> {
   return found;
 }
 
+/** The newest bot and rules version this engine knows (`describe`); nulls when it does not say. */
+export async function engineVersions(
+  engine: LoadedEngine,
+): Promise<{ botVersion: number | null; rulesVersion: number | null }> {
+  const described = ((await engineQuery(engine, { query: "describe" })) ?? {}) as {
+    bot_version?: unknown;
+    rules_version?: unknown;
+  };
+  const number = (value: unknown) => (typeof value === "number" ? value : null);
+  return { botVersion: number(described.bot_version), rulesVersion: number(described.rules_version) };
+}
+
 /** A new Web Worker with the engine module handed in; resolves when it is ready. */
 export function workerPort(engine: LoadedEngine): Promise<HostPort> {
   // A relative path, not `@ti4/shared`: vite bundles a Worker only from a literal `new URL`.

@@ -178,6 +178,39 @@ pub(crate) fn grant_chosen_technology(
     colour: Option<&str>,
     relic: &str,
 ) -> bool {
+    // Enigmatic Device researches (rules version `RULES_ENIGMATIC_DEVICE`): only what the player
+    // could research, by the normal rules. Earlier games and Maw of Worlds (which says *gain*) keep
+    // the unfiltered list.
+    let researching = relic == "enigmaticdevice"
+        && state.rules_version >= ti4_model::state::RULES_ENIGMATIC_DEVICE;
+    let Some(chosen) = ask_technology(
+        state, content, sources, table, galaxy, player, colour, relic, researching,
+    ) else {
+        return false;
+    };
+    if researching {
+        crate::technology::research_chosen(state, content, sources, player, &chosen);
+    } else if let Some(seat) = state.player_mut(player) {
+        seat.technologies.insert(chosen);
+    }
+    true
+}
+
+/// Ask `player` which technology to gain and return the answer, changing nothing.
+///
+/// `None` when there is nothing to offer or the question is not answered. `researchable_only`
+/// narrows the list to what the player could research by prerequisites.
+pub(crate) fn ask_technology(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    player: &PlayerId,
+    colour: Option<&str>,
+    source: &str,
+    researchable_only: bool,
+) -> Option<ti4_model::id::TechnologyId> {
     let held: std::collections::BTreeSet<String> = state
         .player(player)
         .map(|seat| {
@@ -189,11 +222,7 @@ pub(crate) fn grant_chosen_technology(
         .unwrap_or_default();
     let faction = state.player(player).map(|seat| seat.faction.to_string());
 
-    // Enigmatic Device researches (rules version `RULES_ENIGMATIC_DEVICE`): only what the player
-    // could research, by the normal rules. Earlier games and Maw of Worlds (which says *gain*) keep
-    // the unfiltered list.
-    let researching = relic == "enigmaticdevice"
-        && state.rules_version >= ti4_model::state::RULES_ENIGMATIC_DEVICE;
+    let researching = researchable_only;
     let researchable: Vec<ti4_model::id::TechnologyId> = if researching {
         crate::technology::researchable_by_prerequisites(state, content, sources, player)
     } else {
@@ -230,27 +259,21 @@ pub(crate) fn grant_chosen_technology(
         })
         .collect();
     if options.is_empty() {
-        return false;
+        return None;
     }
     let choice = crate::choice::Choice::new(player.clone(), "gain which technology", options)
         .contextualized(DecisionContext::new(
             player.clone(),
-            DecisionSource::Content(relic.to_owned()),
-            format!("{relic}_choose_technology"),
+            DecisionSource::Content(source.to_owned()),
+            format!("{source}_choose_technology"),
             state.phase,
             state.round,
         ));
     let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
     else {
-        return false;
+        return None;
     };
-    let chosen = ti4_model::id::TechnologyId::new(answer.id);
-    if researching {
-        crate::technology::research_chosen(state, content, sources, player, &chosen);
-    } else if let Some(seat) = state.player_mut(player) {
-        seat.technologies.insert(chosen);
-    }
-    true
+    Some(ti4_model::id::TechnologyId::new(answer.id))
 }
 
 /// The Silver Flame: a ten scores, anything else consumes your home system.
@@ -323,21 +346,29 @@ fn codex(
                 .map_or(0, |seat| seat.action_cards.len()),
         )
         .unwrap_or(0);
-        let options: Vec<crate::choice::ChoiceOption> = state
+        let worded: Vec<(String, crate::phrases::Worded)> = state
             .discarded_action_cards
-            .clone()
-            .into_iter()
+            .iter()
             .map(|alias| {
-                crate::choice::ChoiceOption::labelled(
+                (
                     alias.to_string(),
-                    "action_card",
-                    format!("take {alias}"),
+                    crate::phrases::Phrase::of("take {card}").with(
+                        "card",
+                        alias,
+                        crate::phrases::Subject::action_card(alias),
+                    ),
                 )
-                .previewed(Preview::certain(vec![Delta::new(
-                    Quantity::ActionCardsHeld,
-                    held,
-                    held + 1,
-                )]))
+            })
+            .collect();
+        let options: Vec<crate::choice::ChoiceOption> = worded
+            .iter()
+            .map(|(card, worded)| {
+                crate::choice::ChoiceOption::labelled(card, "action_card", worded.label())
+                    .previewed(Preview::certain(vec![Delta::new(
+                        Quantity::ActionCardsHeld,
+                        held,
+                        held + 1,
+                    )]))
             })
             .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
             .collect();
@@ -349,6 +380,7 @@ fn codex(
             "The Codex: take which action card",
             options,
         )
+        .phrased_options(&worded)
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::Content("codex".to_owned()),
@@ -945,6 +977,16 @@ fn commodity_value(state: &GameState, content: &ContentStore, player: &PlayerId)
 /// The Shard of the Throne, which is worth a victory point simply for being held.
 pub const SHARD: &str = "shard";
 
+/// Note a relic gain in the display-only `relic_log` (nothing reads it back).
+pub(crate) fn log_gain(state: &mut GameState, player: &PlayerId, relic: &RelicId, points: i32) {
+    state.relic_log.push(ti4_model::state::RelicGainRecord {
+        round: state.round,
+        player: player.clone(),
+        relic: relic.as_str().to_owned(),
+        victory_points: points,
+    });
+}
+
 /// Draw the top relic (73.2).
 ///
 /// Every path that hands a player a relic goes through here, because a relic can be worth a
@@ -961,9 +1003,12 @@ pub fn gain(state: &mut GameState, player: &PlayerId) -> Option<RelicId> {
     if let Some(seat) = state.player_mut(player) {
         seat.relics.push(top.clone());
     }
+    let mut points = 0;
     if top.as_str() == SHARD && state.player(player).is_some() {
         crate::objectives::adjust_victory_points(state, player, 1, SHARD);
+        points = 1;
     }
+    log_gain(state, player, &top, points);
     Some(top)
 }
 
@@ -1145,12 +1190,12 @@ pub fn available_actions(
                     )
                     .is_empty())
                     && crate::production::available(
-                    state,
-                    content,
-                    sources,
-                    player,
-                    crate::production::Spend::Resources,
-                ) >= 6
+                        state,
+                        content,
+                        sources,
+                        player,
+                        crate::production::Spend::Resources,
+                    ) >= 6
             }
             // Something in range that the card is allowed to destroy. Without a board there is no
             // adjacency and therefore no target.
@@ -1200,6 +1245,9 @@ pub fn perform(
             && state.player(player).is_some()
         {
             crate::objectives::adjust_victory_points(state, player, 1, SHARD);
+            if let Some(record) = state.relic_log.last_mut() {
+                record.victory_points = 1;
+            }
         }
         return gained.is_some();
     }
@@ -1259,6 +1307,12 @@ mod tests {
         let option = asked
             .option("sabotage")
             .expect("the discarded card was offered");
+        // The label names the card by id, and the question says which card it is.
+        let phrase = &crate::phrases::phrased(asked).options["sabotage"];
+        assert_eq!(
+            phrase.refs["card"],
+            crate::phrases::Subject::action_card(&ti4_model::id::ActionCardId::new("sabotage"))
+        );
         assert_eq!(
             option.preview,
             Some(Preview::certain(vec![Delta::new(
@@ -1332,10 +1386,7 @@ mod tests {
             "Gravity Drive needs a blue prerequisite the seat does not have: {offered:?}"
         );
         for id in &offered {
-            assert!(
-                open.contains(id),
-                "{id} is offered but is not researchable"
-            );
+            assert!(open.contains(id), "{id} is offered but is not researchable");
         }
     }
 
@@ -1710,6 +1761,24 @@ mod tests {
             registered_aliases().contains(&"obsidian"),
             "but it is implemented, and coverage must say so"
         );
+    }
+
+    #[test]
+    fn every_relic_gain_is_logged_and_the_shard_notes_its_point() {
+        let (mut state, player) = holding("codex");
+        state.relic_deck = vec![RelicId::new("nanoforge"), RelicId::new(SHARD)];
+        assert_eq!(gain(&mut state, &player), Some(RelicId::new("nanoforge")));
+        assert_eq!(gain(&mut state, &player), Some(RelicId::new(SHARD)));
+        let log: Vec<(&str, i32)> = state
+            .relic_log
+            .iter()
+            .map(|r| (r.relic.as_str(), r.victory_points))
+            .collect();
+        assert_eq!(log, vec![("nanoforge", 0), (SHARD, 1)]);
+        let json = serde_json::to_value(&state).unwrap();
+        assert!(json["relic_log"][0].get("victory_points").is_none());
+        state.relic_log.clear();
+        assert!(serde_json::to_value(&state).unwrap().get("relic_log").is_none());
     }
 
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;

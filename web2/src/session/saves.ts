@@ -15,10 +15,13 @@ import {
   openOfflineSaveStore,
 } from "@ti4/shared/storage/index.ts";
 import {
+  SINGLE_SLOT,
   type SaveStorage,
   clearLeft,
   forgetSide,
+  gameOfSave,
   leftIds,
+  readCrash,
   readLeft,
   savedAddress,
 } from "./savedGame";
@@ -122,6 +125,42 @@ export function storeWarning(status: StoreStatus): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * The export file of a game, with the last error of the game in this browser and the browser
+ * (`report`, which an import does not read): a file to debug the game with.
+ */
+export async function exportSave(
+  store: OfflineSaveStore,
+  storage: Pick<Storage, "getItem">,
+  id: string,
+  device = typeof navigator === "undefined" ? "" : navigator.userAgent,
+): Promise<{ filename: string; blob: Blob }> {
+  const { filename, blob } = await store.exportGame(id);
+  const file = JSON.parse(await blob.text()) as Record<string, unknown>;
+  const crash = readCrash(storage, id);
+  file.report = { device, ...(crash ? { crash } : {}) };
+  return { filename, blob: new Blob([JSON.stringify(file)], { type: "application/json" }) };
+}
+
+/**
+ * Takes an export file as a new game, and says its address. A game of a table is a game of
+ * single player, whoever exported it: it gets the slot of single player.
+ */
+export async function importSave(store: OfflineSaveStore, text: string): Promise<string> {
+  const { id, record } = await store.importGame(text);
+  const loaded = await store.load(id);
+  if (loaded && gameOfSave(loaded.save as HostSave).table) {
+    await store.put(id, loaded.save, {
+      nickname: loaded.nickname,
+      factions: loaded.summary.factions,
+      engine: loaded.engine,
+      slot: SINGLE_SLOT,
+    });
+    return savedAddress({ id, slot: SINGLE_SLOT });
+  }
+  return savedAddress(record);
 }
 
 /** Why a file was not imported, in words. */

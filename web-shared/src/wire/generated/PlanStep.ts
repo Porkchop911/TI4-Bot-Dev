@@ -19,4 +19,4 @@ source: string | null, damaged: boolean, galvanized: boolean, } | { "kind": "don
 /**
  * Where the unit is, when it is not the space area of the active system.
  */
-from_system: string | null, from_planet: string | null, } | { "kind": "done_committing" } | { "kind": "produce", unit: string, } | { "kind": "place", destination: string, } | { "kind": "pay", source: string, } | { "kind": "done_producing" };
+from_system: string | null, from_planet: string | null, } | { "kind": "done_committing" } | { "kind": "produce", unit: string, } | { "kind": "place", destination: string, } | { "kind": "pay", source: string, } | { "kind": "done_producing" } | { "kind": "pool", pool: string, } | { "kind": "purchase", buy: boolean, };

@@ -1,5 +1,6 @@
 import { JoinResponse, CreateGameResponse, LobbyDto } from "./types.ts";
 import type { ActiveEffectDto, EffectExpiryDto, EffectPreviewDto, TriggerUnitsDto } from "./types.ts";
+import type { Phrase, Subject } from "@ti4/shared/wire/index.ts";
 import { decodeMapChoice } from "@ti4/shared/wire/decode.ts";
 import { isStrategyCardSetId } from "../presentation/strategyCardSet.ts";
 import { validNickname } from "./nickname.ts";
@@ -142,6 +143,17 @@ const strings = (value: unknown): string[] =>
 const finiteNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+/** A phrase of the engine (`text` with `{key}`s, `refs` the subjects); a damaged one is undefined. */
+function decodePhrase(raw: unknown): Phrase | undefined {
+  if (!isRecord(raw) || typeof raw.text !== "string" || !isRecord(raw.refs)) return undefined;
+  const refs: Phrase["refs"] = {};
+  for (const [key, subject] of Object.entries(raw.refs)) {
+    if (!isRecord(subject) || typeof subject.kind !== "string") return undefined;
+    refs[key] = subject as unknown as Subject;
+  }
+  return { text: raw.text, refs };
+}
+
 /**
  * The well-formed effect previews of a reaction decision; a damaged entry is dropped. Display data:
  * never fails the message.
@@ -174,6 +186,7 @@ export function decodeEffectPreviews(raw: unknown): EffectPreviewDto[] {
     const refs = strings(entry.refs);
     const amount = finiteNumber(entry.amount);
     const of = finiteNumber(entry.of);
+    const phrase = decodePhrase(entry.phrase) ?? { text: "", refs: {} };
     previews.push({
       option: entry.option,
       card: entry.card,
@@ -186,6 +199,7 @@ export function decodeEffectPreviews(raw: unknown): EffectPreviewDto[] {
       ...(of !== undefined ? { of } : {}),
       ...(refs.length ? { refs } : {}),
       ...(optionalString(entry.fizzles) ? { fizzles: optionalString(entry.fizzles) } : {}),
+      phrase,
     });
   }
   return previews;
@@ -223,6 +237,9 @@ export function decodeActiveEffects(raw: unknown): ActiveEffectDto[] {
       ...(amount !== undefined ? { amount } : {}),
       ...(optionalString(entry.other) ? { other: optionalString(entry.other) } : {}),
       ...(optionalString(entry.system) ? { system: optionalString(entry.system) } : {}),
+      title: decodePhrase(entry.title) ?? { text: "", refs: {} },
+      summary: decodePhrase(entry.summary) ?? { text: "", refs: {} },
+      expiry: typeof entry.expiry === "string" ? entry.expiry : "",
     });
   }
   return effects;

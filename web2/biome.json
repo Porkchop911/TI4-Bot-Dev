@@ -21,19 +21,5 @@
       "suspicious": { "noArrayIndexKey": "off", "noFocusedTests": "off" },
       "security": { "noDangerouslySetInnerHtml": "off" }
     }
-  },
-  "overrides": [
-    {
-      "includes": ["src/mock/**"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "off",
-            "noAssignInExpressions": "off",
-            "noReturnAssign": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

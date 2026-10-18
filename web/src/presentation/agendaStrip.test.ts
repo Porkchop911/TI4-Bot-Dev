@@ -101,6 +101,7 @@ describe("the strip in each agenda sub-state", () => {
     expect(agendaStripText(s)).toBe("Agenda: Minister of Peace · For/Against · Your vote");
     expect(s.outcomes).toEqual([]);
     expect(isAgendaDecision(choice("vote_spend_trade_goods", "p1"))).toBe(true);
+    expect(isAgendaDecision(choice("vote_predictive_intelligence", "p1"))).toBe(true);
   });
 
   it("a rider's prediction names no agenda: the phase memory does", () => {

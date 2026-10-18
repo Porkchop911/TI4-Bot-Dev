@@ -80,7 +80,7 @@ const BLOCKERS: Record<SecondaryBlocker, string> = {
 export const describeBlocker = (blocker: SecondaryBlocker): string =>
   `As of now you would not be asked this secondary: ${BLOCKERS[blocker]}. Your plan is kept and applies if that changes before your turn.`;
 
-/** "Jord (2 resources), 1 trade good" for the plan the engine would pay a research with. */
+/** "Jord, 1 trade good" for the cheapest plan that pays a research. */
 export function describePayment(payment: PaymentPreview): string {
   const parts = [
     ...payment.planets.map((planet) => planetName(planet)),

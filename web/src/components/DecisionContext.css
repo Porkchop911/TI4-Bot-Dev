@@ -513,3 +513,15 @@
   border-color: var(--color-alert-orange, #f97316);
   color: #1a0f00;
 }
+
+/* Production drawer: queued fighters and ground forces that would not fit the ships' capacity. */
+.production-drawer__unit[data-capacity-over="true"] {
+  border-color: var(--color-alert-orange, #f97316);
+  box-shadow: inset 3px 0 0 var(--color-alert-orange, #f97316);
+}
+.production-drawer__capacity-warning {
+  margin: 4px 0 0;
+  color: var(--color-alert-orange, #f97316);
+  font-weight: 700;
+  font-size: 0.85rem;
+}

@@ -24,6 +24,7 @@ const PATHS = {
   dock: '<circle cx="12" cy="12" r="3"/><path d="M12 3v6m0 6v6M3 12h6m6 0h6"/>',
   token: '<path d="M12 4 21 19H3Z"/>',
   card: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6m-6 4h6"/>',
+  flag: '<path d="M6 21V3m0 1h12l-3 4.5 3 4.5H6"/>',
   planet: '<circle cx="12" cy="12" r="6"/><path d="M6 9c-6 1-5 7 6 5s13-8 6-6"/>',
   coin: '<circle cx="12" cy="12" r="8"/><path d="M14.5 9.5c-.6-1-1.5-1.5-2.7-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.7 2 2.7.8 2.7 2-1 2-2.7 2c-1.3 0-2.3-.5-2.9-1.5M12 6.5V8m0 8v1.5"/>',
   tech: '<path d="M9 3h6m-5 0v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9"/>',
@@ -37,6 +38,26 @@ const PATHS = {
   industrial:
     '<circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2m0-12.8-2.2 2.2m-8.4 8.4-2.2 2.2"/><circle cx="12" cy="12" r="6.5"/>',
   frame: '<path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/>',
+  // The values of a seat in the player table.
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
+  // Resources and influence, after the planet value icons of web/ (a gem and a crown).
+  resources: '<path d="M12 2.5 20 10.5 12 21.5 4 10.5Z"/><path d="M4 10.5h16"/>',
+  influence: '<path d="M3 20h18M5 16.5 7.5 7.5l4.5 4.5 4.5-4.5 2.5 9Z"/>',
+  commodity: '<path d="M4 8 12 4l8 4v8l-8 4-8-4V8Z"/><path d="m4 8 8 4 8-4M12 12v8"/>',
+  secret:
+    '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="10.5" r="2"/><path d="M12 12.5V16"/>',
+  speaker:
+    '<path d="M9.7 7.2 13.2 3.7l7.1 7.1-3.5 3.5Z"/><path d="M13.2 10.8 4.5 19.5"/><path d="M13 21h8"/>',
+  passed: '<circle cx="12" cy="12" r="8"/><path d="M10 9v6m4-6v6"/>',
+  // A command token of the tactic or the strategy pool; `token` is the fleet pool.
+  tokenDown: '<path d="M12 20 3 5h18Z"/>',
+  // The history mode: the screen shows a point of the past.
+  history:
+    '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7"/><path d="M12 8v4l3 2"/>',
+  // A saved game: its file out, a file in, and away.
+  export: '<path d="M12 15V3m-5 5 5-5 5 5"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
+  import: '<path d="M12 3v12m-5-5 5 5 5-5"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
+  trash: '<path d="M4 7h16M10 7V4h4v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6m4-6v6"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

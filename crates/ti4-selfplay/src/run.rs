@@ -520,7 +520,7 @@ pub fn comparison_from(
 /// The numbers of `t` that differ from the shipped bot.
 #[must_use]
 pub fn baseline_diff(t: Tuning) -> std::collections::BTreeMap<String, String> {
-    let default = Tuning::default().entries();
+    let default = ti4_rule_bot::tuning::current().entries();
     t.entries()
         .into_iter()
         .zip(default)

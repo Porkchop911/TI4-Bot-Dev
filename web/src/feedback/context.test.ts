@@ -126,7 +126,7 @@ describe("buildFeedbackContext", () => {
       false,
     );
     expect(Object.keys(ctx).sort()).toEqual(
-      ["build_commit", "client_protocol_version", "path", "server_protocol_version", "timestamp", "user_agent", "viewport"].sort(),
+      ["build_commit", "client_protocol_version", "path", "server_protocol_version", "timestamp", "user_agent", "viewport", "web_commit"].sort(),
     );
   });
 

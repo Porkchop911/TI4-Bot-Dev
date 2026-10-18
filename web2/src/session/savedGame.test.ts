@@ -67,7 +67,8 @@ it("names the slot of a game by its address, and the address by the slot", () =>
   expect(gameAddress({ ...game, table })).toBe(SINGLE_ADDRESS);
   expect(savedAddress({ id: "x", slot: "local.3.8.1" })).toBe(gameAddress(game));
   expect(savedAddress({ id: "x", slot: "scenario.late-game.1" })).toBe(gameAddress(scenario));
-  expect(savedAddress({ id: "x", slot: SINGLE_SLOT })).toBe(SINGLE_ADDRESS);
+  // Each game of single player has the address of its id; `?single` is the setup of a new one.
+  expect(savedAddress({ id: "a b", slot: SINGLE_SLOT })).toBe("?single=a%20b");
   // A game with no slot of this app is opened by its id.
   expect(savedAddress({ id: "a b" })).toBe("?save=a%20b");
   expect(savedAddress({ id: "x", slot: "elsewhere" })).toBe("?save=x");
