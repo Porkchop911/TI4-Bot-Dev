@@ -6126,6 +6126,174 @@ mod tests {
         );
     }
 
+    /// As [`specialty_research`], for a seat that also holds `held` (the specialty and the
+    /// technology are picked so that `held` does not meet the prerequisite on its own).
+    fn specialty_research_holding(
+        rules_version: u32,
+        held: &[&str],
+    ) -> (GameState, PlanetId, TechnologyId) {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.rules_version = rules_version;
+        exhaust_everything(&mut state, &player);
+        {
+            let seat = state.player_mut(&player).unwrap();
+            seat.technologies.clear();
+            seat.technologies
+                .extend(held.iter().map(|id| TechnologyId::new(*id)));
+        }
+        let (planet, technology) = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, record)| {
+                (1..TECHNOLOGY_SECONDARY_COST).contains(&record.resources())
+                    && record.system_id().is_some()
+            })
+            .find_map(|(id, record)| {
+                let upper = record.tech_specialties().first()?.to_ascii_uppercase();
+                let colour = *crate::technology::COLOURS.iter().find(|c| ***c == *upper)?;
+                let planet = PlanetId::new(*id);
+                let without = crate::technology::researchable(&state, content, POK, &player);
+                let mut trial = state.clone();
+                hold(&mut trial, content, &planet, &player);
+                let technology = crate::technology::researchable(&trial, content, POK, &player)
+                    .into_iter()
+                    .filter(|tech| !without.contains(tech))
+                    .find(|tech| {
+                        let needs = crate::technology::prerequisites(content, tech);
+                        needs.len() == 1 && needs.get(colour).is_some()
+                    })?;
+                Some((planet, technology))
+            })
+            .expect("a specialty and a technology that only it unlocks");
+        hold(&mut state, content, &planet, &player);
+        (state, planet, technology)
+    }
+
+    /// Psychoarchaeology (rules version 15) with the payment of rules version 22: the specialty
+    /// stands in for the prerequisite without being exhausted, so it may also pay, and the
+    /// technology that only it and the trade goods can pay for is offered.
+    #[test]
+    fn with_psychoarchaeology_a_research_specialty_is_not_kept_out_of_the_payment() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let (mut state, planet, technology) = specialty_research_holding(
+            ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES,
+            &["pa"],
+        );
+        let worth = ti4_content::galaxy::planet(content, planet.as_str(), POK)
+            .expect("a planet")
+            .resources();
+        state.player_mut(&player).unwrap().trade_goods =
+            i32::try_from(TECHNOLOGY_SECONDARY_COST - i64::from(worth)).unwrap();
+        assert!(
+            crate::technology::specialties_spent_by_research(
+                &state, content, POK, &player, &technology
+            )
+            .is_empty(),
+            "Psychoarchaeology exhausts no specialty"
+        );
+        let seen = research_questions(&mut state, &technology);
+        assert_eq!(subtype(&seen[0]), "research_technology");
+        assert!(
+            seen[0].option(technology.as_str()).is_some(),
+            "offered: the specialty also pays"
+        );
+        let hints: ResearchPaymentHints = seen[0].hint("payment").expect("typed payment");
+        assert!(hints.kept.get(&technology).is_none_or(Vec::is_empty));
+        assert!(
+            seen.iter()
+                .filter(|choice| subtype(choice) == "pay_resources")
+                .any(|choice| choice
+                    .options
+                    .iter()
+                    .any(|option| option.id == format!("exhaust|{planet}"))),
+            "the specialty pays"
+        );
+        let seat = state.player(&player).unwrap();
+        assert!(seat.technologies.contains(&technology), "the research lands");
+        assert_eq!(seat.trade_goods, 0);
+
+        // Without Psychoarchaeology the same research is not offered at version 22.
+        let (mut state, planet, technology) = specialty_research_holding(
+            ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES,
+            &[],
+        );
+        let worth = ti4_content::galaxy::planet(content, planet.as_str(), POK)
+            .expect("a planet")
+            .resources();
+        state.player_mut(&player).unwrap().trade_goods =
+            i32::try_from(TECHNOLOGY_SECONDARY_COST - i64::from(worth)).unwrap();
+        let seen = research_questions(&mut state, &technology);
+        assert!(seen[0].option(technology.as_str()).is_none());
+    }
+
+    /// A seat holding only AI Development Algorithm (a warfare technology), everything
+    /// exhausted, and the unit upgrade that needs two warfare prerequisites.
+    fn aida_research(ready: bool) -> (GameState, TechnologyId) {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        assert_eq!(state.rules_version, ti4_model::state::RULES_VERSION);
+        exhaust_everything(&mut state, &player);
+        {
+            let seat = state.player_mut(&player).unwrap();
+            seat.technologies.clear();
+            seat.technologies.insert(TechnologyId::new("aida"));
+            if !ready {
+                seat.exhausted_technologies.insert(TechnologyId::new("aida"));
+            }
+            seat.trade_goods = i32::try_from(TECHNOLOGY_SECONDARY_COST).unwrap();
+        }
+        // Researchable with the card ready (by its waiver, as nothing else is held).
+        let mut trial = state.clone();
+        trial
+            .player_mut(&player)
+            .unwrap()
+            .exhausted_technologies
+            .remove(&TechnologyId::new("aida"));
+        let technology = crate::technology::researchable(&trial, content, POK, &player)
+            .into_iter()
+            .find(|tech| {
+                crate::technology::is_unit_upgrade(content, tech)
+                    && crate::technology::prerequisites(content, tech)
+                        == std::collections::BTreeMap::from([("WARFARE", 2)])
+            })
+            .expect("a unit upgrade of two warfare prerequisites");
+        (state, technology)
+    }
+
+    /// AI Development Algorithm (rules version 15) with the payment of rules version 22: its
+    /// waiver counts, so the unit upgrade it unlocks is offered and paid; the card is exhausted
+    /// by the research. An exhausted card unlocks nothing.
+    #[test]
+    fn ai_development_algorithm_unlocks_a_paid_research_at_the_current_version() {
+        let player = PlayerId::new("a");
+        let (mut state, technology) = aida_research(true);
+        let seen = research_questions(&mut state, &technology);
+        assert_eq!(subtype(&seen[0]), "research_technology");
+        assert!(
+            seen[0].option(technology.as_str()).is_some(),
+            "offered with the waiver"
+        );
+        let seat = state.player(&player).unwrap();
+        assert!(seat.technologies.contains(&technology), "the research lands");
+        assert!(
+            seat.exhausted_technologies
+                .contains(&TechnologyId::new("aida")),
+            "the waiver is spent"
+        );
+        assert_eq!(seat.trade_goods, 0);
+
+        let (mut state, technology) = aida_research(false);
+        let seen = research_questions(&mut state, &technology);
+        assert!(
+            seen.first()
+                .is_none_or(|choice| choice.option(technology.as_str()).is_none()),
+            "an exhausted card waives nothing"
+        );
+    }
+
     #[test]
     fn imperial_draws_a_secret_without_mecatol() {
         let mut state = game(&["a"]);

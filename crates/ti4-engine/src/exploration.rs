@@ -706,7 +706,7 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
     clippy::too_many_lines,
     reason = "one arm per card: the list is the point, and splitting it hides the set"
 )]
-fn resolve_instant(
+pub(crate) fn resolve_instant(
     state: &mut GameState,
     ctx: &mut crate::choice::Resolving<'_>,
     player: &PlayerId,
