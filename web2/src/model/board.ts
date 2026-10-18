@@ -1,4 +1,11 @@
-import type { BuildSheetView, LandingView, OriginView, PaymentView, SpaceOddsView } from "./action";
+import type {
+  BlockView,
+  BuildSheetView,
+  LandingView,
+  OriginView,
+  PaymentView,
+  SpaceOddsView,
+} from "./action";
 import type { Force, PlanetId, SeatId, SystemId } from "./core";
 
 export type Anomaly = "asteroid" | "supernova" | "nebula" | "rift";
@@ -36,6 +43,8 @@ export interface PlanetMarkView {
   groundForces: number;
   planetaryShield: boolean;
   traits: PlanetTraitsView;
+  /** Every map view draws the outline of an exhausted planet dashed. */
+  exhausted: boolean;
 }
 
 /** One system on the board. Compare `BoardTileView` + `SystemView`. */
@@ -104,8 +113,15 @@ export interface BoardTaskView {
   highlight?: SystemId[];
   /** Systems that cannot be chosen and belong to the choice: they are not dimmed. */
   context?: SystemId[];
+  /**
+   * A task on planets that chooses systems too (the system of Construction): a click on one of
+   * these systems chooses it (`toggleSystem`), as in a task on systems; `chosen` marks it.
+   */
+  systems?: SystemId[];
   /** A payment that is open: the board has its state and its controls, where the player chooses. */
   payment?: PaymentView;
+  /** The planets that pay with their other value (Archon's Gift): the kind that they pay with. */
+  faces?: Record<PlanetId, string>;
 }
 
 export interface InspectorRowView {
@@ -148,6 +164,12 @@ export interface BoardView {
   wormholes: [SystemId, SystemId][];
   routes: RouteView[];
   activeSystem: SystemId | null;
+  /**
+   * The system that the open window is about: the system of its trigger, else the active system;
+   * or the active system of the turn of the Log that is open. The board marks it while the window
+   * or the turn is open. Absent: neither is open.
+   */
+  marked?: SystemId | null;
   inspected: SystemId | null;
   /** A click on a system chooses the activation target. */
   targeting: boolean;
@@ -159,6 +181,12 @@ export interface BoardView {
   landing: LandingView | null;
   /** The build of the active system, with its controls, while it is staged and open. */
   production: BuildSheetView | null;
+  /**
+   * The blocks of an open decision that is made on the map (a payment, the system and the
+   * planets of Diplomacy or Construction, the command pools). The action panel has them; the
+   * board only knows that the choice is on the map.
+   */
+  blocks?: BlockView[];
   /** The systems of the open task, for "Fit task". */
   taskSystems: SystemId[];
   /** Changes when the board must be framed again, for example for a new action. */

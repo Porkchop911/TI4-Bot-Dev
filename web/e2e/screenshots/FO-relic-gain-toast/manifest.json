@@ -1,0 +1,20 @@
+{
+  "title": "Relic Gain Toast",
+  "description": "Whenever a player gains a relic, by any route (three relic fragments purged, an exploration card, an agenda, a faction ability), every seat gets one corner toast: who gained which relic, a one-line summary of what it does (first sentence of the card, at most two lines), and the victory point it gave on gain, if any. The viewer's own gain is lit up and says when it scored nothing. The entry stays in the Recent notifications list. The real app fed by a mocked game; the toast reads the engine's public relic_log in the state.",
+  "tag": "web/e2e/screenshots/FO-relic-gain-toast",
+  "shots": [
+    { "file": "out/own-nano-forge-desktop.png", "heading": "Your purge: Nano-Forge", "caption": "Three hazardous fragments purged for Nano-Forge (the alpha report). Highlighted as the viewer's own; the subtle last line explains there is no victory point on gain." },
+    { "file": "out/own-shard-desktop.png", "heading": "Your gain: Shard of the Throne", "caption": "The Shard scores the moment it arrives, so the toast says +1 victory point on gain instead." },
+    { "file": "out/other-player-desktop.png", "heading": "Another player's gain", "caption": "Player 2 gained The Codex: their name and seat colour, no highlight and no point note." },
+    { "file": "out/history-desktop.png", "heading": "In the toast history", "caption": "Dismissed relic toasts stay in Recent notifications with the Relic tag, newest first." },
+    { "file": "out/own-nano-forge-390x844.png", "heading": "Phone: your purge", "caption": "At 390 px the toast wraps inside the corner box; the effect stays within two lines." },
+    { "file": "out/own-shard-390x844.png", "heading": "Phone: Shard of the Throne", "caption": "The Shard's point on a phone." },
+    { "file": "out/other-player-390x844.png", "heading": "Phone: another player's gain", "caption": "Another player's gain on a phone." },
+    { "file": "out/history-390x844.png", "heading": "Phone: history", "caption": "The history list on a phone." }
+  ],
+  "notes": [
+    { "title": "Where it comes from", "text": "The engine appends a display-only record (round, player, relic alias, victory points the gain awarded) to state.relic_log in relics::gain, which exploration relic cards, Mahact, Naaz, invasion rewards and agenda effects all use, and in exploration::purge_for_relic (fragment purges). No rule reads it; it is skipped from the JSON while empty, not compared, and cleared before the stored-snapshot checksum, so rules behaviour, decision records and option ids are unchanged." },
+    { "title": "Once, and never history", "text": "Records present when the game loads, or that reappear after undo/redo (a new history generation), never toast. The Toasts mute silences it." },
+    { "title": "Names and effects", "text": "The relic's printed name and card text come from the content catalogue the client already has; the effect line is the first sentence of the card, without the ACTION marker." }
+  ]
+}

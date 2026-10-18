@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OriginView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Icon, cx } from "../../../ui";
+import { Button, Icon, Press, cx, useReadOnly } from "../../../ui";
 import { SystemDetails } from "../../board/SystemDetails";
 import { useDispatch } from "../../context";
 import { Stays } from "./parts";
@@ -76,15 +76,18 @@ export function OriginSheet({ view }: { view: OriginView }) {
 /** In the panel: what leaves each system. The controls are on the board. */
 export function MovementSummary({ origins }: { origins: OriginView[] }) {
   const dispatch = useDispatch();
+  // Read-only, the movement is made: nothing is chosen on the map.
+  const readOnly = useReadOnly();
   return (
     <div className="rounded-lg border border-line">
-      <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
-        Choose a system on the map to move its ships.
-      </div>
+      {!readOnly && (
+        <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
+          Choose a system on the map to move its ships.
+        </div>
+      )}
       {origins.map((origin) => (
-        <button
+        <Press
           key={origin.system}
-          type="button"
           className="row flex min-h-8 w-full flex-wrap items-baseline gap-x-2.5 px-3.5 py-1 text-left hover:bg-raised [.row+&]:border-t [.row+&]:border-line/50 phone:px-2.5"
           onClick={() => dispatch({ type: "inspectSystem", system: origin.system })}
         >
@@ -106,7 +109,7 @@ export function MovementSummary({ origins }: { origins: OriginView[] }) {
             )}
           </span>
           {origin.warning && <span className="text-xs text-orange">⚠ {origin.warning}</span>}
-        </button>
+        </Press>
       ))}
     </div>
   );

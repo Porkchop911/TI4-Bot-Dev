@@ -31,7 +31,7 @@ use crate::tactical::{
     read_move,
 };
 use crate::timing::{Resolver, TimingContext, TimingError};
-use crate::tokens::TokenGain;
+use crate::tokens::{TokenGain, TokenGainError};
 use crate::transit::{CargoError, CargoWindow, MoveOutcome, apply_move, survives_gravity_rifts};
 use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
 
@@ -79,6 +79,8 @@ pub enum GameError {
     TimingEventCancelled(String),
     #[error(transparent)]
     Scoring(#[from] ScoringError),
+    #[error(transparent)]
+    TokenGain(#[from] TokenGainError),
     #[error(transparent)]
     Tactical(#[from] TacticalError),
     #[error(transparent)]
@@ -1817,6 +1819,7 @@ impl<'a> Game<'a> {
         self.state.combat_round_hits.clear();
         self.state.combat_round_dice.clear();
         self.state.combat_presentation = ti4_model::state::CombatPresentation::default();
+        self.state.fight_log = ti4_model::state::FightLog::default();
         self.state.reroll_staging.clear();
         self.state.last_reroll_player = None;
         self.state.pending_destructions.clear();
@@ -1984,6 +1987,27 @@ impl<'a> Game<'a> {
         if let Some(window) = &self.scoring {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
+        if let Some((window, _)) = &self.tokens
+            && self.state.rules_version < ti4_model::state::RULES_STATUS_GAIN
+        {
+            return window.pending_choice().map(|choice| {
+                let actor = choice.player.clone();
+                let choice = choice.contextualized(DecisionContext::new(
+                    actor,
+                    DecisionSource::Rule("52.4".to_owned()),
+                    "gain_command_token",
+                    self.state.phase,
+                    self.state.round,
+                ));
+                crate::tokens::with_pool_details(
+                    choice,
+                    &self.state,
+                    self.content,
+                    "gain",
+                    Some(window.remaining_for_next_player()),
+                )
+            });
+        }
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
@@ -2124,6 +2148,9 @@ impl<'a> Game<'a> {
             return self.step_scoring();
         }
         if self.tokens.is_some() {
+            if self.state.rules_version < ti4_model::state::RULES_STATUS_GAIN {
+                return self.step_token_gain();
+            }
             return self.finish_status_phase();
         }
         if self.voting.is_some() {
@@ -2692,6 +2719,11 @@ impl<'a> Game<'a> {
                         let occurrence = self.state.begin_feat_occurrence();
                         self.state
                             .record_event_feat(&active, Feat::LastToPass, occurrence);
+                        // Watchful Ojz: "Be the last person to pass during the Action Phase".
+                        // Opened at the pass itself rather than at some later step.
+                        if self.state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS {
+                            self.refresh_commander_unlocks(&active);
+                        }
                         self.open_occurrence_event_scoring(
                             crate::secrets::Timing::Action,
                             occurrence,
@@ -4460,6 +4492,20 @@ impl<'a> Game<'a> {
         let rolled_before = self.dice.count();
         let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
         self.dice.attribute_since(rolled_before, &ship.owner);
+        // For the public roll feed: which ship rolled, from where, and what it carried.
+        self.dice.name_subject_since(
+            rolled_before,
+            &crate::dice::RollSubject {
+                unit: Some(ship.type_id.to_string()),
+                damaged: ship.sustained_damage,
+                origin: Some(origin.to_string()),
+                cargo: cargo
+                    .iter()
+                    .map(|carried| carried.unit.type_id.to_string())
+                    .collect(),
+                target: None,
+            },
+        );
         apply_move(&mut self.state, origin, &active, ship, cargo, survives)
     }
 
@@ -5530,6 +5576,45 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// Resolve one token of the 81.5 gain of a game from before `RULES_STATUS_GAIN`, finishing the
+    /// status phase when every token is placed. The redistribution then gains nothing more.
+    fn step_token_gain(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            return self.finish_status_phase();
+        };
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        // Taken out and put back so the window and `state` are not borrowed from `self` at
+        // once. On the error path it goes back unchanged, leaving the token still owed.
+        let Some((mut window, report)) = self.tokens.take() else {
+            unreachable!("the token window is open");
+        };
+        let outcome = window.resolve(&mut self.state, answer);
+        let complete = window.is_complete();
+        self.tokens = Some((window, report));
+        match outcome {
+            Ok(pool) => {
+                self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
+                if complete {
+                    return self.finish_status_phase();
+                }
+                self.result(true, None)
+            }
+            Err(error) => self.result(false, Some(error.into())),
+        }
+    }
+
     /// A seat's tactic, fleet and strategy pools.
     fn pools_of(&self, player: &PlayerId) -> [i32; 3] {
         self.state.player(player).map_or([0; 3], |seat| {
@@ -5547,7 +5632,8 @@ impl<'a> Game<'a> {
         // The redistribution that follows decides where every token ends up, so the pool of each
         // gained token is not asked on its own: one decision per player, in initiative order like
         // the rest of 81, chooses the whole sheet with the gained tokens in it. The gain is capped
-        // by the reinforcements (20.4a).
+        // by the reinforcements (20.4a). A failed answer is an error of the step, as every other
+        // failed answer is: the gain is not placed for the player (from rules version 22).
         for player in report.initiative_order.clone() {
             let owed = i32::try_from(gain.remaining_for(&player)).unwrap_or(i32::MAX);
             let gained = owed
@@ -5566,9 +5652,16 @@ impl<'a> Game<'a> {
                 "redistribute your command tokens",
                 gained,
             );
-            if answered.is_err() && gained > 0 {
-                // The decision failed: the gain is still the player's, in the tactic pool.
-                self.state.gain_token(&player, TokenPool::Tactic, gained);
+            if let Err(error) = answered {
+                if self.state.rules_version >= ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED
+                {
+                    return self.result(false, Some(error.into()));
+                }
+                if gained > 0 {
+                    // Version < 22: the refusal is passed over, and the gain is still the
+                    // player's, in the tactic pool.
+                    self.state.gain_token(&player, TokenPool::Tactic, gained);
+                }
             }
             for pool in gained_pools(before, self.pools_of(&player), gained) {
                 self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
@@ -5846,13 +5939,29 @@ impl<'a> Game<'a> {
             let choices = outcomes(&self.state, self.content, self.sources, &alias);
             if choices.is_empty() {
                 self.emit(&format!("AGENDA_DISCARDED:{alias}"));
-                return Ok(None);
+                if self.state.rules_version < ti4_model::state::RULES_AGENDA_GRANT_REVEAL {
+                    return Ok(None);
+                }
+                // "If there are no scored secret objectives / laws in play, discard this card and
+                // reveal another agenda from the top of the deck": the replacement takes the slot.
+                self.note_discarded_agenda(&alias, false);
+                let Some(next) = ti4_model::deck_reserve::take_top(
+                    &mut self.state.deck_reserve,
+                    "agenda",
+                    &mut self.state.agenda_deck,
+                    None,
+                ) else {
+                    return Ok(None);
+                };
+                alias = next;
+                continue;
             }
 
             // The outcomes have to be on the state before the window opens, because a card
             // played into it predicts one of them. Nineteen action cards read "when" or "after
             // an agenda is revealed", and this is the event they hang off.
             self.state.agenda_choices.clone_from(&choices);
+            self.state.agenda_in_play = Some(alias.clone());
             let mut payload = BTreeMap::new();
             payload.insert(
                 "agenda".to_owned(),
@@ -5876,7 +5985,20 @@ impl<'a> Game<'a> {
                 return Ok(Some((alias, choices)));
             };
             self.emit(&format!("AGENDA_DISCARDED:{alias}"));
+            if self.state.rules_version >= ti4_model::state::RULES_AGENDA_GRANT_REVEAL {
+                self.note_discarded_agenda(&alias, true);
+            }
             alias = replacement;
+        }
+    }
+
+    /// List an agenda that was revealed and discarded without a vote in `agenda_log`, so the
+    /// table is told (rules version 14). It is not a resolved agenda: it has no outcome.
+    fn note_discarded_agenda(&mut self, alias: &str, replaced: bool) {
+        let reason = if replaced { "replaced" } else { "no_choice" };
+        self.push_agenda_record(alias, None, BTreeMap::new(), false, true);
+        if let Some(record) = self.state.agenda_log.last_mut() {
+            record.discard_reason = Some(reason.to_owned());
         }
     }
 
@@ -6134,8 +6256,7 @@ impl<'a> Game<'a> {
         // Before RULES_BRIBERY_PER_PLAYER this fired after every answer of the vote (the outcome,
         // each planet exhausted, the trade goods), asking a Bribery holder again at each; now it
         // fires once per voter, when they have named their outcome.
-        if answered_outcome
-            || self.state.rules_version < ti4_model::state::RULES_BRIBERY_PER_PLAYER
+        if answered_outcome || self.state.rules_version < ti4_model::state::RULES_BRIBERY_PER_PLAYER
         {
             let mut payload = BTreeMap::new();
             payload.insert(
@@ -6579,6 +6700,7 @@ impl<'a> Game<'a> {
                     .map(ToString::to_string)
                     .filter(|to| Some(to.as_str()) != outcome)
             },
+            discard_reason: None,
         };
         self.state.agenda_log.push(record);
     }
@@ -6589,6 +6711,7 @@ impl<'a> Game<'a> {
         };
         let alias = window.alias().to_owned();
         self.state.agenda_choices.clear();
+        self.state.agenda_in_play = None;
         if window.winner().is_none() {
             self.log_agenda(&window, None, false);
             // No outcome, so nobody predicted correctly — but the cards were still spent, and a
@@ -7186,7 +7309,8 @@ fn wormhole_hops(
 /// The pools that `gained` tokens went to, one entry per token, from the sheet before and after a
 /// redistribution that also gained them: the pools that grew, in tactic, fleet, strategy order,
 /// and the tactic pool for any token the growth does not account for. Only the announcement uses
-/// it (`COMMAND_TOKEN_GAINED`); the sheet is already set.
+/// it (`COMMAND_TOKEN_GAINED`), and the announcement is for display only: the redistribution has
+/// already set the sheet, and nothing reads the pool of a gained token back from the event.
 fn gained_pools(before: [i32; 3], after: [i32; 3], gained: i32) -> Vec<TokenPool> {
     const POOLS: [TokenPool; 3] = [TokenPool::Tactic, TokenPool::Fleet, TokenPool::Strategic];
     let mut left = gained.max(0);
@@ -9763,6 +9887,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_agenda_with_nothing_to_elect_is_replaced_by_the_next_card() {
+        // Classified Document Leaks with no scored secret objective: "discard this card and
+        // reveal another agenda from the top of the deck" (rules version 14).
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL;
+        let (alias, choices) = game
+            .reveal_agenda("classified")
+            .expect("revealed")
+            .expect("the replacement goes to a vote");
+        assert_eq!(alias, "committee");
+        assert!(!choices.is_empty());
+        assert_eq!(game.state.agenda_deck, vec!["conventions".to_owned()]);
+        let record = game.state.agenda_log.last().expect("the discard is listed");
+        assert_eq!(record.agenda, "classified");
+        assert!(record.discarded && record.outcome.is_none());
+        assert_eq!(record.discard_reason.as_deref(), Some("no_choice"));
+    }
+
+    #[test]
+    fn an_agenda_with_nothing_to_elect_is_just_dropped_below_rules_version_14() {
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL - 1;
+        assert!(game.reveal_agenda("classified").expect("revealed").is_none());
+        assert_eq!(game.state.agenda_deck.len(), 2, "no card is drawn");
+        assert!(game.state.agenda_log.is_empty(), "and nothing is listed");
+    }
+
+    #[test]
+    fn a_discarded_card_is_not_a_resolved_agenda_for_the_bot() {
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL;
+        game.reveal_agenda("classified").expect("revealed");
+        let seen = crate::choice::Observed::new(&game.state, game.content, game.sources, None);
+        assert_eq!(seen.agendas_resolved_this_round(), 0);
+    }
+
     fn quash_game(tokens: i32, script: &[&str]) -> Game<'static> {
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
@@ -11458,6 +11619,177 @@ mod tests {
             .filter(|event| event.starts_with("COMMAND_TOKEN_GAINED:"))
             .count();
         assert_eq!(gained, 3, "each gained token is still announced");
+    }
+
+    /// A game from before `RULES_STATUS_GAIN` asks the pool of each gained token on its own
+    /// (52.4), and the redistribution after it is over the tokens already placed, with no gain.
+    /// The status phase's gain of a game of rules version 11, open and answered by `table`.
+    fn status_gain_of_version_11(table: Table) -> Game<'static> {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.phase = Phase::Status;
+        state.rules_version = ti4_model::state::RULES_STATUS_GAIN - 1;
+        for (seat, pools) in [("a", (3, 3, 2)), ("b", (5, 5, 5))] {
+            let seat = state.player_mut(&PlayerId::new(seat)).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = pools;
+        }
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let order = [PlayerId::new("a"), PlayerId::new("b")];
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&game.state, ContentStore::embedded(), &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
+        ));
+        game
+    }
+
+    #[test]
+    fn status_phase_gain_of_an_older_game_asks_each_token() {
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut game = status_gain_of_version_11(Table::with_default(Box::new(decider)));
+        let first = game.legal_options().expect("a gained token is asked");
+        assert_eq!(first.player, a);
+        assert_eq!(first.details["mode"], "gain");
+        assert_eq!(first.details["tokens_to_place"], 2);
+
+        while game.tokens.is_some() {
+            assert_eq!(game.step().error, None);
+        }
+
+        let asked = seen.borrow();
+        let subtypes: Vec<_> = asked
+            .iter()
+            .map(|choice| {
+                let context = choice.context.as_ref().expect("typed context");
+                (choice.player.clone(), context.subtype.clone())
+            })
+            .collect();
+        let gain = |seat: &PlayerId| (seat.clone(), "gain_command_token".to_owned());
+        let redistribute =
+            |seat: &PlayerId| (seat.clone(), "status_redistribute_tokens".to_owned());
+        assert_eq!(
+            subtypes,
+            [
+                gain(&a),
+                gain(&a),
+                gain(&b),
+                gain(&b),
+                redistribute(&a),
+                redistribute(&b)
+            ]
+        );
+        for choice in &asked[4..] {
+            assert!(
+                choice.details.get("gained").is_none(),
+                "nothing more is gained"
+            );
+        }
+        // The first option: the gain into tactic (b has room for one), then nothing in tactic,
+        // the least in fleet, the rest in strategy.
+        let sheet = |seat: &PlayerId| game.pools_of(seat);
+        assert_eq!(sheet(&a), [0, 2, 8]);
+        assert_eq!(sheet(&b), [0, 2, 14]);
+        assert_eq!(game.state.tokens_in_reinforcements(&b), 0);
+
+        // The log of those answers replays to the same events and state.
+        let log: Vec<String> = asked
+            .iter()
+            .map(|choice| choice.options[0].id.clone())
+            .collect();
+        let mut again =
+            status_gain_of_version_11(Table::with_default(Box::new(Scripted::new(log))));
+        while again.tokens.is_some() {
+            assert_eq!(again.step().error, None);
+        }
+        assert_eq!(again.events, game.events);
+        assert!(again.state == game.state, "same state after the replay");
+    }
+
+    /// The status phase's redistribution of a one-seat game of `rules_version`, answered with an
+    /// arrangement that was not offered (more tokens than the seat holds).
+    fn status_redistribution_refused_at(rules_version: u32) -> Game<'static> {
+        /// Answers every redistribution with more tokens than the seat holds.
+        struct Hoarder;
+        impl Decider for Hoarder {
+            fn choose(&mut self, _: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::labelled("16|0|0", "pool", "sixteen tactic"))
+            }
+        }
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.phase = Phase::Status;
+        state.rules_version = rules_version;
+        let a = PlayerId::new("a");
+        {
+            let seat = state.player_mut(&a).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = (3, 3, 2);
+        }
+        let table = Table::with_default(Box::new(Hoarder));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let order = [a];
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&game.state, ContentStore::embedded(), &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
+        ));
+        game
+    }
+
+    /// 81.5: an arrangement that was not offered is an error of the step, as every other failed
+    /// answer is. The gain is not put into a pool of the engine's choosing, and nothing is
+    /// announced for the seat.
+    #[test]
+    fn status_phase_redistribution_refuses_an_arrangement_not_offered() {
+        let a = PlayerId::new("a");
+        let mut game =
+            status_redistribution_refused_at(ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED);
+        assert_eq!(game.state.rules_version, ti4_model::state::RULES_VERSION);
+
+        let error = game.step().error.expect("the arrangement is refused");
+        assert!(
+            error.to_string().contains("16|0|0"),
+            "the refusal names the answer: {error}"
+        );
+        assert_eq!(game.pools_of(&a), [3, 3, 2], "the sheet is unchanged");
+        assert!(
+            !game
+                .events
+                .iter()
+                .any(|event| event.starts_with("COMMAND_TOKEN_GAINED")
+                    || event == "STATUS_PHASE_RESOLVED"),
+            "nothing is announced: {:?}",
+            game.events
+        );
+    }
+
+    /// A game from before `RULES_STATUS_REDISTRIBUTION_REFUSED` passes a refused redistribution
+    /// over: the gain goes into the tactic pool and the status phase resolves.
+    #[test]
+    fn status_phase_redistribution_of_an_older_game_puts_a_refused_gain_in_tactic() {
+        let a = PlayerId::new("a");
+        let mut game = status_redistribution_refused_at(
+            ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED - 1,
+        );
+
+        assert_eq!(game.step().error, None, "the refusal is passed over");
+        assert_eq!(game.pools_of(&a), [5, 3, 2], "the gain is in tactic");
+        let gained = game
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "COMMAND_TOKEN_GAINED:Tactic")
+            .count();
+        assert_eq!(gained, 2, "{:?}", game.events);
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "STATUS_PHASE_RESOLVED"),
+            "{:?}",
+            game.events
+        );
     }
 
     /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed
@@ -13967,6 +14299,38 @@ mod tests {
     }
 
     #[test]
+    fn the_last_to_pass_unlocks_the_ral_nel_commander_when_the_phase_closes() {
+        let play = |version: u32| {
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            let mut state =
+                start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+            state.rules_version = version;
+            state.phase = Phase::Action;
+            state.active = Some(b.clone());
+            state.player_mut(&a).unwrap().passed = true;
+            let seat = state.player_mut(&b).unwrap();
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("ralnelcommander"),
+                ti4_model::state::LeaderStatus::Locked,
+            );
+            let table = Table::with_default(Box::new(Scripted::new(["pass".to_owned()])));
+            let mut game = Game::with_table(state, ContentStore::embedded(), table);
+            assert_eq!(game.step().error, None, "the final pass resolves");
+            let ojz = ti4_model::id::LeaderId::new("ralnelcommander");
+            (
+                crate::leaders::status(&game.state, &b, &ojz),
+                crate::leaders::status(&game.state, &a, &ojz),
+            )
+        };
+        let (last, first) = play(ti4_model::state::RULES_FACTION_EFFECTS);
+        assert_eq!(last, Some(ti4_model::state::LeaderStatus::Unlocked));
+        assert_eq!(first, None, "the seat that passed earlier has no such commander");
+        let (old, _) = play(ti4_model::state::RULES_FACTION_EFFECTS - 1);
+        assert_eq!(old, Some(ti4_model::state::LeaderStatus::Locked));
+    }
+
+    #[test]
     fn a_last_pass_occurrence_replays_with_identical_state_and_choices() {
         let run = || {
             let a = PlayerId::new("a");
@@ -14129,12 +14493,14 @@ mod tests {
                     return Ok(decline.clone());
                 }
             }
-            choice.options.first().cloned().ok_or_else(|| {
-                crate::choice::IllegalChoice::NoOptions {
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| crate::choice::IllegalChoice::NoOptions {
                     player: choice.player.clone(),
                     prompt: choice.prompt.clone(),
-                }
-            })
+                })
         }
     }
 

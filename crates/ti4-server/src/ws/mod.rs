@@ -147,11 +147,16 @@ async fn handle_socket(
     let mut drafts: Option<tokio::sync::watch::Sender<DraftRequest>> = None;
     let idle_timeout = registry.public().config.ws_idle_timeout;
     let mut last_inbound = std::time::Instant::now();
+    // Set when the session dropped this connection's subscription (its queue filled because the
+    // page read too slowly). The socket must close then, so the page reconnects for a fresh
+    // snapshot; left open it would answer pings and never carry another update.
+    let subscription_lost = Arc::new(tokio::sync::Notify::new());
 
     // Inbound processing loop
     loop {
         let msg_result = tokio::select! {
             msg = ws_receiver.next() => match msg { Some(msg) => msg, None => break },
+            () = subscription_lost.notified() => break,
             _ = auth_check.tick() => {
                 if session.error().is_some() {
                     break;
@@ -510,6 +515,7 @@ async fn handle_socket(
                 let game_for_updates = game_id.clone();
                 let token_for_updates = current_token.clone();
                 let staged_for_updates = staged_wanted;
+                let lost = subscription_lost.clone();
                 tokio::spawn(async move {
                     let mut check = tokio::time::interval(Duration::from_millis(50));
                     loop {
@@ -531,7 +537,10 @@ async fn handle_socket(
                                     }
                                 }
                                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                                Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    lost.notify_one();
+                                    return;
+                                }
                             }
                         }
                     }

@@ -4,7 +4,7 @@ import type { BoardView, GroundOddsRequest, PendingChoiceDto, PlayerView } from 
 import { groundOdds } from "@ti4/shared/engine/odds.ts";
 import { useOddsEngine } from "./OddsEngine.tsx";
 import { getPlanetEffectiveValues } from "../presentation/playerStats.ts";
-import { wireBoosts } from "../presentation/planetValues.ts";
+import { wireBoosts } from "@ti4/shared/planets/values.ts";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 import { UnitIcon, getUnitDisplayName } from "./UnitIcon.tsx";
 import { PlanetValue } from "./PlanetValueIcons.tsx";

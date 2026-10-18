@@ -435,6 +435,35 @@ describe("ObjectivesModal", () => {
       options: [...options, { id: "decline", label: "decline", kind: "", payload: {} }],
     });
 
+    it("explains the one-per-combat cap when two met secrets are offered", () => {
+      render(
+        <ObjectivesModal
+          isOpen={true}
+          onClose={vi.fn()}
+          revealedObjectives={[]}
+          players={[{ ...mockPlayers[0], held_secret_objectives: ["btv", "dyp"] }, mockPlayers[1]]}
+          viewerSeat="p1"
+          choice={scoring(
+            [
+              { id: "btv", label: "btv", kind: "", payload: {} },
+              { id: "dyp", label: "dyp", kind: "", payload: {} },
+            ],
+            "score_secret_objective",
+          )}
+          onSubmit={vi.fn()}
+          isScoringMode={true}
+        />,
+      );
+      expect(screen.getByTestId("secret-combat-cap-note")).toHaveTextContent(
+        "Only 1 objective can be scored during or after each combat.",
+      );
+      fireEvent.click(
+        document.querySelector('[data-testid="choice-option"][data-option-id="dyp"]')!,
+      );
+      expect(screen.getByTestId("secret-skipped-btv")).toBeInTheDocument();
+      expect(screen.queryByTestId("secret-skipped-dyp")).toBeNull();
+    });
+
     it("shows an offered secret as a card with name, condition, phase and VP", async () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined);
       render(

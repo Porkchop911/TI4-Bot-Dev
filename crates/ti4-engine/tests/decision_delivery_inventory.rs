@@ -441,7 +441,14 @@ const PRODUCERS: &[Producer] = &[
         module: "mentak.rs",
         function: "ask_among",
         count: 1,
-        delivery: Delivery::ObservedHere,
+        delivery: Delivery::ObservedVia("mentak.rs::ask_choice"),
+    },
+    Producer {
+        // The same, for a question whose labels name seats or notes by id (`details.phrases`).
+        module: "mentak.rs",
+        function: "ask_phrased",
+        count: 1,
+        delivery: Delivery::ObservedVia("mentak.rs::ask_choice"),
     },
     Producer {
         // Cabal: Vortex picks which reinforcement unit to capture (BF-cabal.md CB-06).
@@ -594,6 +601,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // `ask` for a question whose texts name seats or notes by id (`details.phrases`).
+        module: "deepwrought.rs",
+        function: "ask_phrased",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         // Crimson Rebellion: every question asked inside a timing window or component action
         // (BF-crimson.md). Ahk Ravin's transport questions are the shared cargo hold's own.
         module: "crimson.rs",
@@ -700,8 +714,10 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // Mathis Mathinus's follower question, built for `leader_strategy_follower_choices`
+        // (asked by `game.rs::step_leader_followers`) and for `use_leader`, which asks it.
         module: "winnu.rs",
-        function: "leader_strategy_follower_choices",
+        function: "mathis_follower_choice",
         count: 1,
         delivery: Delivery::ObservedVia("game.rs::step_leader_followers"),
     },
@@ -714,7 +730,7 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "winnu.rs",
         function: "use_leader",
-        count: 2,
+        count: 1,
         delivery: Delivery::ObservedHere,
     },
     Producer {
@@ -879,6 +895,13 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "combat.rs",
         function: "offer_sustain",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Rear Admiral Farran (letnevcommander, rules version 16): "You may gain 1 trade good".
+        module: "combat.rs",
+        function: "ask_sustain_commander",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1261,7 +1284,7 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "relics.rs",
-        function: "grant_chosen_technology",
+        function: "ask_technology",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1453,6 +1476,12 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "technology.rs",
+        function: "self_assembly_after_production",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "technology.rs",
         function: "production_used",
         count: 1,
         delivery: Delivery::ObservedHere,
@@ -1492,11 +1521,13 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "tokens.rs",
         function: "pending_choice",
-        // `TokenRedistribution::pending_choice`: 81.5's gain and redistribution (one decision per
-        // seat), and Warfare's and Predictive Intelligence's redistributions, all asked by
-        // `strategy_cards::redistribute_tokens`.
-        count: 1,
-        delivery: Delivery::ObservedVia("strategy_cards.rs::ask"),
+        // Two `Choice::new` sites share this function name. `TokenRedistribution::pending_choice`:
+        // 81.5's gain and redistribution (one decision per seat), and Warfare's and Predictive
+        // Intelligence's redistributions, all asked by `strategy_cards::redistribute_tokens`.
+        // `TokenGain::pending_choice`: the gain token by token of a game from before
+        // `RULES_STATUS_GAIN`, asked by `game.rs::step_token_gain` (wired below).
+        count: 2,
+        delivery: Delivery::ObservedVia("game.rs::step_token_gain"),
     },
     Producer {
         module: "transactions.rs",
@@ -1524,11 +1555,18 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step_tactical"),
     },
     Producer {
+        // Magen Defense Grid (md): the owner names the opponent's ground force that takes the hit.
+        module: "magen_defense.rs",
+        function: "combat_start",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "vote.rs",
         function: "pending_choice_bare",
         // Outcome, planets, Gila's trade goods (hacancommander), tiebreak, Mahact's Recombine
-        // and Tribute stages.
-        count: 6,
+        // and Tribute stages, Predictive Intelligence's extra votes.
+        count: 7,
         delivery: Delivery::ObservedVia("game.rs::step_vote"),
     },
 ];
@@ -1536,6 +1574,7 @@ const PRODUCERS: &[Producer] = &[
 const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     // BF faction modules (crates/ti4-engine/src/factions/).
     ("invasion.rs", "fight_committed_planet", 1),
+    ("magen_defense.rs", "combat_start", 1),
     ("invasion.rs", "assign_selected_ground_hit_in_timing", 1),
     ("yssaril.rs", "borrowed_stall_tactics", 1),
     ("argent.rs", "ask_option_for", 1),
@@ -1566,7 +1605,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     // Deepgloom Executable runs the trade window itself, so its choices are asked here rather
     // than through `game.rs::step_trade`.
     ("yssaril.rs", "deepgloom_transaction", 1),
-    ("mentak.rs", "ask_among", 1),
+    ("mentak.rs", "ask_choice", 1),
     ("borrowed_commanders.rs", "ralnel_ask", 1),
     ("borrowed_commanders.rs", "crimson_ask", 1),
     ("titans.rs", "ask", 1),
@@ -1595,6 +1634,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("deepwrought_research.rs", "put", 1),
     ("deepwrought.rs", "ask", 1),
     ("deepwrought.rs", "ask_about", 1),
+    ("deepwrought.rs", "ask_phrased", 1),
     ("crimson.rs", "ask", 1),
     ("crimson.rs", "ask_about", 1),
     ("crimson_cards.rs", "fill_hold", 1),
@@ -1641,6 +1681,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("combat.rs", "choose_reroll_dice", 1),
     ("combat.rs", "heart_ixth", 1),
     ("combat.rs", "offer_sustain", 1),
+    ("combat.rs", "ask_sustain_commander", 1),
     ("combat.rs", "roll_round", 1),
     ("combat.rs", "wrath_of_kenara_buy", 1),
     ("exploration.rs", "ask_decorated", 1),
@@ -1661,6 +1702,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_scoring", 1),
     ("game.rs", "step_secondary", 1),
     ("game.rs", "step_tactical", 1),
+    ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_agenda_talks", 1),
@@ -1685,7 +1727,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("reactions.rs", "slot", 1),
     ("relics.rs", "codex", 1),
     ("relics.rs", "crown_of_emphidia_explore_with", 1),
-    ("relics.rs", "grant_chosen_technology", 1),
+    ("relics.rs", "ask_technology", 1),
     ("relics.rs", "offer_dominus_orb", 1),
     ("relics.rs", "stellar_converter", 1),
     ("relics.rs", "titan_prototype", 1),
@@ -1711,6 +1753,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("strategy_cards.rs", "ask", 1),
     ("technology.rs", "end_turn", 2),
     ("technology.rs", "production_used", 1),
+    ("technology.rs", "self_assembly_after_production", 1),
     ("technology.rs", "start_turn", 3),
     ("thunders_edge.rs", "ask_seeing", 1),
     ("timing.rs", "ask_seeing", 1),

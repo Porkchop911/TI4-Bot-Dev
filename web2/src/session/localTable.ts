@@ -326,6 +326,14 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
           throw new Refused(`The page plays no seat of the kind "${kind}".`);
         }
         const open = next.seats.filter((seat) => seat.kind === null);
+        // One bot with no open seat is a seat more: nobody else can come to a table in the page.
+        if (!open.length && !fill && next.startFrom === null) {
+          if (next.seats.length >= known.max_players) {
+            throw new Refused(`A table has ${known.max_players} seats at most.`);
+          }
+          next.seats.push({ kind: kind as SeatRequest["kind"], faction: null });
+          return;
+        }
         if (!open.length) {
           throw new Refused("No seat is open.");
         }

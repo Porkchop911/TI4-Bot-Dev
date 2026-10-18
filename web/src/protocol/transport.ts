@@ -71,6 +71,11 @@ export interface GameTransport {
    * the odds of a combat). Without it the page asks its own engine.
    */
   queryEngine?(request: object): Promise<unknown>;
+  /**
+   * The bot version of a game that runs on this device and the newest versions of its engine
+   * (display only: the settings menu). Absent online.
+   */
+  gameVersions?(): import("../versionInfo.ts").HostedGameVersions;
 }
 
 /** The WebSocket/HTTP transport to the game server. `GameSessionClient` is its implementation. */

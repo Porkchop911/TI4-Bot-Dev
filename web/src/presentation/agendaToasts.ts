@@ -19,6 +19,8 @@ export interface AgendaRecordDto {
   enacted?: boolean;
   discarded?: boolean;
   redirected_to?: string | null;
+  /** A card revealed and discarded without a vote: `no_choice` (nothing to elect) or `replaced`. */
+  discard_reason?: string | null;
 }
 
 export interface AgendaToast {
@@ -59,6 +61,10 @@ const isForAgainst = (outcome: string) => /^(for|against)$/i.test(outcome);
 export function agendaResultText(record: AgendaRecordDto, seatName: SeatName): string {
   const name = record.name?.trim() || agendaNameFromId(record.agenda);
   const outcome = record.outcome ?? null;
+  if (!outcome && record.discard_reason === "no_choice")
+    return `${name}\nDiscarded: nothing to elect. The next agenda is revealed.`;
+  if (!outcome && record.discard_reason === "replaced")
+    return `${name}\nDiscarded and replaced by the next agenda.`;
   if (!outcome) return `${name}\nResolved with no outcome.`;
   const label = agendaOutcomeLabel(outcome, seatName);
   const lines = [`${name}: ${isForAgainst(outcome) ? `${label} wins` : `${label} elected`}`];

@@ -127,6 +127,13 @@ fn limits_of(args: &Args, base: Limits) -> Result<Limits, String> {
     Ok(l)
 }
 
+/// `--rules-version N`: pins the rules version of the games ([`GameSpec::rules_version`]).
+fn rules_version_of(args: &Args) -> Result<Option<u32>, String> {
+    args.get("rules-version")
+        .map(|v| v.parse().map_err(|_| format!("--rules-version {v}: not a number")))
+        .transpose()
+}
+
 fn bot_of(
     args: &Args,
     mut base: BTreeMap<String, String>,
@@ -222,6 +229,7 @@ fn setups_of(args: &Args) -> Result<Vec<SetupSpec>, String> {
                 speaker: args.get("speaker").unwrap_or("random").to_owned(),
                 card_set: args.get("card-set").map(str::to_owned),
                 starting_tech: args.has("starting-tech"),
+                rules_version: rules_version_of(args)?,
                 seeds: seeds.clone(),
             })
         })
@@ -325,7 +333,17 @@ fn verify(summary: &Summary, path: &str) -> Result<ExitCode, String> {
     let base: Summary = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
     let (mut same, mut different, mut missing) = (0, Vec::new(), 0);
     for g in &summary.games {
-        match base.games.iter().find(|b| b.spec == g.spec) {
+        // A baseline recorded before rules versions could be pinned carries no `rules_version`:
+        // a pinned game is compared with it by the rest of its spec.
+        let unpinned = GameSpec {
+            rules_version: None,
+            ..g.spec.clone()
+        };
+        match base
+            .games
+            .iter()
+            .find(|b| b.spec == g.spec || (g.spec.rules_version.is_some() && b.spec == unpinned))
+        {
             None => missing += 1,
             Some(b) if b.hash == g.hash && b.termination == g.termination && b.vp == g.vp => {
                 same += 1
@@ -401,8 +419,8 @@ fn cmd_metrics(args: &Args) -> Result<ExitCode, String> {
     });
     let (c, _) = ti4_selfplay::run::comparison_from(
         results,
-        ti4_rule_bot::tuning::Tuning::default(),
-        ti4_rule_bot::tuning::Tuning::default(),
+        ti4_rule_bot::tuning::current(),
+        ti4_rule_bot::tuning::current(),
         mixed,
         std::time::Instant::now(),
     );
@@ -457,6 +475,7 @@ fn cmd_replay(args: &Args) -> Result<ExitCode, String> {
             speaker: args.get("speaker").unwrap_or("random").to_owned(),
             card_set: args.get("card-set").map(str::to_owned),
             starting_tech: args.has("starting-tech"),
+            rules_version: rules_version_of(args)?,
             seeds: Seeds::List(vec![seed]),
         };
         setup.expand()?.0.into_iter().next().ok_or("no game")?
@@ -516,7 +535,7 @@ fn cmd_replay(args: &Args) -> Result<ExitCode, String> {
 }
 
 fn cmd_knobs() {
-    let t = ti4_rule_bot::tuning::Tuning::default().entries();
+    let t = ti4_rule_bot::tuning::current().entries();
     for ((k, v), (_, doc)) in t.iter().zip(ti4_rule_bot::tuning::KEYS) {
         println!("{k:<22} {v:<8} {doc}");
     }

@@ -1,16 +1,22 @@
 // The sheet of a faction as printed: what a player chooses a faction by. Everything is the
 // catalogue of the engine; the page words the lines and writes no text of a card.
-import { type ComponentCardView, type FactionSheetView, unitName } from "../../model";
+import type { ComponentCardView, FactionSheetView } from "../../model";
 import type { Catalog } from "../wire";
 import { plain, timing } from "./components";
-import { humanizeId, unitType } from "./names";
+import { humanizeId, unitLabel, unitRecord } from "./names";
 
 const LEADER_KINDS = ["agent", "commander", "hero"];
 
-/** "2 Carriers", "Destroyer": a unit by its id, with its count when there are several. */
-function units(id: string, count: number): string {
-  const unit = unitType(id);
-  const name = unit ? unitName(unit, count) : humanizeId(id);
+/**
+ * "2 Advanced Carrier I", "Destroyer I": a unit of the starting fleet with its count when there
+ * are several. The sheet names the base unit (`carrier`); the unit card of the faction that has
+ * that base type is the one it starts with.
+ */
+function units(faction: string, id: string, count: number, catalog: Catalog | null): string {
+  const own = catalog?.records.factions
+    .find((item) => item.id === faction)
+    ?.units.find((unit) => unitRecord(unit, catalog)?.base_type === id);
+  const name = unitLabel(own ?? id, catalog, count);
   return count === 1 ? name : `${count} ${name}`;
 }
 
@@ -28,7 +34,7 @@ export function factionSheet(id: string, catalog: Catalog | null): FactionSheetV
   const at = (planet: string | undefined) =>
     fleet
       .filter((entry) => entry.planet === planet)
-      .map((entry) => units(entry.unit, entry.count))
+      .map((entry) => units(id, entry.unit, entry.count, catalog))
       .join(" · ");
 
   const choice = sheet.starting_technology_choice;

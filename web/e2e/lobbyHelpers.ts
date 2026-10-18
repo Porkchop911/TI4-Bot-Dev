@@ -21,10 +21,16 @@ export async function gameSnapshot(
       timeout: timeoutMs,
     });
   const response = await get().catch(() => get());
-  // The body says why (e.g. "Game session failed closed: ..."), which the status alone does not.
-  const reason = response.ok() ? "" : ` ${(await response.text().catch(() => "")).slice(0, 400)}`;
-  expect(response.ok(), `snapshot for game ${gameId}: ${response.status()}${reason}`).toBe(true);
-  return response.json();
+  // Playwright keeps every response body in the worker until it is disposed; the smoke harness
+  // polls this several times per decision, which grew a long game's worker to 7 GB (OOM kill).
+  try {
+    // The body says why (e.g. "Game session failed closed: ..."), which the status alone does not.
+    const reason = response.ok() ? "" : ` ${(await response.text().catch(() => "")).slice(0, 400)}`;
+    expect(response.ok(), `snapshot for game ${gameId}: ${response.status()}${reason}`).toBe(true);
+    return (await response.json()) as InitialSnapshotMsg;
+  } finally {
+    await response.dispose().catch(() => {});
+  }
 }
 
 export async function createStartedGame(

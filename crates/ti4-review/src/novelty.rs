@@ -143,8 +143,8 @@ pub fn standing(frame: &ReviewFrame, player: &ti4_model::id::PlayerId) -> Vec<St
     let mut lines = Vec::new();
     for (key, value) in &frame.state.faction_marks {
         let lead = key.split(':').next().unwrap_or_default();
-        let named = key.split(':').any(|part| part == me)
-            || value.split([',', '|']).any(|part| part == me);
+        let named =
+            key.split(':').any(|part| part == me) || value.split([',', '|']).any(|part| part == me);
         if (lead == faction && !faction.is_empty()) || (named && is_faction_lead(frame, lead)) {
             lines.push(format!("{}: {}", label(key), short(value)));
         }
@@ -165,13 +165,19 @@ pub fn standing(frame: &ReviewFrame, player: &ti4_model::id::PlayerId) -> Vec<St
     }
     let held = frame.state.tokens_held_by_mahact(player);
     if held > 0 {
-        lines.push(format!("{held} of this seat's command token(s) held in a Mahact fleet pool"));
+        lines.push(format!(
+            "{held} of this seat's command token(s) held in a Mahact fleet pool"
+        ));
     }
     lines
 }
 
 fn is_faction_lead(frame: &ReviewFrame, lead: &str) -> bool {
-    frame.state.players.iter().any(|p| p.faction.as_str() == lead)
+    frame
+        .state
+        .players
+        .iter()
+        .any(|p| p.faction.as_str() == lead)
 }
 
 #[cfg(test)]

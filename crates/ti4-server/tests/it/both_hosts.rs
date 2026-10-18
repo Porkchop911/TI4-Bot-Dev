@@ -51,7 +51,12 @@ fn in_the_page(setup: &TableSetup, seats: &Seats, saved: &[DecisionRecord]) -> V
     let log: Vec<&str> = saved.iter().map(|record| record.chosen.as_str()).collect();
     let start = serde_json::json!({
         "table": request(setup, seats),
-        "resume": { "log": log },
+        // A resume names the versions of the game it plays; the server plays the current ones.
+        "resume": {
+            "log": log,
+            "bot_version": ti4_rule_bot::tuning::BOT_VERSION,
+            "rules_version": ti4_model::state::RULES_VERSION,
+        },
     });
     let len = ti4_wasm::host_api::put_input(&start.to_string());
     let status = ti4_wasm::ti4_host_start(u32::try_from(len).expect("a short request"));
@@ -158,6 +163,9 @@ fn slow_a_table_of_a_seed_is_the_same_game_in_the_page_and_on_the_server() {
         ),
     ];
     for (setup, seats) in tables {
+        // A new table of the lobby has the choice of the starting technology, as the page gives
+        // it to a game of the current bot.
+        let setup = setup.with_starting_tech();
         // The MLP seats play two rounds: their fleets of the second round are planned.
         let mlp = seats
             .iter()

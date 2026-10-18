@@ -7,12 +7,16 @@
 //! engine would still honour it. A card is played face up, so every marker is public and the list
 //! is the same for every viewer.
 //!
+//! The engine words each entry (`title`, `summary` and `expiry`), so a client keeps no rule for
+//! each kind; the facts stay beside the words as data.
+//!
 //! The list is display only: it is built from the state on each projection, adds nothing to the
 //! state, the decision records or any hash, and is left out of a view that has none (older
 //! clients and saves never see the field).
 
 use serde::{Deserialize, Serialize};
-use ti4_model::id::{PlayerId, SystemId};
+use ti4_engine::phrases::{Phrase, Subject};
+use ti4_model::id::{ActionCardId, PlayerId, SystemId};
 use ti4_model::state::{GameState, Phase, TransientFlags};
 
 /// When a lingering effect ends.
@@ -34,6 +38,22 @@ pub enum EffectExpiry {
     Negotiation,
     /// When the next strategy phase has passed.
     NextStrategyPhase,
+}
+
+impl EffectExpiry {
+    /// When it ends, in words: "until the end of this combat round".
+    #[must_use]
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::CombatRound => "until the end of this combat round",
+            Self::TacticalAction => "until the end of this tactical action",
+            Self::Invasion => "until the end of this invasion",
+            Self::Agenda => "until this agenda is resolved",
+            Self::NextAction => "until their next action",
+            Self::Negotiation => "until this negotiation closes",
+            Self::NextStrategyPhase => "until the next strategy phase has passed",
+        }
+    }
 }
 
 /// One lingering effect of a played action card.
@@ -61,6 +81,16 @@ pub struct ActiveEffectView {
     pub other: Option<PlayerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<SystemId>,
+    /// What causes it: the card (a subject), or the words of a pool of cards ("Shields Holding /
+    /// Maneuvering Jets").
+    #[serde(default)]
+    pub title: Phrase,
+    /// What it does, in one short line: "+1 to all combat rolls", "Marked by {0}: ...".
+    #[serde(default)]
+    pub summary: Phrase,
+    /// `until` in words: "until the end of this combat round".
+    #[serde(default)]
+    pub expiry: String,
 }
 
 fn one() -> u32 {
@@ -86,6 +116,71 @@ fn entry(
         amount: None,
         other: None,
         system: None,
+        title: Phrase::default(),
+        summary: Phrase::default(),
+        expiry: String::new(),
+    }
+}
+
+/// The words of `effect`: what causes it, what it does and when it ends.
+fn worded(effect: ActiveEffectView) -> ActiveEffectView {
+    let title = match &effect.card {
+        Some(card) => Phrase::default().name(Subject::action_card(&ActionCardId::new(card))),
+        // Shields Holding and Maneuvering Jets feed one pool.
+        None if effect.effect == "cancel_hits" => {
+            Phrase::default().say("Shields Holding / Maneuvering Jets")
+        }
+        None => Phrase::default().say(&effect.effect),
+    };
+    let amount = effect.amount.unwrap_or(0);
+    // The printed size when the facts have none.
+    let or = |default: i64| effect.amount.filter(|value| *value != 0).unwrap_or(default);
+    let copies = if effect.copies > 1 {
+        format!(" ({} cards)", effect.copies)
+    } else {
+        String::new()
+    };
+    let say = |words: &str| Phrase::default().say(words);
+    let other = |phrase: Phrase| match &effect.other {
+        Some(other) => phrase.name(Subject::seat(other)),
+        None => phrase.say("the opponent"),
+    };
+    let summary = match effect.effect.as_str() {
+        "combat_roll_bonus" => say(&format!("+{} to all combat rolls", or(1))),
+        "fighter_bonus" => say(&format!("+{} to fighter combat rolls{copies}", or(2))),
+        "force_retreat" => other(Phrase::default()).say(" must announce a retreat, if able"),
+        "barrage_hits_all_ships" => say("Anti-fighter barrage hits all ships"),
+        "bar_retreat" => say("Cannot retreat"),
+        "cancel_hits" => say(&format!(
+            "Cancels the next {amount} {}",
+            if amount == 1 { "hit" } else { "hits" }
+        )),
+        "move_bonus" => say(&format!("+{} move for all ships", or(1))),
+        "ignore_anomalies" => say("Ignores anomalies while moving"),
+        "no_space_cannon" => say(&format!(
+            "Others cannot use Space Cannon against these ships{copies}"
+        )),
+        "wormholes_adjacent" => say("Alpha and beta wormholes are adjacent"),
+        "production_boost" => say(&format!("+{} production, -1 cost{copies}", or(4))),
+        "bombardment_penalty" => say(&format!(
+            "{} to bombardment against their planets{copies}",
+            or(-4)
+        )),
+        "grant_bombardment" => say(&format!("Non-fighter ships gain Bombardment {}", or(6))),
+        "disable_pds" => say("Opposing PDS lose Planetary Shield and Space Cannon"),
+        "vote_last" => say("Votes last on this agenda"),
+        "extra_votes" => say(&format!("+{amount} votes on this outcome")),
+        "keep_strategy_cards" => say("Keeps strategy cards and skips the next pick"),
+        "duress" => other(say("Marked by "))
+            .say(": a non-strategic action costs cards, trade goods and secrets"),
+        "black_market" => say("Relic fragments, action cards and secrets can be traded"),
+        _ => Phrase::default(),
+    };
+    ActiveEffectView {
+        title,
+        summary,
+        expiry: effect.until.text().to_owned(),
+        ..effect
     }
 }
 
@@ -264,7 +359,7 @@ pub fn project_active_effects(state: &GameState) -> Vec<ActiveEffectView> {
             Negotiation,
         ));
     }
-    out
+    out.into_iter().map(worded).collect()
 }
 
 #[cfg(test)]
@@ -343,6 +438,55 @@ mod tests {
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].seat, PlayerId::new("b"));
         assert_eq!(shown[0].other, Some(me()));
+        assert_eq!(
+            shown[0].summary.text,
+            "Marked by {0}: a non-strategic action costs cards, trade goods and secrets"
+        );
+        assert_eq!(shown[0].summary.refs["0"], Subject::seat(&me()));
+        assert_eq!(shown[0].expiry, "until their next action");
+    }
+
+    #[test]
+    fn an_effect_names_its_card_says_what_it_does_and_when_it_ends() {
+        let mut state = game();
+        state.combat_round_seq = 4;
+        state.active_space_combat = Some((SystemId::new("27"), me(), PlayerId::new("b")));
+        state.player_mut(&me()).unwrap().combat_bonus_round = Some(4);
+        let shown = project_active_effects(&state);
+        assert_eq!(shown[0].title.text, "{0}");
+        assert_eq!(
+            shown[0].title.refs["0"],
+            Subject::action_card(&ActionCardId::new("mb1"))
+        );
+        assert_eq!(shown[0].summary.text, "+1 to all combat rolls");
+        assert!(shown[0].summary.refs.is_empty());
+        assert_eq!(shown[0].expiry, "until the end of this combat round");
+        let json = serde_json::to_value(&shown[0]).unwrap();
+        assert_eq!(json["title"]["refs"]["0"]["kind"], "action_card");
+        assert_eq!(json["expiry"], "until the end of this combat round");
+    }
+
+    #[test]
+    fn stacked_copies_are_counted_in_the_summary() {
+        let mut state = game();
+        state.activation_seq = 3;
+        state.active_system = Some(SystemId::new("27"));
+        state.player_mut(&me()).unwrap().war_machine_use = vec![3, 3];
+        let shown = project_active_effects(&state);
+        assert_eq!(shown[0].summary.text, "+8 production, -1 cost (2 cards)");
+        assert_eq!(shown[0].expiry, "until the end of this tactical action");
+    }
+
+    #[test]
+    fn the_pool_of_hit_cancellations_has_a_title_of_words() {
+        let mut state = game();
+        state.combat_round_seq = 2;
+        state.active_system = Some(SystemId::new("27"));
+        state.player_mut(&me()).unwrap().cancel_hits_round = Some((2, 1));
+        let shown = project_active_effects(&state);
+        assert_eq!(shown[0].title.text, "Shields Holding / Maneuvering Jets");
+        assert!(shown[0].title.refs.is_empty());
+        assert_eq!(shown[0].summary.text, "Cancels the next 1 hit");
     }
 
     #[test]

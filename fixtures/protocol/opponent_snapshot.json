@@ -17,6 +17,11 @@
       "seat_b",
       "seat_c"
     ],
+    "initiative_order": [
+      "seat_a",
+      "seat_b",
+      "seat_c"
+    ],
     "active_player": "seat_a",
     "finished": false,
     "players": [
@@ -549,7 +554,7 @@
     "agenda_seq": 0,
     "transactions_this_round": [],
     "turn_seq": 0,
-    "rules_version": 11,
+    "rules_version": 22,
     "feat_occurrence_seq": 0,
     "scored_feat_occurrences": [],
     "vp_ledger": [],

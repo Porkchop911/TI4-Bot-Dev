@@ -95,7 +95,8 @@ const LATE_GAME_SCENARIO: Scenario = Scenario {
         space docks with Space Dock II, and for what they produce: War Sun, Spec Ops II, \
         Sarween Tools, AI Development Algorithm, 6 trade goods and one exhausted planet. \
         Around them: a gravity rift, a nebula, a supernova, an asteroid field, a wormhole pair, \
-        fleets of other seats and a system with Sol's command token. Asteroid fields and \
+        fleets of other seats, a PDS of seat C alone on Perimeter (#60) and a system with \
+        Sol's command token. Asteroid fields and \
         the ships of other seats block. Every seat holds seven action cards, 56 different \
         cards in all, and 17 cards are discarded; the other cards of the deck are in the \
         hands of \"Late game with deflectors\". Every seat has three secret objectives, of \
@@ -131,10 +132,24 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::INVASION_FOUR_VIEWS,
     three_seats::INVASION_COEXISTENCE,
     three_seats::INVASION_PARLEY,
+    three_seats::INVASION_DRAFT,
     three_seats::ENDGAME,
     three_seats::SCORE_STATUS,
     three_seats::SCORE_IMPERIAL,
     three_seats::FULL_GAME,
+    three_seats::STRATEGY_LEADERSHIP,
+    three_seats::STRATEGY_DIPLOMACY,
+    three_seats::STRATEGY_DIPLOMACY_BASE,
+    three_seats::STRATEGY_POLITICS,
+    three_seats::STRATEGY_CONSTRUCTION,
+    three_seats::STRATEGY_CONSTRUCTION_BASE,
+    three_seats::STRATEGY_CONSTRUCTION_TE,
+    three_seats::STRATEGY_TRADE,
+    three_seats::STRATEGY_WARFARE,
+    three_seats::STRATEGY_WARFARE_TE,
+    three_seats::STRATEGY_TECHNOLOGY,
+    three_seats::STRATEGY_IMPERIAL,
+    three_seats::STRATEGY_IMPERIAL_MECATOL,
 ];
 
 /// The scenario with this id.
@@ -303,7 +318,7 @@ mod at {
     pub const ENEMY_B: &str = "75";
     /// A planet of seat A that is exhausted, in `FAR`.
     pub const SPENT: &str = "quann";
-    /// Every other seat has a command token here.
+    /// Every other seat has a command token here, and seat C a PDS on its planet.
     pub const CROWDED: &str = "60";
     pub const ALL: [&str; 15] = [
         HOME, RIFT, NEBULA, SUPERNOVA, DOCK, DEPOT, NORTH, TOKEN, WEST, SOUTH, REPLACED, FAR,
@@ -344,7 +359,10 @@ fn late_game(
 
     // The action phase of round 4: every seat has a card, and seat A is first.
     let mut cards = std::mem::take(&mut state.unclaimed_strategy_cards);
-    cards.sort_by_key(|card| card.as_str() != "leadership");
+    cards.sort_by_key(|card| {
+        ti4_engine::strategy_cards::card_name(content, card.as_str()).as_deref()
+            != Some("Leadership")
+    });
     let mut cards = cards.into_iter();
     for seat in &seats {
         let card: StrategyCardId = cards
@@ -471,6 +489,14 @@ fn late_game(
     for fleet in &fleets_of_a {
         place(state, content, sources, a, fleet)?;
     }
+    // The dreadnought of the north took a hit in an earlier round.
+    state
+        .system_mut(&SystemId::new(at::NORTH))
+        .units
+        .iter_mut()
+        .find(|unit| unit.owner == *a && unit.type_id.as_str().starts_with("dreadnought"))
+        .ok_or("no dreadnought of seat A in the north")?
+        .sustained_damage = true;
     state
         .system_mut(&SystemId::new(at::TOKEN))
         .place_token(a.clone());
@@ -496,6 +522,19 @@ fn late_game(
             system: at::ENEMY_B,
             space: &[("carrier", 1), ("cruiser", 1), ("fighter", 2)],
             planets: &[("loki", &[("infantry", 2)])],
+        },
+    )?;
+    // A PDS alone on the planet of `CROWDED`: a movement there meets space cannon offense and
+    // no ships, and the landings come after it.
+    place(
+        state,
+        content,
+        sources,
+        c,
+        &Placement {
+            system: at::CROWDED,
+            space: &[],
+            planets: &[("perimeter", &[("pds", 1)])],
         },
     )?;
     for seat in &seats[1..] {
@@ -882,8 +921,9 @@ fn place(
 mod tests {
     use super::*;
     use crate::view::tactical::{
-        Blocked, CombatFact, INVASION_SUBTYPE, MOVEMENT_SUBTYPE, MovementFacts, ProductionFacts,
-        ShipFact, TacticalFacts, Unavailable, project_tactical_facts,
+        ACTIVATION_SUBTYPE, Blocked, CombatFact, FREE_ACTIVATION_SUBTYPE, INVASION_SUBTYPE,
+        MOVEMENT_SUBTYPE, MovementFacts, ProductionFacts, ShipFact, TacticalFacts, Unavailable,
+        Unloadable, project_tactical_facts,
     };
     use ti4_engine::choice::Window;
     use ti4_engine::choice::{Choice, ChoiceOption};
@@ -1172,6 +1212,26 @@ mod tests {
     }
 
     #[test]
+    fn a_pds_alone_waits_for_the_fleet_of_the_rift() {
+        let (state, galaxy) = game(LATE_GAME);
+        let crowded = state.system_state(&SystemId::new(at::CROWDED));
+        assert!(crowded.units.is_empty());
+        let guns: Vec<(&str, &str)> = crowded
+            .planet_units
+            .values()
+            .flatten()
+            .map(|unit| (unit.owner.as_str(), unit.type_id.as_str()))
+            .collect();
+        assert_eq!(guns, [("c", "pds")]);
+        // The ships in the rift reach it, and roll on their way.
+        let facts = facts(&state, &galaxy, at::CROWDED);
+        for ship in ships(&facts, at::RIFT) {
+            let route = ship.r#move.as_ref().expect("a ship of the rift arrives");
+            assert_eq!(route.rifts, [at::RIFT], "{ship:?}");
+        }
+    }
+
+    #[test]
     fn seat_a_has_the_turn_with_every_ship_type_upgraded() {
         let (state, _) = game(LATE_GAME);
         assert_eq!(state.phase, Phase::Action);
@@ -1421,10 +1481,55 @@ mod tests {
     #[test]
     fn a_wormhole_brings_the_far_fleet_to_the_north() {
         let (state, galaxy) = game(LATE_GAME);
-        let facts = facts(&state, &galaxy, at::NORTH);
-        for ship in ships(&facts, at::FAR) {
+        let into_north = facts(&state, &galaxy, at::NORTH);
+        for ship in ships(&into_north, at::FAR) {
             let route = ship.r#move.as_ref().expect("the far fleet arrives");
             assert_eq!(route.path.len(), 3, "{ship:?}");
+            assert_eq!(route.wormholes, ["BETA"], "{ship:?}");
+        }
+        // The dreadnought of the north is damaged; a path between neighbours has no wormhole.
+        let into_nebula = facts(&state, &galaxy, at::NEBULA);
+        let dreadnought = ship(&into_nebula, at::NORTH, "dreadnought2");
+        assert!(dreadnought.damaged);
+        let route = dreadnought
+            .r#move
+            .as_ref()
+            .expect("the dreadnought arrives");
+        assert!(route.wormholes.is_empty(), "{route:?}");
+    }
+
+    #[test]
+    fn cargo_that_no_ship_can_load_says_why() {
+        let (state, galaxy) = game(LATE_GAME);
+        let reasons = |active: &str| -> Vec<(String, Option<String>, Unloadable)> {
+            facts(&state, &galaxy, active)
+                .unloadable
+                .into_iter()
+                .map(|cargo| (cargo.system, cargo.source, cargo.reason))
+                .collect()
+        };
+        let place = |system: &str, planet: &str, reason| {
+            (system.to_owned(), Some(planet.to_owned()), reason)
+        };
+        // Into the dock: a ship passes the system of the token and the depot, and none with
+        // capacity passes the depot.
+        let into_dock = reasons(at::DOCK);
+        assert!(
+            into_dock.contains(&place(at::TOKEN, "kraag", Unloadable::CommandToken)),
+            "{into_dock:?}"
+        );
+        assert!(
+            into_dock.contains(&place(at::DEPOT, "vegamajor", Unloadable::NoCapacity)),
+            "{into_dock:?}"
+        );
+        // A unit that a ship loads is not listed, nor one in the active system.
+        let facts = facts(&state, &galaxy, at::DOCK);
+        for cargo in &facts.unloadable {
+            assert_ne!(cargo.system, at::DOCK);
+            assert!(cargo.count > 0);
+            assert!(!facts.cargo.iter().any(|pool| pool.system == cargo.system
+                && pool.source == cargo.source
+                && pool.unit == cargo.unit));
         }
     }
 
@@ -1659,10 +1764,24 @@ mod tests {
             .expect("seat A")
             .technologies
             .retain(|technology| technology.as_str() != "ws");
-        let (_, facts) = production(&plain, &galaxy, at::DOCK);
+        let (choice, facts) = production(&plain, &galaxy, at::DOCK);
         let sun = find(&facts, "warsun");
         assert_eq!(sun.unavailable, Some(Unavailable::Technology));
         assert_eq!(sun.cost, 12);
+        // The reasons are the window's: a question that does not say why has none.
+        let mut silent = choice.clone();
+        silent.details.remove(ti4_engine::production::WITHHELD_KEY);
+        let mut active = plain.clone();
+        active.active_system = Some(SystemId::new(at::DOCK));
+        let Some(TacticalFacts::Production(facts)) =
+            project_tactical_facts(&active, ContentStore::embedded(), POK, &galaxy, &silent)
+        else {
+            panic!("no production facts");
+        };
+        assert_eq!(
+            find(&facts, "warsun").unavailable,
+            Some(Unavailable::NotOffered)
+        );
 
         // Ships of another player: no ship is produced, the ground forces are.
         let mut blockaded = state.clone();
@@ -1694,6 +1813,323 @@ mod tests {
                 .is_some_and(|unit| unit == "warsun")
         }));
         assert_eq!(find(&facts, "warsun").unavailable, None);
+    }
+
+    /// A use of PRODUCTION that makes one unit only, or units up to a cost, says so for the rest.
+    #[test]
+    fn a_production_of_one_unit_or_up_to_a_cost_says_why_for_the_others() {
+        let content = ContentStore::embedded();
+        let (state, galaxy) = game(LATE_GAME);
+        let mut state = state.clone();
+        let system = SystemId::new(at::DOCK);
+        state.active_system = Some(system.clone());
+        let facts = |window: ProductionWindow| {
+            let mut window = window;
+            window.refresh(&state, content, POK);
+            let choice = window
+                .pending_choice(&state, content, POK)
+                .expect("the seat can produce");
+            match project_tactical_facts(&state, content, POK, &galaxy, &choice) {
+                Some(TacticalFacts::Production(facts)) => facts,
+                other => panic!("no production facts: {other:?}"),
+            }
+        };
+        let reason = |facts: &ProductionFacts, id: &str| {
+            facts
+                .units
+                .iter()
+                .find(|unit| unit.unit == id)
+                .unwrap_or_else(|| panic!("no {id}"))
+                .unavailable
+        };
+        let only = facts(
+            ProductionWindow::new(&state, content, POK, &seat(), &system)
+                .with_only_unit(Some("cruiser2".to_owned())),
+        );
+        assert_eq!(reason(&only, "cruiser2"), None);
+        assert_eq!(reason(&only, "warsun"), Some(Unavailable::OnlyAnother));
+        let cheap = facts(
+            ProductionWindow::new(&state, content, POK, &seat(), &system)
+                .with_max_unit_cost(Some(2)),
+        );
+        assert_eq!(reason(&cheap, "cruiser2"), None);
+        assert_eq!(reason(&cheap, "dreadnought2"), Some(Unavailable::TooCostly));
+    }
+
+    /// What pays and what counts comes from the engine: Archon's Gift pays a planet with its
+    /// influence, and the space docks hold fighters that Fighter II would put on the fleet pool.
+    #[test]
+    fn the_production_facts_have_the_faces_and_the_counts_of_the_engine() {
+        let (state, galaxy) = game(LATE_GAME);
+        let (_, facts) = production(&state, &galaxy, at::DOCK);
+        assert!(facts.planets.iter().all(|planet| planet.face.is_none()));
+        assert_eq!(facts.commodities, 0);
+        assert!(facts.fleet.fighter_support > 0, "{:?}", facts.fleet);
+        assert!(facts.fleet.fighters_to_fleet_pool, "Fighter II");
+        assert_eq!(facts.fleet.fleet_limit, facts.fleet_supply.limit);
+        let standing = facts.fleet.standing();
+        assert_eq!(
+            (
+                standing.fleet_charged,
+                standing.consumed,
+                standing.transport
+            ),
+            (
+                facts.fleet_supply.charged,
+                facts.transport.used,
+                facts.transport.limit
+            )
+        );
+
+        let mut gifted = state.clone();
+        gifted.player_mut(&seat()).expect("seat A").breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("xxchabt"));
+        let (_, facts) = production(&gifted, &galaxy, at::DOCK);
+        let content = ContentStore::embedded();
+        let influence = |planet: &str| {
+            ti4_engine::production::planet_value_now(
+                &gifted,
+                content,
+                POK,
+                &ti4_model::id::PlanetId::new(planet),
+                ti4_engine::production::Spend::Influence,
+            )
+        };
+        let faced: Vec<_> = facts
+            .planets
+            .iter()
+            .filter(|planet| planet.face.is_some())
+            .collect();
+        assert!(!faced.is_empty(), "{:?}", facts.planets);
+        // The board has the values of a planet with its attachments, where they differ.
+        let board =
+            crate::projection::project_board_view_full(&state, content, POK, &[], None, &[], None);
+        let attached: Vec<_> = board
+            .systems
+            .values()
+            .flat_map(|system| system.planets.values())
+            .filter(|planet| !planet.attachments.is_empty())
+            .collect();
+        assert!(!attached.is_empty());
+        assert!(
+            attached
+                .iter()
+                .any(|planet| planet.resources.is_some() || planet.influence.is_some()),
+            "{attached:?}"
+        );
+        for planet in &attached {
+            if let Some(resources) = planet.resources {
+                assert_eq!(
+                    resources,
+                    ti4_engine::production::planet_value_now(
+                        &state,
+                        content,
+                        ti4_model::content_types::FULL,
+                        &planet.planet_id,
+                        ti4_engine::production::Spend::Resources,
+                    )
+                );
+            }
+        }
+        for planet in faced {
+            assert_eq!(planet.face.as_deref(), Some("influence"));
+            assert_eq!(planet.worth, influence(&planet.planet));
+        }
+    }
+
+    #[test]
+    fn every_scenario_of_three_seats_deals_cards_that_the_engine_knows() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for scenario in SCENARIOS.iter().filter(|scenario| scenario.players == 3) {
+            let (state, _) = start(content, scenario.id, &ids, 42).expect("it starts");
+            let held: Vec<&StrategyCardId> = state
+                .players
+                .iter()
+                .flat_map(|seat| &seat.strategy_cards)
+                .collect();
+            for card in &held {
+                assert!(
+                    ti4_engine::strategy_cards::card_name(content, card.as_str()).is_some(),
+                    "{}: {card}",
+                    scenario.id
+                );
+                assert!(
+                    !state.unclaimed_strategy_cards.contains(card),
+                    "{}: {card} is held and unclaimed",
+                    scenario.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_strategy_scenario_gives_sol_its_card_and_what_the_card_needs() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        let (state, _) = start(content, "strategy_leadership", &ids, 42).expect("it starts");
+        let [sol, hacan] = [&ids[0], &ids[1]].map(|id| state.player(id).expect("a seat"));
+        assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok1leadership")]);
+        assert!(
+            hacan
+                .strategy_cards
+                .iter()
+                .all(|card| card.as_str() != "pok1leadership")
+        );
+        assert_eq!((sol.trade_goods, hacan.trade_goods), (4, 3));
+        assert_eq!(state.active.as_ref(), Some(&ids[0]));
+        // Its command token on a system next to its home, and exhausted planets of another.
+        assert_eq!(state.systems_with_token(&ids[0]).len(), 1);
+        assert!(
+            state
+                .controlled_planets(&ids[0])
+                .iter()
+                .any(|(_, planet)| state.exhausted_planets.contains(*planet))
+        );
+    }
+
+    #[test]
+    fn the_diplomacy_scenarios_exhaust_more_planets_than_diplomacy_readies() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card) in [
+            ("strategy_diplomacy", "pok2diplomacy"),
+            ("strategy_diplomacy_base", "base2"),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            let exhausted = |seat: &PlayerId| {
+                state
+                    .controlled_planets(seat)
+                    .iter()
+                    .filter(|(_, planet)| state.exhausted_planets.contains(*planet))
+                    .count()
+            };
+            assert!(exhausted(&ids[0]) > 2, "{scenario}");
+            assert!(exhausted(&ids[1]) > 2, "{scenario}");
+        }
+    }
+
+    #[test]
+    fn the_construction_scenarios_play_the_card_on_a_table_of_its_set() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card, warfare) in [
+            ("strategy_construction", "pok4construction", "pok6warfare"),
+            ("strategy_construction_base", "base4", "pok6warfare"),
+            ("strategy_construction_te", "te4construction", "te6warfare"),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            assert!(
+                state
+                    .unclaimed_strategy_cards
+                    .contains(&StrategyCardId::new(warfare)),
+                "{scenario}"
+            );
+            assert_eq!(state.unclaimed_strategy_cards.len(), 5, "{scenario}");
+            let pds = state
+                .board
+                .values()
+                .flat_map(|system| system.planet_units.values().flatten())
+                .filter(|unit| unit.owner == ids[0] && unit.type_id.as_str() == "pds")
+                .count();
+            assert_eq!(pds, 1, "{scenario}");
+        }
+    }
+
+    #[test]
+    fn the_imperial_scenarios_reveal_objectives_and_one_holds_mecatol_rex() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, mecatol) in [
+            ("strategy_imperial", false),
+            ("strategy_imperial_mecatol", true),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok8imperial")]);
+            assert_eq!(state.revealed_objectives.len(), 3, "{scenario}");
+            let holds = state
+                .controlled_planets(&ids[0])
+                .into_iter()
+                .any(|(system, _)| ti4_engine::seating::is_mecatol(system.as_str()));
+            assert_eq!(holds, mecatol, "{scenario}");
+            assert_eq!(sol.victory_points, 2 + i32::from(mecatol), "{scenario}");
+        }
+    }
+
+    /// Technology: Sol holds the card and can pay the second research of its primary in more than
+    /// one way.
+    #[test]
+    fn the_technology_scenario_gives_sol_the_card_and_a_payment_to_choose() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        let (state, _) = start(content, "strategy_technology", &ids, 42).expect("it starts");
+        let sol = state.player(&ids[0]).expect("a seat");
+        assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok7technology")]);
+        let plans = ti4_engine::payment::plans(
+            &state,
+            content,
+            ti4_model::content_types::POK,
+            &ids[0],
+            ti4_engine::strategy_cards::TECHNOLOGY_PRIMARY_SECOND_COST,
+            ti4_engine::production::Spend::Resources,
+        );
+        assert!(plans.len() > 1, "several ways to pay six resources");
+    }
+
+    /// Thunder's Edge Warfare is a tactical action in any system, with no command token: its
+    /// question has the facts of an activation, which say that it costs no token, also for the
+    /// system that has the seat's token.
+    #[test]
+    fn the_warfare_scenarios_and_the_free_activation() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card) in [
+            ("strategy_warfare", "pok6warfare"),
+            ("strategy_warfare_te", "te6warfare"),
+        ] {
+            let (state, galaxy) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            let tokens: Vec<SystemId> = state
+                .systems_with_token(&ids[0])
+                .into_iter()
+                .cloned()
+                .collect();
+            assert_eq!(tokens.len(), 1, "{scenario}");
+            if card != "te6warfare" {
+                continue;
+            }
+            let free = |subtype: &str| {
+                let choice = Choice::new(
+                    seat(),
+                    "Warfare: a tactical action without a command token",
+                    ["01", tokens[0].as_str()]
+                        .into_iter()
+                        .map(|system| ChoiceOption::labelled(system, "activate", system))
+                        .collect(),
+                )
+                .contextualized(DecisionContext::new(
+                    seat(),
+                    DecisionSource::Content(card.to_owned()),
+                    subtype,
+                    Phase::Action,
+                    1,
+                ));
+                match project_tactical_facts(&state, content, POK, &galaxy, &choice) {
+                    Some(TacticalFacts::Activation(facts)) => facts,
+                    other => panic!("no activation facts: {other:?}"),
+                }
+            };
+            let facts = free(FREE_ACTIVATION_SUBTYPE);
+            assert!(!facts.costs_token);
+            assert_eq!(facts.systems.len(), 2);
+            assert!(free(ACTIVATION_SUBTYPE).costs_token);
+        }
     }
 
     #[test]
@@ -1757,12 +2193,13 @@ mod tests {
         );
         assert!(!state.relic_deck.contains(&RelicId::new("dynamiscore")));
 
-        // A planet of each deck is free: the two of the free system, one next to seat B, and
-        // the one where every other seat has a token.
+        // A planet of each deck is free: the two of the free system, and one of the industrial
+        // deck. The planet where every other seat has a token is held by the PDS of seat C.
         let explores = |planet: &str| facts.explores.get(&PlanetId::new(planet)).cloned();
         assert_eq!(explores("abyz"), Some(vec!["HAZARDOUS".to_owned()]));
         assert_eq!(explores("abaddon"), Some(vec!["CULTURAL".to_owned()]));
-        assert_eq!(explores("perimeter"), Some(vec!["INDUSTRIAL".to_owned()]));
+        assert_eq!(explores("arnor"), Some(vec!["INDUSTRIAL".to_owned()]));
+        assert_eq!(explores("perimeter"), None);
         assert_eq!(explores("vegamajor"), None);
     }
 

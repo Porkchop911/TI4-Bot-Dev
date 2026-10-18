@@ -691,12 +691,13 @@ pub fn play(
     resolver: &mut Resolver,
     player: &PlayerId,
     alias: &ActionCardId,
+    window: Option<&Event>,
 ) -> Result<bool, TimingError> {
     if !spend(context, player, alias) {
         // Not in hand and not on Garbozia: there was nothing to play.
         return Ok(false);
     }
-    announce(context, resolver, player, alias)
+    announce(context, resolver, player, alias, window)
 }
 
 /// Take the card out of the hand (or off Garbozia) into the discard pile. `false` when the
@@ -720,6 +721,10 @@ fn spend(context: &mut TimingContext<'_>, player: &PlayerId, alias: &ActionCardI
 /// same event either way: Sabotage cancels *another card being played*, and it hooks the WHEN
 /// window of `ACTION_CARD_PLAYED`, which only exists if every path announces before resolving.
 ///
+/// `window` is the event whose window the card was played in (`None` outside any window, as a
+/// component action): what the card will do is read against it, for the questions of the
+/// announcement's own windows (display only, `DecisionContext::pending_effect`).
+///
 /// # Errors
 /// [`TimingError`] when the announcement cannot be resolved.
 pub fn announce(
@@ -727,16 +732,32 @@ pub fn announce(
     resolver: &mut Resolver,
     player: &PlayerId,
     alias: &ActionCardId,
+    window: Option<&Event>,
 ) -> Result<bool, TimingError> {
     let mut payload = BTreeMap::new();
     payload.insert("player".to_owned(), player.to_string().into());
     payload.insert("card".to_owned(), alias.to_string().into());
     let announced = context.event_sequence.next("ACTION_CARD_PLAYED", payload)?;
+    // What the card will do, as its windows show it before it resolves. A pure read: it changes
+    // no state, option or event.
+    let id = announced.id;
+    if let Some(facts) = crate::reaction_preview::pending_facts(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        window.unwrap_or(&announced),
+        alias,
+    ) {
+        resolver.hold_pending_effect(id, facts);
+    }
     context
         .state
         .action_card_plays
         .push((player.clone(), alias.clone()));
-    let announced = resolver.emit_with_context(context, announced, |_, _| {})?;
+    let announced = resolver.emit_with_context(context, announced, |_, _| {});
+    resolver.release_pending_effect(id);
+    let announced = announced?;
     // The card is still spent when cancelled: 1.15 lets a WHEN ability cancel the event, not
     // un-spend the card — and a spent card is a discarded one, so the discard is announced on
     // both exits. Reverse Engineer reads exactly this moment.
@@ -962,6 +983,7 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                         event,
                         offered.iter().map(|card| (card, card.to_string())),
                     ))
+                    .with_pending_effect(resolver.pending_effect(event, &owner))
                     .with_trigger(
                         crate::decision_context::DecisionTrigger::from_event(
                             event,
@@ -990,7 +1012,7 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                 }
                 return Ok(());
             }
-            let played = play(context, resolver, &owner, &chosen)?;
+            let played = play(context, resolver, &owner, &chosen, Some(event))?;
             // Sabotage: "Cancel that action card." The cancelled event is the one that
             // opened this window, and only this closure still holds it: a card's effect
             // signature carries no event, and by the time the played card's effect runs,
@@ -1048,6 +1070,10 @@ pub fn arm(resolver: &mut Resolver, state: &GameState) {
         resolver.register([instinct_training(&owner_name, &seat.id)]);
         // The same for a leader that acts in a window rather than as an action.
         resolver.register([l1z1x_agent(&owner_name, &seat.id)]);
+        // Infantry II's revival (generic card; the faction versions are in their modules).
+        resolver.register(crate::infantry_ii::abilities(&owner_name, &seat.id));
+        // Magen Defense Grid (the Codex 4 printing).
+        resolver.register(crate::magen_defense::abilities(&owner_name, &seat.id));
         // Per-faction modules (`crate::factions`), after the shared slots so existing ordering
         // in every window is unchanged.
         resolver.register(crate::factions::timing_abilities(
@@ -1451,6 +1477,45 @@ mod tests {
             playable_now(&state, content, &b, &sabotage_play, Relation::When).is_empty(),
             "Sabotage does not answer a Sabotage"
         );
+    }
+
+    #[test]
+    fn reverse_engineer_is_offered_only_for_a_component_action_card_in_the_pile() {
+        // "After another player discards an action card that has a component action: Take that
+        // action card from the discard pile." Flank Speed has no component action, so the card
+        // would be spent for nothing; Industrial Initiative has one.
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player()).unwrap().action_cards =
+            vec![ActionCardId::new("reverse_engineer")];
+        let offered = |state: &GameState, event: &Event| {
+            playable_now(state, content, &player(), event, Relation::After)
+                == vec![ActionCardId::new("reverse_engineer")]
+        };
+        let flank = event_with_card("ACTION_CARD_DISCARDED", "b", "fs1");
+        let industrial = event_with_card("ACTION_CARD_DISCARDED", "b", "industrial_initiative");
+        let own = event_with_card("ACTION_CARD_DISCARDED", "a", "industrial_initiative");
+        state.discarded_action_cards = vec![
+            ActionCardId::new("fs1"),
+            ActionCardId::new("industrial_initiative"),
+        ];
+
+        state.rules_version = ti4_model::state::RULES_REVERSE_ENGINEER_QUALIFIER;
+        assert!(!offered(&state, &flank), "no component action: not offered");
+        assert!(offered(&state, &industrial), "a component action: offered");
+        assert!(
+            !offered(&state, &own),
+            "the holder's own discard: not offered"
+        );
+        state.discarded_action_cards = vec![ActionCardId::new("fs1")];
+        assert!(
+            !offered(&state, &industrial),
+            "the card left the pile: not offered"
+        );
+
+        state.rules_version = ti4_model::state::RULES_REVERSE_ENGINEER_QUALIFIER - 1;
+        assert!(offered(&state, &flank), "the old rules offered it anyway");
+        assert!(offered(&state, &industrial), "the old rules offered it");
     }
 
     /// An `INVASION_BEGAN` event: `invader` invades system 18.
@@ -2291,6 +2356,133 @@ mod tests {
         // Only Sabotage answers this window; the preview never names another card.
         let previews = previews_of(&asked);
         assert!(previews.iter().all(|p| p.card.starts_with("sabo")));
+    }
+
+    /// The questions asked when `a` plays `card` in the window of `window` (its type and payload)
+    /// and `b` holds Sabotage: `b` plays it, so the card is cancelled and never resolves.
+    fn sabotage_asked_over(
+        mut state: GameState,
+        card: &str,
+        window: (&str, BTreeMap<String, serde_json::Value>),
+    ) -> Vec<crate::choice::Choice> {
+        struct Sabotages(std::rc::Rc<std::cell::RefCell<Vec<crate::choice::Choice>>>);
+        impl crate::choice::Decider for Sabotages {
+            fn choose(
+                &mut self,
+                choice: &crate::choice::Choice,
+            ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+                self.0.borrow_mut().push(choice.clone());
+                let pick = choice
+                    .options
+                    .iter()
+                    .find(|o| o.id.starts_with("reaction:") && choice.player.as_str() == "b");
+                Ok(pick
+                    .or_else(|| choice.options.iter().find(|o| o.is_decline()))
+                    .unwrap_or(&choice.options[0])
+                    .clone())
+            }
+        }
+        state.player_mut(&PlayerId::new("a")).unwrap().action_cards = vec![ActionCardId::new(card)];
+        state.player_mut(&PlayerId::new("b")).unwrap().action_cards =
+            vec![ActionCardId::new("sabo1")];
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = crate::choice::Table::with_default(Box::new(Sabotages(seen.clone())));
+        let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
+        let mut resolver = Resolver::new(
+            seats.clone(),
+            seats.first().cloned(),
+            crate::choice::Table::default(),
+        );
+        arm(&mut resolver, &state);
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut event_sequence = crate::event::EventSequence::new();
+        let mut context = TimingContext {
+            state: &mut state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut event_sequence,
+            galaxy: None,
+        };
+        let window = context.event_sequence.next(window.0, window.1).unwrap();
+        let played = play(
+            &mut context,
+            &mut resolver,
+            &PlayerId::new("a"),
+            &ActionCardId::new(card),
+            Some(&window),
+        )
+        .unwrap();
+        assert!(!played, "Sabotage cancels the card");
+        let asked = seen.borrow().clone();
+        asked
+    }
+
+    /// The Sabotage question of `asked`: the one `b` answers in the window of the played card.
+    fn sabotage_question(
+        asked: &[crate::choice::Choice],
+    ) -> &crate::decision_context::DecisionContext {
+        asked
+            .iter()
+            .filter_map(|choice| choice.context.as_ref())
+            .find(|context| context.subtype == "reaction_when_ACTION_CARD_PLAYED")
+            .expect("b is asked whether to sabotage")
+    }
+
+    #[test]
+    fn the_sabotage_window_says_what_the_played_card_will_do() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.last_sustain = Some((
+            SystemId::new("27"),
+            PlayerId::new("b"),
+            ti4_model::id::UnitTypeId::new("dreadnought"),
+            PlayerId::new("a"),
+            true,
+        ));
+        let asked = sabotage_asked_over(
+            state,
+            "dh1",
+            (
+                "SUSTAIN_DAMAGE_USED",
+                payload(&[("player", "b".into()), ("system", "27".into())]),
+            ),
+        );
+        let context = sabotage_question(&asked);
+        let pending = context
+            .pending_effect
+            .as_ref()
+            .expect("Direct Hit has a preview");
+        assert_eq!(pending.card, "dh1");
+        assert_eq!(pending.option, "", "it belongs to no option of the window");
+        assert_eq!(pending.effect, "destroy_unit");
+        assert_eq!(
+            crate::phrases::said(&pending.phrase, "b"),
+            "Destroys your dreadnought in System 27, the ship that just sustained damage."
+        );
+        // The offered Sabotage keeps its own preview, and the pending one is display only.
+        assert!(context.previews.iter().all(|p| p.card == "sabo1"));
+        assert!(!context.canonical().contains("destroy_unit"));
+        assert!(context.without_display_fields().pending_effect.is_none());
+    }
+
+    #[test]
+    fn a_played_card_without_a_preview_has_no_pending_effect() {
+        let asked = sabotage_asked_over(
+            crate::fixtures::game(&["a", "b"]),
+            "mining_initiative",
+            ("TURN_BEGAN", payload(&[("player", "a".into())])),
+        );
+        assert!(sabotage_question(&asked).pending_effect.is_none());
+        // And no other question carries one.
+        assert!(
+            asked
+                .iter()
+                .filter_map(|choice| choice.context.as_ref())
+                .all(|context| context.pending_effect.is_none())
+        );
     }
 
     #[test]

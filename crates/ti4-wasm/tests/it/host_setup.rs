@@ -27,6 +27,9 @@ fn the_form_is_offered_cards_factions_maps_and_bots_of_the_table_setup() {
     let _serial = crate::common::serial();
     let model = ti4_host::bots::test_model();
     let form = query(&json!({ "query": "describe" })).unwrap();
+    // The newest versions, for the settings menu.
+    assert_eq!(form["rules_version"], ti4_model::state::RULES_VERSION);
+    assert_eq!(form["bot_version"], ti4_rule_bot::tuning::BOT_VERSION);
     // The options of `ti4_host::setup`, as the server and web2 have them.
     assert_eq!(form["min_players"], *ti4_host::setup::PLAYER_COUNTS.start());
     assert_eq!(form["max_players"], *ti4_host::setup::PLAYER_COUNTS.end());

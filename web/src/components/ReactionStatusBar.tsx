@@ -1,3 +1,5 @@
+import { I48sSwitch } from "./I48sSwitch.tsx";
+import { isI48sOffer } from "../presentation/i48sOffer.ts";
 import React, { useState, useEffect, useMemo } from "react";
 import { readableEventTypes } from "../presentation/participantText.ts";
 import type {
@@ -389,6 +391,8 @@ export const ReactionStatusBar: React.FC<ReactionStatusBarProps> = ({
                 {isCardStep ? "Back, do not play a card (Spacebar)" : "Pass (Spacebar)"}
               </button>
             )}
+
+            {isI48sOffer(choice) && <I48sSwitch />}
 
             <label className="reaction-status-bar__pin">
               <input

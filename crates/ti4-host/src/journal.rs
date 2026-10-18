@@ -9,10 +9,12 @@ use ti4_engine::choice::DecisionRecord;
 use ti4_model::state::Phase;
 
 use crate::clock::Clock;
+use crate::protocol::board_delta::BoardDelta;
 use crate::protocol::server::{
-    EventVisibility, GameEvent, GameEventKind, MovementFact, PublicRoll, SeatDecisionDetail,
-    action_id_for, decision_grouping,
+    DecisionFacts, EventVisibility, GameEvent, GameEventKind, PublicRoll, action_id_for,
+    decision_grouping,
 };
+use crate::protocol::state_fact::Observed;
 
 /// What the caller says about an event it records; the journal fills in the rest.
 #[derive(Debug, Clone)]
@@ -22,9 +24,8 @@ pub struct EventDraft {
     pub version: Option<u64>,
     /// Decisions resolved when the event happened.
     pub decision_count: usize,
-    pub detail: Option<String>,
-    pub movement: Option<MovementFact>,
-    pub seat_detail: Option<SeatDecisionDetail>,
+    /// What the event says about the decision it resolves; empty for every other event.
+    pub facts: DecisionFacts,
 }
 
 /// What to do with an event that a replay of a redo stack produces again.
@@ -93,9 +94,13 @@ pub fn build_event(
         event,
         version,
         decision_count,
-        detail,
-        movement,
-        seat_detail,
+        facts:
+            DecisionFacts {
+                detail,
+                movement,
+                seat_detail,
+                fact,
+            },
     } = draft;
     let action_id = (matches!(event, GameEventKind::DecisionResolved)
         && decision_log
@@ -109,11 +114,7 @@ pub fn build_event(
             }))
     .then(|| action_id_for(decision_log, decision_count))
     .flatten();
-    let action_start_cursor = action_id
-        .as_ref()
-        .and_then(|id| id.strip_prefix("action_"))
-        .and_then(|n| n.parse::<usize>().ok())
-        .and_then(|n| n.checked_sub(1));
+    let action_start_cursor = action_start(action_id.as_deref());
     let grouping = matches!(event, GameEventKind::DecisionResolved)
         .then(|| {
             decision_count
@@ -142,9 +143,49 @@ pub fn build_event(
         stage: grouping.as_ref().and_then(|g| g.5.clone()),
         detail,
         movement,
+        fact,
         seat_detail,
         private_detail: None,
         roll: None,
+        board: None,
+    }
+}
+
+/// The cursor of the selection that `action_id` names.
+fn action_start(action_id: Option<&str>) -> Option<usize> {
+    action_id?
+        .strip_prefix("action_")?
+        .parse::<usize>()
+        .ok()?
+        .checked_sub(1)
+}
+
+/// Where a roll of the action phase belongs: the action under way after `cursor` decisions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RollAction {
+    pub action_id: Option<String>,
+    pub action_start_cursor: Option<usize>,
+    pub action_type: Option<String>,
+    pub action_actor: Option<ti4_model::id::PlayerId>,
+}
+
+/// The [`RollAction`] of a roll after `cursor` decisions of `decision_log`. Empty outside the
+/// action phase.
+#[must_use]
+pub fn roll_action(decision_log: &[DecisionRecord], cursor: usize, phase: Phase) -> RollAction {
+    if phase != Phase::Action {
+        return RollAction::default();
+    }
+    let action_id = action_id_for(decision_log, cursor);
+    let grouping = cursor
+        .checked_sub(1)
+        .and_then(|i| decision_log.get(i))
+        .map(|record| decision_grouping(record, None, decision_log, cursor));
+    RollAction {
+        action_start_cursor: action_start(action_id.as_deref()),
+        action_id,
+        action_type: grouping.as_ref().and_then(|g| g.3.clone()),
+        action_actor: grouping.and_then(|g| g.4),
     }
 }
 
@@ -175,12 +216,14 @@ pub fn build_roll_event(
     clock: &dyn Clock,
     game_id: &str,
     counter: u64,
+    decision_log: &[DecisionRecord],
     cursor: usize,
     round: u32,
     phase: Phase,
     version: Option<u64>,
     roll: PublicRoll,
 ) -> GameEvent {
+    let action = roll_action(decision_log, cursor, phase);
     GameEvent {
         id: format!("{game_id}-{counter}"),
         timestamp: clock.utc_time_string(),
@@ -191,19 +234,107 @@ pub fn build_roll_event(
         batch_id: None,
         batch_start_cursor: None,
         batch_end_cursor: None,
-        action_id: None,
-        action_start_cursor: None,
+        action_id: action.action_id,
+        action_start_cursor: action.action_start_cursor,
         actor: roll.roller.clone(),
         round: Some(round),
         phase: Some(phase),
-        action_type: None,
-        action_actor: None,
+        action_type: action.action_type,
+        action_actor: action.action_actor,
         stage: None,
         detail: Some(roll.describe()),
         movement: None,
+        fact: None,
         seat_detail: None,
         private_detail: None,
         roll: Some(roll),
+        board: None,
+    }
+}
+
+/// The public event of one fact of the state ([`crate::protocol::state_fact`]), grouped as a
+/// roll after `cursor` decisions is.
+#[must_use]
+pub fn build_state_event(
+    clock: &dyn Clock,
+    game_id: &str,
+    counter: u64,
+    decision_log: &[DecisionRecord],
+    cursor: usize,
+    round: u32,
+    phase: Phase,
+    version: Option<u64>,
+    observed: Observed,
+) -> GameEvent {
+    let action = roll_action(decision_log, cursor, phase);
+    GameEvent {
+        id: format!("{game_id}-{counter}"),
+        timestamp: clock.utc_time_string(),
+        version,
+        visibility: EventVisibility::Public,
+        event: GameEventKind::StateChanged,
+        decision_count: Some(cursor),
+        batch_id: None,
+        batch_start_cursor: None,
+        batch_end_cursor: None,
+        action_id: action.action_id,
+        action_start_cursor: action.action_start_cursor,
+        actor: observed.actor,
+        round: Some(round),
+        phase: Some(phase),
+        action_type: action.action_type,
+        action_actor: action.action_actor,
+        stage: None,
+        detail: crate::protocol::state_fact::describe(&observed.fact),
+        movement: None,
+        fact: Some(observed.fact),
+        seat_detail: None,
+        private_detail: None,
+        roll: None,
+        board: None,
+    }
+}
+
+/// The public event of the change of the board of one step ([`crate::protocol::board_delta`]),
+/// grouped as a roll after `cursor` decisions is.
+#[must_use]
+pub fn build_board_event(
+    clock: &dyn Clock,
+    game_id: &str,
+    counter: u64,
+    decision_log: &[DecisionRecord],
+    cursor: usize,
+    round: u32,
+    phase: Phase,
+    version: Option<u64>,
+    board: BoardDelta,
+) -> GameEvent {
+    let action = roll_action(decision_log, cursor, phase);
+    GameEvent {
+        id: format!("{game_id}-{counter}"),
+        timestamp: clock.utc_time_string(),
+        version,
+        visibility: EventVisibility::Public,
+        event: GameEventKind::BoardChanged,
+        decision_count: Some(cursor),
+        batch_id: None,
+        batch_start_cursor: None,
+        batch_end_cursor: None,
+        action_id: action.action_id,
+        action_start_cursor: action.action_start_cursor,
+        actor: None,
+        round: Some(round),
+        phase: Some(phase),
+        action_type: action.action_type,
+        action_actor: action.action_actor,
+        stage: None,
+        detail: None,
+        movement: None,
+        fact: None,
+        seat_detail: None,
+        private_detail: None,
+        roll: None,
+        board: Some(board),
     }
 }
 
@@ -264,9 +395,7 @@ mod tests {
             event,
             version: Some(3),
             decision_count: count,
-            detail: None,
-            movement: None,
-            seat_detail: None,
+            facts: DecisionFacts::default(),
         }
     }
 
@@ -311,6 +440,67 @@ mod tests {
             reconcile_with_redo(true, true, std::slice::from_ref(&old), &[], &kind, 2),
             Reconciled::Duplicate
         );
+    }
+
+    #[test]
+    fn a_roll_of_the_action_phase_belongs_to_the_action_under_way() {
+        use ti4_model::id::PlayerId;
+        let selection = DecisionRecord {
+            player: PlayerId::new("p1"),
+            prompt: "action phase".into(),
+            chosen: "tactical".into(),
+            offered: vec!["tactical".into()],
+            context: None,
+        };
+        let activation = DecisionRecord {
+            prompt: "activate".into(),
+            chosen: "22".into(),
+            offered: vec!["22".into()],
+            context: Some(ti4_engine::decision_context::DecisionContext::new(
+                PlayerId::new("p1"),
+                ti4_engine::decision_context::DecisionSource::Rule("test".into()),
+                "activate_system",
+                Phase::Action,
+                1,
+            )),
+            ..selection.clone()
+        };
+        let log = [activation.clone(), selection, activation];
+        let roll = crate::protocol::server::public_roll(
+            0,
+            &ti4_engine::dice::Roll {
+                reason: "space combat".into(),
+                faces: vec![7],
+                hits_on: Some(7),
+                rerolled: std::collections::BTreeSet::new(),
+                by: Some("p2".into()),
+                system: None,
+                outcome: None,
+                subject: None,
+            },
+            Some("22"),
+        )
+        .unwrap();
+        let clock = ManualClock::new(0, 0);
+        let event = build_roll_event(
+            &clock,
+            "g",
+            1,
+            &log,
+            3,
+            1,
+            Phase::Action,
+            None,
+            roll.clone(),
+        );
+        assert_eq!(event.action_id.as_deref(), Some("action_2"));
+        assert_eq!(event.action_start_cursor, Some(1));
+        assert_eq!(event.action_type.as_deref(), Some("tactical"));
+        assert_eq!(event.action_actor, Some(PlayerId::new("p1")));
+        assert_eq!(event.actor, Some(PlayerId::new("p2")));
+        let status = build_roll_event(&clock, "g", 2, &log, 3, 1, Phase::Status, None, roll);
+        assert_eq!(status.action_id, None);
+        assert_eq!(status.action_type, None);
     }
 
     #[test]

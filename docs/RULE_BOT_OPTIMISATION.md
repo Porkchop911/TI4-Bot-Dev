@@ -149,8 +149,7 @@ constants (`win_margin`, `retreat_margin`, `activation_threshold`, `eager_worth`
 Set with `--bot key=val,key=val` / `--bot-config file.json` (`{"win_margin": 0.7}`), `bot` in a
 matrix, or `--candidate`. `bot_version=1` sets every number of that version (`tuning::for_version`), so
 `compare --baseline bot_version=1 --candidate win_margin=0.5` plays the current bot against version 1.
-`bot_version=5` is the **staging table for the next bot release** (`tuning::v5()` = version 4 plus the decided knobs; `BOT_VERSION`, what new
-games play, stays 4 until Felix decides). Its members so far are `land_all` (the landing step commits every ground force aboard; A/B on 4pBgaBalancedD,
+`bot_version=5` is the **current bot** (`tuning::v5()` = version 4 plus the decided knobs; `BOT_VERSION` is 5 since 2026-10-17: new games, the offline host and the server bots play it; versions 1 to 4 play exactly as before). Its members so far are `land_all` (the landing step commits every ground force aboard; A/B on 4pBgaBalancedD,
 1200 seat-games: neutral, win share +0.04 pp [-1.4, +1.5]) and the three agenda-voting knobs `agenda_value`, `agenda_budget`, `agenda_riders` (docs/BOT_AGENDA_VOTING.md; enabled by Felix's decision). Other candidate knobs are not in it yet, pending decisions: `mecatol_guard` and
 `mecatol_imperial_priority` (branch fb-muaat-warsun). A save with `bot_version` 5 resumes
 (`bot_version_check` covers it). Overrides are per thread (`tuning::set`, `tuning::with`), so a baseline
@@ -164,10 +163,11 @@ A sweep is a loop over `selfplay compare`; the JSON (`--out`) has the estimate a
 ## Golden benchmark and baseline
 
 - `tools/rulebot/golden.json`: 200 games, 4 players seeds 1..100 on `4pHyperlanes` / `4pOuterRim`, 6 players seeds 1..100 on `6pStandard` / `6pOuterRim`.
-- `tools/rulebot/baseline.json`: its summary for the shipped bot (version 4 since round 3, played with `"starting_tech": true` as in `golden.json`; `baseline-v3.json`,
+- `tools/rulebot/baseline.json`: its summary for the shipped bot (version 5 since 2026-10-17; `baseline-v4.json` is version 4 and `bench-v4` checks it; all baselines re-recorded on 2026-10-17: the old files were stale on the engine of that day, v1 to v4 hash-identical before and after the version-5 change; version 4 since round 3, played with `"starting_tech": true` as in `golden.json`; `baseline-v3.json`,
   `baseline-v2.json` and `baseline-v1.json` are versions 3, 2 and 1 on the same seeds without the starting-technology choice (`golden-v2.json`,
   `selfplay.sh bench-v2|bench-v3`, `--bot bot_version=3|2|1`), which still reproduce hash for hash, 200/200), recorded on the build named in `meta.git_rev`
   (AMD EPYC-Genoa, 8 cores, release build, 7 workers, 82 s, other jobs running on the machine).
+- Rules versions: a game plays the newest `RULES_VERSION` unless a setup pins `"rules_version": N` (or `--rules-version N`). `baseline-v1..v4.json` were recorded at rules version 11 and are verified with that pin (`golden-v2.json` for v1 to v3, `golden-v4.json` for v4; `selfplay.sh bench-v1|bench-v2|bench-v3|bench-v4`), 200/200 identical on the line that has versions up to 15. `baseline.json` (v5) was re-recorded on 2026-10-18 at rules version 15: from rules version 12 on the bot is asked new questions (which pool a gained command token goes to, then the Self-Assembly mech, the Grant Reallocation technology, Predictive Intelligence votes, Magen Defense hits) and Antimass Deflectors change space cannon; the v5 bot at pin 11 still reproduces the old baseline 200/200.
 - `tools/rulebot/selfplay.sh bench` runs the set and compares every game's hash, termination and points with the baseline
   (`--verify`): **identical** is the gate for "I did not change the bot or the engine"; **different** is expected
   after a deliberate bot change (judge it with `compare`) and is a regression if the change was meant to be
@@ -735,7 +735,7 @@ recommendation (v3 content minus `nekro_tech`, plus `planner_gap=5`; `tech_pick_
 | `bw_fleet_shape` | off | **off** (direct A/B: build + fleet shape against build only: -0.013 ctrl VP/round [-0.023, -0.003]) |
 
 Replay safety: `for_version(3)` is written out (`v3()` in `tuning.rs`: version 2 plus the three `v3:` knobs, the old `nekro_tech` and
-`planner_gap`, all `bw_*` switches off), so versions 1, 2 and 3 play exactly as before. `BOT_VERSION` is 4; new games, the offline host
+`planner_gap`, all `bw_*` switches off), so versions 1, 2 and 3 play exactly as before. `BOT_VERSION` was 4 until version 5 (above); new games, the offline host
 (`Start::settle_bot_version`), the server's bot seats (they run `Tuning::default()`) and `selfplay` default to it. A save records its
 `bot_version` (HostSave format 2) and resumes with it; a save without the field is version 1. `bot_version_check` now also resumes a
 version-3 save as version 3. The server records no version: a saved server game replayed on a build with v4 plays its bot seats as v4

@@ -1,4 +1,5 @@
-import { boostLines, boostsFor, type PlanetBoost } from "../../presentation/planetValues.ts";
+import { boostsFor, type PlanetBoost } from "@ti4/shared/planets/values.ts";
+import { boostLines } from "../../presentation/planetBoostText.ts";
 import React from "react";
 import {
   CONTROL_SYMBOL_FONT_SIZE,

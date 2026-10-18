@@ -13,13 +13,13 @@ import { SystemDetails } from "./SystemDetails";
 import { useCamera } from "./useCamera";
 
 const MAP_VIEWS: { id: MapViewId; label: string; icon: IconName; legend: string }[] = [
+  { id: "standard", label: "Standard", icon: "coin", legend: "resources / influence per planet" },
   {
-    id: "standard",
-    label: "Standard",
-    icon: "planet",
-    legend: "symbol + number: ships of that player",
+    id: "owner",
+    label: "Owner",
+    icon: "flag",
+    legend: "symbol in a planet: its owner · symbol + number: ships of that player",
   },
-  { id: "economy", label: "Res / Inf", icon: "coin", legend: "resources / influence per planet" },
   { id: "space", label: "Space combat", icon: "cruiser", legend: "ships · average hits per round" },
   {
     id: "ground",
@@ -105,6 +105,13 @@ function SystemInspector({ view }: { view: InspectorView }) {
   );
 }
 
+/**
+ * The inspector of a system is shown: on a phone the step sheet over the map has the choice at its
+ * chosen system (the planets of Construction), and the inspector of that system would cover it.
+ */
+export const showsInspector = (view: BoardView, phone: boolean): boolean =>
+  !!view.inspector && !(phone && view.blocks && view.task?.chosen[view.inspector.system]);
+
 /** The board fills the left of the shell. Everything else on it floats: views, tools, inspector. */
 export function Board({ view, children }: { view: BoardView; children?: ReactNode }) {
   const [mapView, setMapView] = useState<MapViewId>("standard");
@@ -112,8 +119,16 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
   const svg = useRef<SVGSVGElement>(null);
   const galaxy = useRef<HTMLDivElement>(null);
   const camera = useCamera(svg, galaxy, view.tiles);
+  const section = useRef<HTMLElement>(null);
+  // A sheet over the bottom of the board (the step sheet of a phone) covers a part of it: the
+  // systems of the task are framed above it.
+  const covered = () => {
+    const sheet = section.current?.querySelector<HTMLElement>(":scope > [data-covers-board]");
+    const height = galaxy.current?.clientHeight ?? 0;
+    return sheet && height ? Math.min(sheet.offsetHeight / height, 0.8) : 0;
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: the board is framed again only when the data source asks for it
-  useLayoutEffect(() => camera.fitFor(view.taskSystems), [view.fitKey]);
+  useLayoutEffect(() => camera.fitFor(view.taskSystems, covered()), [view.fitKey]);
   const tool =
     "grid h-7 place-items-center rounded-sm border border-line bg-surface text-base text-muted hover:text-text touch:h-9";
   const payment = view.task?.interactive ? view.task.payment : undefined;
@@ -131,8 +146,9 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
   );
   return (
     <section
+      ref={section}
       aria-label="Galaxy board"
-      className="relative flex min-h-0 min-w-0 overflow-hidden bg-board"
+      className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-board"
     >
       <div className="pointer-events-none absolute inset-x-2.5 top-2 z-2 flex flex-wrap items-center gap-x-3 gap-y-1 phone:flex-nowrap phone:gap-x-2">
         <Segmented
@@ -144,9 +160,9 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
         />
         <span className="pointer-events-auto flex-none">
           <Hint label="Map legend">
-            {MAP_VIEWS.find((item) => item.id === mapView)!.legend} · ▼ your command token · α β
-            wormholes · inner ring: ships of one player · red dashed: contested · ✓ system handled
-            in the movement
+            {MAP_VIEWS.find((item) => item.id === mapView)!.legend} · dashed planet: exhausted · ▼
+            your command token · α β wormholes · inner ring: ships of one player · red dashed:
+            contested · ✓ system handled in the movement
           </Hint>
         </span>
         <div
@@ -172,7 +188,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
             +
           </button>
           {fit("Fit task", "Show the systems of this action", "target", () =>
-            camera.fit(view.taskSystems),
+            camera.fit(view.taskSystems, covered()),
           )}
           {fit("Fit board", "Show the full board", "frame", () => camera.fit())}
         </div>
@@ -191,7 +207,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       >
         <GalaxyMap view={view} mapView={mapView} svgRef={svg} />
       </div>
-      {view.inspector && <SystemInspector view={view.inspector} />}
+      {showsInspector(view, phone) && <SystemInspector view={view.inspector!} />}
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}

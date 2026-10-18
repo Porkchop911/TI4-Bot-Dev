@@ -743,6 +743,7 @@ fn secondary_waivers(
         vec![SecondaryWaiver {
             id: "acq".to_owned(),
             label: "resolve the secondary using Acquiescence".to_owned(),
+            worded: None,
         }]
     } else {
         Vec::new()
@@ -1238,6 +1239,29 @@ fn use_leader_strategy_primary(
     Ok(Some((card, ability)))
 }
 
+/// Mathis Mathinus asks `player` whether `other` follows the secondary.
+fn mathis_follower_choice(player: &PlayerId, other: &PlayerId) -> Choice {
+    let named = |template: &str| {
+        crate::phrases::Phrase::of(template).with(
+            "other",
+            other,
+            crate::phrases::Subject::seat(other),
+        )
+    };
+    let prompt = named("Mathis Mathinus: may {other} follow the secondary");
+    let worded = vec![
+        (format!("yes|{other}"), named("let {other} follow")),
+        (format!("no|{other}"), named("not {other}")),
+    ];
+    Choice::new(
+        player.clone(),
+        prompt.label(),
+        crate::phrases::options("follower", &worded),
+    )
+    .phrased_prompt(&prompt)
+    .phrased_options(&worded)
+}
+
 /// Choices offered after Mathis's primary completes, driven one answer per Game step.
 fn leader_strategy_follower_choices(
     state: &GameState,
@@ -1254,23 +1278,7 @@ fn leader_strategy_follower_choices(
         (1..order.len())
             .map(|step| {
                 let other = &order[(start + step) % order.len()];
-                Choice::new(
-                    player.clone(),
-                    format!("Mathis Mathinus: may {other} follow the secondary"),
-                    vec![
-                        ChoiceOption::labelled(
-                            format!("yes|{other}"),
-                            "follower",
-                            format!("let {other} follow"),
-                        ),
-                        ChoiceOption::labelled(
-                            format!("no|{other}"),
-                            "follower",
-                            format!("not {other}"),
-                        ),
-                    ],
-                )
-                .contextualized(decision(
+                mathis_follower_choice(player, other).contextualized(decision(
                     state,
                     player,
                     "winnuhero",
@@ -1340,19 +1348,7 @@ fn use_leader(
     let start = order.iter().position(|who| who == player).unwrap_or(0);
     for step in 1..order.len() {
         let other = order[(start + step) % order.len()].clone();
-        let ask = Choice::new(
-            player.clone(),
-            format!("Mathis Mathinus: may {other} follow the secondary"),
-            vec![
-                ChoiceOption::labelled(
-                    format!("yes|{other}"),
-                    "follower",
-                    format!("let {other} follow"),
-                ),
-                ChoiceOption::labelled(format!("no|{other}"), "follower", format!("not {other}")),
-            ],
-        )
-        .contextualized(decision(
+        let ask = mathis_follower_choice(player, &other).contextualized(decision(
             context.state,
             player,
             "winnuhero",
@@ -2520,6 +2516,18 @@ mod tests {
             Ok(Some((card, crate::strategy_cards::Ability::FreeTactical(target))))
                 if card.as_str() == "te6warfare" && target == system
         ));
+    }
+
+    /// Mathis Mathinus's question names the seat that it asks about (`details.phrases`).
+    #[test]
+    fn mathis_names_the_seat_that_may_follow() {
+        let (player, other) = (PlayerId::new("a"), PlayerId::new("b"));
+        let choice = mathis_follower_choice(&player, &other);
+        let hints = crate::phrases::phrased(&choice);
+        let seat = crate::phrases::Subject::seat(&other);
+        assert_eq!(hints.prompt.expect("named").refs["other"], seat);
+        assert_eq!(hints.options["yes|b"].text, "let {other} follow");
+        assert_eq!(hints.options["no|b"].refs["other"], seat);
     }
 
     #[test]

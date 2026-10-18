@@ -67,3 +67,25 @@ describe("secrets the map cannot serve", () => {
     expect(secretUnreachableNote("sai", { systems: {} })).toBeNull();
   });
 });
+
+describe("combat cap note", () => {
+  it("words the cap on event secrets that print it, and only those", async () => {
+    const m = await import("./secretProgress.ts");
+    expect(m.secretNoProgressNote("btv")).toContain("Only 1 objective can be scored during or after each combat");
+    expect(m.secretNoProgressNote("mew")).toBe("Met by an event: offered the moment it happens");
+    expect(m.secretNoProgressNote("ttfd")).not.toContain("Only 1");
+  });
+
+  it("says choosing one closes the window when several capped secrets are offered", async () => {
+    const { combatCapNote } = await import("./secretProgress.ts");
+    expect(combatCapNote(["mew", "bam"], null).notice).toBeNull();
+    expect(combatCapNote(["btv"], "btv")).toEqual({
+      notice: "Only 1 objective can be scored during or after each combat.",
+      skipped: new Set(),
+    });
+    const two = combatCapNote(["btv", "dyp", "mew"], "btv");
+    expect(two.notice).toContain("scoring one closes the window for the other");
+    expect([...two.skipped]).toEqual(["dyp"]);
+    expect(combatCapNote(["btv", "dyp"], null).skipped.size).toBe(0);
+  });
+});

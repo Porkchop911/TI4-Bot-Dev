@@ -384,6 +384,13 @@ describe("Engine effect previews", () => {
           effect: "cancel_card",
           seats: ["p2"],
           refs: ["fs1"],
+          phrase: {
+            text: "Cancels {0} {1}. The card stays spent and its effect does not happen.",
+            refs: {
+              0: { kind: "seat_possessive", player: "p2" },
+              1: { kind: "action_card", card: "fs1" },
+            },
+          },
         },
       ]),
       ...labels,
@@ -394,7 +401,7 @@ describe("Engine effect previews", () => {
     );
   });
 
-  it("leaves the effect empty for an older server, a damaged preview or an unknown kind", () => {
+  it("leaves the effect empty for an older server, a damaged preview or one without words", () => {
     for (const previews of [undefined, "junk", [{ option: 3 }], [{ option: "reaction:Sol:ACTION_CARD_PLAYED:when", card: "x", effect: "later" }]]) {
       const model = describeReaction({ choice: sabotageOffer(previews), ...labels, viewerSeat: "p1" });
       expect(model.reactions[0].effect).toBeNull();

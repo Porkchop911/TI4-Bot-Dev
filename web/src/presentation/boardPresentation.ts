@@ -2,10 +2,11 @@ import {
   BoardView,
   BoardTileView,
   PlanetMetaView,
+  PlanetView,
   PlayerView,
   PendingChoiceDto,
 } from "../protocol/types.ts";
-import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
+import { planetValuesNow, techSpecialtiesNow, wireBoosts, type PlanetBoost } from "@ti4/shared/planets/values.ts";
 import { SEAT_COLORS } from "./playerDisplay.ts";
 import { isPlanetSelectionChoice } from "./choiceModel.ts";
 import { isPaymentChoice } from "./paymentDraft.ts";
@@ -38,13 +39,12 @@ export interface PlacedUnitPresentation {
   damaged: boolean;
 }
 
-/** Printed values plus what the engine says raises the planet now (see planetValues.ts). */
+/** The values now, as the engine says (see `@ti4/shared/planets/values.ts`), with the boosts. */
 function effective(
   printed: { resources: number; influence: number },
-  dyn: { value_boosts?: { source: string; resources: number; influence: number }[] } | undefined,
+  dyn: PlanetView | undefined,
 ): { resources: number; influence: number; boosts: PlanetBoost[] } {
-  const boosts = wireBoosts(dyn);
-  return { ...applyBoosts(printed.resources, printed.influence, boosts), boosts };
+  return { ...planetValuesNow(printed, dyn), boosts: wireBoosts(dyn) };
 }
 
 export interface PlanetPresentation {
@@ -489,7 +489,7 @@ export function deriveSelectedSystemDetails(
       label: sp.label,
       ...effective(sp, dyn),
       traits: sp.traits || [],
-      techSpecialties: (sp.tech_specialties || []) as TechSpecialty[],
+      techSpecialties: techSpecialtiesNow(sp.tech_specialties, dyn) as TechSpecialty[],
       legendary: Boolean(sp.legendary),
       controlledBy: dyn?.controlled_by || null,
       controllerColor: getPlayerColor(dyn?.controlled_by, seatingOrder),
@@ -734,7 +734,7 @@ export function buildBoardPresentationModel(
         label: sp.label,
         ...effective(sp, dyn),
         traits: sp.traits || [],
-        techSpecialties: (sp.tech_specialties || []) as TechSpecialty[],
+        techSpecialties: techSpecialtiesNow(sp.tech_specialties, dyn) as TechSpecialty[],
         legendary: Boolean(sp.legendary),
         controlledBy: dyn?.controlled_by || null,
         controllerColor: getPlayerColor(dyn?.controlled_by, seatingOrder),

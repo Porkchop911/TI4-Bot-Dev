@@ -3,6 +3,10 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Board, getPlayerColor } from "./Board.tsx";
 import { BoardView } from "../protocol/types.ts";
 import { PaymentDraftProvider } from "../presentation/PaymentDraftContext.tsx";
+import {
+  ProductionPaymentProvider,
+  type ProductionPaymentApi,
+} from "../presentation/ProductionPaymentContext.tsx";
 import { partialContext } from "../test/wire.ts";
 
 const mockBoard: BoardView = {
@@ -888,6 +892,39 @@ describe("Board payment mode", () => {
     expect(screen.getByTestId("planet-fria")).toHaveAttribute("data-payment-staged", "true");
     expect(screen.getByTestId("payment-mark-fria")).toHaveAttribute("aria-label", "Staged: 4 resources, also 0 influence");
     expect(screen.getByTestId("payment-mark-fria")).toHaveTextContent("✓ 4");
+  });
+
+  // Run s2-04-2345: while the shell paid a production's later build from the confirmed plan, the map
+  // still offered "Exhaust planet Qucen'n" for the open question, a toggle no dialog could confirm.
+  it("offers no planets while a production's later payment is answered from the confirmed plan", () => {
+    const plan = (panelNonce: string): ProductionPaymentApi => ({
+      plan: {
+        actor: "p1",
+        system: "34",
+        costs: [2, 2],
+        submitted: 2,
+        mode: "auto",
+        remaining: { planetIds: ["exhaust|fria"], tradeGoods: 0 },
+        panelNonce,
+        handledNonce: "nonce_pay",
+      },
+      confirm: vi.fn(),
+      revert: vi.fn(),
+      askEach: vi.fn(),
+    });
+    const view = (panelNonce: string) => (
+      <ProductionPaymentProvider value={plan(panelNonce)}>
+        <Board board={board} seatingOrder={["p1", "p2"]} pendingChoice={payChoice} viewerSeat="p1" />
+      </ProductionPaymentProvider>
+    );
+    const { rerender } = render(view("nonce_earlier"));
+    expect(screen.getByTestId("planet-fria")).not.toHaveAttribute("data-payment-staged");
+    expect(screen.getByTestId("planet-fria")).not.toHaveAttribute("data-target-candidate");
+    expect(screen.queryByTestId("payment-mark-fria")).toBeNull();
+
+    // The question the player's own panel answers keeps its planets on the map.
+    rerender(view("nonce_pay"));
+    expect(screen.getByTestId("planet-fria")).toHaveAttribute("data-payment-staged", "false");
   });
 
   it("pinch with two pointers zooms the map group and the viewport opts out of page zoom", () => {

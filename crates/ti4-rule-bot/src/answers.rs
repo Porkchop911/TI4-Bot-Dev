@@ -40,6 +40,40 @@ pub fn pick_with(
         "vote_spend_trade_goods" if tuning::vote_rule() => {
             choice.options.iter().position(ChoiceOption::is_decline)
         }
+        // Predictive Intelligence: three more votes cost only the card's ready state, and only if
+        // the outcome loses; the bot always takes them.
+        "vote_predictive_intelligence" if tuning::vote_rule() => choice
+            .options
+            .iter()
+            .position(|option| !option.is_decline()),
+        // Rear Admiral Farran (rules version 16): a free trade good, always taken.
+        "letnev_commander_trade_good" => choice
+            .options
+            .iter()
+            .position(|option| !option.is_decline()),
+        // Magen Defense Grid: the free hit goes where it takes the most. A hit that destroys
+        // outright (no sustain left) beats one a mech would shrug off, then the costliest unit.
+        "magen_defense_hit" => choice
+            .options
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                let key = |o: &ChoiceOption| {
+                    (
+                        o.payload
+                            .get("kills")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false),
+                        o.payload
+                            .get("cost")
+                            .and_then(serde_json::Value::as_f64)
+                            .unwrap_or(0.0),
+                    )
+                };
+                let (ka, kb) = (key(a), key(b));
+                ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+            })
+            .map(|(index, _)| index),
         "politics_choose_speaker" if tuning::vote_rule() => {
             own_seat_option(choice, me).or_else(|| weakest_seat_option(choice, seen))
         }
@@ -368,13 +402,26 @@ fn exhaust_for_vote(
         .trim()
         .to_owned();
     let agenda = agenda_of(choice)?;
-    if tuning::agenda_value() || tuning::agenda_budget() {
-        if let Some(index) = crate::agenda_vote::pick_planet(choice, me, &outcome) {
+    let all: Vec<&str> = choice
+        .details
+        .get("tally")
+        .and_then(serde_json::Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|r| r.as_array()?.first()?.as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    if (tuning::agenda_value() || tuning::agenda_budget())
+        && secret_outcome(agenda, &all, seen, me, bias).is_none()
+    {
+        // The plan is recomputed from the observation at every planet (no memory between
+        // decisions): the old fixed table decides what the valuation cannot.
+        let old = preferred_outcome(agenda, &all, seen, me, bias);
+        if let Some(index) =
+            crate::agenda_vote::pick_planet(choice, seen, me, agenda, &outcome, old)
+        {
             return Some(index);
-        }
-        if crate::agenda_vote::has_plan(me) {
-            // The plan is for another outcome, or its votes are all cast.
-            return choice.options.iter().position(ChoiceOption::is_decline);
         }
     }
     // The outcomes are not listed here; the preference only needs the one being voted.
@@ -436,10 +483,6 @@ fn place_agenda(choice: &Choice, seen: &Observed<'_>, me: &PlayerId) -> Option<u
         }
     }
     let id = if good { "top" } else { "bottom" };
-    if tuning::agenda_budget() {
-        let round = choice.context.as_ref().map_or(seen.round(), |c| c.round);
-        crate::agenda_vote::note_placement(me, round, agenda, good);
-    }
     choice.options.iter().position(|o| o.id == id)
 }
 
@@ -551,6 +594,64 @@ mod tests {
             3,
         ));
         choice
+    }
+
+    #[test]
+    fn magen_defense_hits_what_it_destroys_and_predictive_intelligence_casts() {
+        let state = game(&["a", "b"]);
+        let me = PlayerId::new("a");
+        let target = |id: &str, kills: bool, cost: f64| {
+            ChoiceOption::labelled(id, "magen_defense_hit", id)
+                .with("kills", kills)
+                .with("cost", cost)
+        };
+        let hit = with_subtype(
+            Choice::new(
+                me.clone(),
+                "assign the hit",
+                vec![
+                    target("0", false, 2.0),
+                    target("1", true, 0.5),
+                    target("2", true, 2.0),
+                ],
+            ),
+            "magen_defense_hit",
+        );
+        assert_eq!(
+            pick(&hit, &seen(&state), &me),
+            Some(2),
+            "kills first, then cost"
+        );
+        let votes = with_subtype(
+            Choice::new(
+                me.clone(),
+                "3 more votes",
+                vec![
+                    ChoiceOption::labelled("predictive|cast", "vote_predictive", "cast"),
+                    ChoiceOption::decline(),
+                ],
+            ),
+            "vote_predictive_intelligence",
+        );
+        assert_eq!(pick(&votes, &seen(&state), &me), Some(0));
+    }
+
+    #[test]
+    fn the_farran_trade_good_is_always_taken() {
+        let state = game(&["a", "b"]);
+        let me = PlayerId::new("a");
+        let offer = with_subtype(
+            Choice::new(
+                me.clone(),
+                "Rear Admiral Farran: gain 1 trade good",
+                vec![
+                    ChoiceOption::labelled("gain", "letnev_commander_trade_good", "gain"),
+                    ChoiceOption::decline(),
+                ],
+            ),
+            "letnev_commander_trade_good",
+        );
+        assert_eq!(pick(&offer, &seen(&state), &me), Some(0));
     }
 
     #[test]

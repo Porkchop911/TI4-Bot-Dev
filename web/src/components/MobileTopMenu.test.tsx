@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MobileTopMenu, menuAttention } from "./MobileTopMenu.tsx";
 import { TurnStatusBar, shortStatusText } from "./TurnStatusBar.tsx";
+import { summarizeVersions } from "../versionInfo.ts";
 import { Board } from "./Board.tsx";
 import { MobileMenuSlotContext } from "../presentation/MobileMenuSlot.tsx";
 import type { BoardView } from "../protocol/types.ts";
@@ -155,5 +156,24 @@ describe("Board controls on a phone", () => {
     expect(screen.getByTestId("board-chrome")).not.toHaveClass("board-chrome--compact");
     expect(screen.getByTestId("map-overlay-toolbar")).toBeInTheDocument();
     expect(screen.getByTitle("Zoom In")).toBeInTheDocument();
+  });
+});
+
+describe("MobileTopMenu versions", () => {
+  it("lists the bot and rules version and flags older rules", () => {
+    const versions = summarizeVersions({
+      hosted: { botVersion: 4, botRecorded: true, newestBot: 5, newestRules: 11 },
+      state: { rules_version: 9 },
+      webCommit: "abc12345",
+    });
+    render(
+      <MobileTopMenu attention={null} status={null} versions={versions} onOpenTechnologies={vi.fn()} onOpenObjectives={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId("top-menu-button"));
+    expect(screen.getByTestId("version-bot").textContent).toContain("version 4");
+    expect(screen.getByTestId("version-rules").textContent).toContain("version 9");
+    expect(screen.getByTestId("version-rules").textContent).toContain("newest this build knows: 11");
+    expect(screen.getByTestId("version-rules-note").textContent).toContain("keeps the older rules");
+    expect(screen.getByTestId("version-web-commit").textContent).toBe("abc12345");
   });
 });

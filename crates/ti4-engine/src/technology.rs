@@ -87,6 +87,14 @@ pub fn owns_det(state: &GameState, player: &PlayerId) -> bool {
         .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("det")))
 }
 
+/// Whether this player holds the technology with this id.
+#[must_use]
+pub fn owns_technology(state: &GameState, player: &PlayerId, id: &str) -> bool {
+    state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new(id)))
+}
+
 /// Spend Gravity Drive's once-per-tactical-action movement bonus.
 #[must_use]
 pub fn use_gravity_drive(state: &mut GameState, player: &PlayerId) -> bool {
@@ -416,6 +424,7 @@ pub fn end_turn(
                     options,
                 ),
                 state,
+                content,
                 "restack",
                 None,
             )
@@ -611,6 +620,141 @@ pub fn production_used(
 
     state.production_discount_remaining = discount;
     Ok(())
+}
+
+/// Self-Assembly Routines: "After 1 or more of your units use PRODUCTION, you may exhaust this
+/// card to place 1 mech from your reinforcements on a planet you control in that system."
+///
+/// Asked once at the end of a use of PRODUCTION that produced units, only when the card is owned
+/// and ready, a mech is left in the reinforcements and the player controls a planet in `system`.
+/// A single planet is still a question: the exhaust is a "may". Not asked for games below
+/// [`ti4_model::state::RULES_SELF_ASSEMBLY`]. (The card's second ability is [`timing_abilities`].)
+///
+/// # Errors
+/// [`IllegalChoice`] if a decider answers with something not offered.
+pub fn self_assembly_after_production(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Result<(), IllegalChoice> {
+    let sar = TechnologyId::new("sar");
+    let (content, sources) = (ctx.content, ctx.sources);
+    if state.rules_version < ti4_model::state::RULES_SELF_ASSEMBLY
+        || !state.player(player).is_some_and(|seat| {
+            seat.technologies.contains(&sar) && !seat.exhausted_technologies.contains(&sar)
+        })
+    {
+        return Ok(());
+    }
+    let Some(mech) = crate::action_cards::placed_unit_id(state, content, sources, player, "mech")
+    else {
+        return Ok(());
+    };
+    if crate::supply::allowed(state, content, sources, player, &mech, 1) == 0 {
+        return Ok(());
+    }
+    let planets: Vec<_> = state
+        .controlled_planets(player)
+        .into_iter()
+        .filter(|(here, _)| *here == system)
+        .map(|(_, planet)| planet.clone())
+        .collect();
+    if planets.is_empty() {
+        return Ok(());
+    }
+    let mut options: Vec<ChoiceOption> = planets
+        .iter()
+        .map(|planet| {
+            ChoiceOption::labelled(
+                planet.as_str(),
+                "self_assembly",
+                format!("exhaust Self-Assembly Routines to place a mech on {planet}"),
+            )
+        })
+        .collect();
+    options.push(ChoiceOption::decline());
+    let choice = Choice::new(
+        player.clone(),
+        "Self-Assembly Routines: exhaust to place 1 mech from your reinforcements on a planet you control in this system",
+        options,
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("sar".to_owned()),
+        "self_assembly_mech",
+        state.phase,
+        state.round,
+    ));
+    let galaxy = ctx.timing.as_ref().and_then(|handle| handle.galaxy);
+    let answer = ctx
+        .table
+        .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+    if answer.is_decline() {
+        return Ok(());
+    }
+    let Some(planet) = planets.iter().find(|planet| planet.as_str() == answer.id) else {
+        return Ok(());
+    };
+    if let Some(seat) = state.player_mut(player) {
+        seat.exhausted_technologies.insert(sar);
+    }
+    state
+        .system_mut(system)
+        .planet_units
+        .entry(planet.clone())
+        .or_default()
+        .push(ti4_model::units::Unit::new(mech, player.clone()));
+    Ok(())
+}
+
+/// Self-Assembly Routines, second ability: "After 1 of your mechs is destroyed, gain 1 trade
+/// good." Listens to `GROUND_FORCE_DESTROYED`, which ground combat, bombardment, action cards,
+/// agendas and unit abilities announce for every ground force they destroy. Each destroyed mech
+/// is its own event, so two mechs lost together pay two trade goods ("after 1 of your mechs"
+/// is read per mech, as Letani Warrior II reads per unit). A sustained hit destroys nothing.
+/// Mandatory. Rules version [`ti4_model::state::RULES_SELF_ASSEMBLY`] and later; any seat that
+/// holds the card reacts, whatever its faction.
+///
+/// Not covered: a mech lost as cargo when its transporting ship is destroyed, which no ground
+/// force event announces.
+pub(crate) fn timing_abilities(owner_name: &str, seat: &PlayerId) -> Vec<crate::timing::Ability> {
+    use crate::timing::{Ability, Relation};
+    let owner = seat.clone();
+    let condition_owner = seat.clone();
+    vec![
+        Ability::stateful(
+            format!("tech:{owner_name}:sar:GROUND_FORCE_DESTROYED:after"),
+            seat.clone(),
+            "GROUND_FORCE_DESTROYED",
+            Relation::After,
+            std::sync::Arc::new(move |_event, resolver, context| {
+                crate::supply::gain_trade_goods_via(
+                    context,
+                    resolver,
+                    &owner,
+                    1,
+                    "self_assembly_routines",
+                )?;
+                Ok(())
+            }),
+        )
+        .with_stateful_condition(std::sync::Arc::new(move |event, _, context| {
+            context.state.rules_version >= ti4_model::state::RULES_SELF_ASSEMBLY
+                && event.text("player") == Some(condition_owner.as_str())
+                && context
+                    .state
+                    .player(&condition_owner)
+                    .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("sar")))
+                && event.text("unit").is_some_and(|unit| {
+                    crate::supply::base_type_of(
+                        context.content,
+                        context.sources,
+                        &UnitTypeId::new(unit),
+                    ) == "mech"
+                })
+        })),
+    ]
 }
 
 /// Resolve technology effects caused by this player gaining control of a planet.
@@ -874,6 +1018,14 @@ pub fn owned_colours(
     held
 }
 
+/// Psychoarchaeology (effect 1, rules version 15): the player's technology specialties can be used
+/// without exhausting their planets, exhausted or not.
+#[must_use]
+pub fn psychoarchaeology_frees_specialties(state: &GameState, player: &PlayerId) -> bool {
+    state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
+        && owns_technology(state, player, "pa")
+}
+
 /// Technology specialties on the planets this player controls, by colour.
 ///
 /// A specialty stands in for one prerequisite of its colour (90.8), which is most of why a
@@ -886,8 +1038,9 @@ pub fn specialties(
     player: &PlayerId,
 ) -> BTreeMap<&'static str, usize> {
     let mut found = BTreeMap::new();
+    let free = psychoarchaeology_frees_specialties(state, player);
     for (_, planet) in state.controlled_planets(player) {
-        if state.exhausted_planets.contains(planet) {
+        if !free && state.exhausted_planets.contains(planet) {
             continue;
         }
         for specialty in crate::planets::tech_specialties_now(state, content, sources, planet) {
@@ -1037,6 +1190,37 @@ pub(crate) fn prerequisites_met(
     player: &PlayerId,
     alias: &TechnologyId,
 ) -> bool {
+    prerequisites_met_with(state, content, sources, player, alias, true)
+}
+
+/// AI Development Algorithm (effect 1, rules version 15): when researching a unit upgrade, the
+/// ready card ignores 1 prerequisite. The card is exhausted by [`research`] only when the other
+/// waivers and holdings fall short without it.
+fn aida_waiver(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> usize {
+    let card = TechnologyId::new("aida");
+    usize::from(
+        state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
+            && is_unit_upgrade(content, alias)
+            && state.player(player).is_some_and(|seat| {
+                seat.technologies.contains(&card) && !seat.exhausted_technologies.contains(&card)
+            }),
+    )
+}
+
+/// [`prerequisites_met`], optionally leaving out AI Development Algorithm's waiver.
+fn prerequisites_met_with(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+    with_aida: bool,
+) -> bool {
     let held = owned_colours(state, content, player);
     let specialties = specialties(state, content, sources, player);
     // A faction may waive whole prerequisite slots — Jol-Nar's Brilliant on anything, Analytical
@@ -1074,6 +1258,9 @@ pub(crate) fn prerequisites_met(
     // and the Research Teams, for the same reason -- they are all "ignore a prerequisite" and the
     // requirement is checked once.
     waivable += crate::relics::prerequisite_waivers(state, player);
+    if with_aida {
+        waivable += aida_waiver(state, content, player, alias);
+    }
     // Publicize Weapon Schematics waives war sun prerequisites for everyone once anybody owns one.
     // A whole-requirement waiver, not a budget: the card says "ignore all prerequisites".
     if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
@@ -1401,12 +1588,68 @@ fn exhaust_specialties_for_research(
     player: &PlayerId,
     alias: &TechnologyId,
 ) {
+    // Computed before AI Development Algorithm is exhausted: its waiver is part of the count.
+    let planets = specialty_planets(state, content, sources, player, alias);
+    if aida_spent_by_research(state, content, sources, player, alias)
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.exhausted_technologies
+            .insert(TechnologyId::new("aida"));
+    }
+    for planet in planets {
+        state.exhaust_planet(planet);
+    }
+}
+
+/// AI Development Algorithm is exhausted by a research of `alias` only when nothing else covers
+/// its prerequisites.
+fn aida_spent_by_research(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> bool {
+    !crate::laws::war_sun_prerequisites_waived(state, content, alias)
+        && !prerequisites(content, alias).is_empty()
+        && aida_waiver(state, content, player, alias) > 0
+        && !prerequisites_met_with(state, content, sources, player, alias, false)
+}
+
+/// The ready planets whose technology specialties a research of `alias` exhausts for its
+/// prerequisites, as [`research`] takes them: none when the research goes through Inheritance
+/// Systems or a faction waiver. A payment for that research must leave them ready.
+#[must_use]
+pub fn specialties_spent_by_research(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
+    if !can_research(state, content, sources, player, alias)
+        || !prerequisites_met(state, content, sources, player, alias)
+        || faction_waiver_required(state, content, sources, player, alias)
+    {
+        return Vec::new();
+    }
+    specialty_planets(state, content, sources, player, alias)
+}
+
+/// The specialty planets that [`exhaust_specialties_for_research`] exhausts.
+fn specialty_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
     if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
-        return;
+        return Vec::new();
     }
     let reqs = prerequisites(content, alias);
     if reqs.is_empty() {
-        return;
+        return Vec::new();
     }
     let held = owned_colours(state, content, player);
     let mut waivable = crate::faction_abilities::waived_prerequisites(
@@ -1420,6 +1663,11 @@ fn exhaust_specialties_for_research(
         waivable += crate::laws::research_team_waivers(state, player, colour);
     }
     waivable += crate::relics::prerequisite_waivers(state, player);
+    // AI Development Algorithm: spent only when nothing else covers the prerequisites
+    // (exhausted by `exhaust_specialties_for_research`).
+    if aida_spent_by_research(state, content, sources, player, alias) {
+        waivable += 1;
+    }
 
     let mut to_exhaust = Vec::new();
     for (colour, req_count) in reqs {
@@ -1451,9 +1699,11 @@ fn exhaust_specialties_for_research(
             }
         }
     }
-    for planet in to_exhaust {
-        state.exhaust_planet(planet);
+    // Psychoarchaeology: specialties are used without exhausting their planets.
+    if psychoarchaeology_frees_specialties(state, player) {
+        return Vec::new();
     }
+    to_exhaust
 }
 
 /// Research `alias` by taking a selected module waiver and paying its selected legal cost.

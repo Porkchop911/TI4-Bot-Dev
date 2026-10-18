@@ -56,6 +56,11 @@ pub struct GameSpec {
     /// every summary recorded before the choice was played.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub starting_tech: bool,
+    /// Pins the rules version the game is played with (`GameState::rules_version`). Left out: the
+    /// newest the build knows. Old golden benches pin the version their baseline was recorded at,
+    /// so they keep proving that the engine still plays the old games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules_version: Option<u32>,
 }
 
 impl GameSpec {
@@ -75,6 +80,9 @@ impl GameSpec {
         }
         if self.starting_tech {
             line.push_str(" --starting-tech");
+        }
+        if let Some(version) = self.rules_version {
+            line.push_str(&format!(" --rules-version {version}"));
         }
         line
     }
@@ -118,6 +126,9 @@ impl GameSpec {
             &assignments,
             Some(self.card_set.as_deref().unwrap_or(card_set::DEFAULT)),
         )?;
+        if let Some(version) = self.rules_version {
+            state.rules_version = version;
+        }
         match self.speaker.as_str() {
             "seat" => {}
             "random" => {
@@ -277,6 +288,9 @@ pub struct SetupSpec {
     /// The games ask for the starting technology ([`GameSpec::starting_tech`]).
     #[serde(default)]
     pub starting_tech: bool,
+    /// Pins the rules version of every game ([`GameSpec::rules_version`]).
+    #[serde(default)]
+    pub rules_version: Option<u32>,
     pub seeds: Seeds,
 }
 
@@ -420,6 +434,7 @@ impl SetupSpec {
                         card_set: self.card_set.clone(),
                         rotation,
                         starting_tech: self.starting_tech,
+                        rules_version: self.rules_version,
                     });
                 }
             }
@@ -534,6 +549,7 @@ mod tests {
             speaker: "random".to_owned(),
             card_set: None,
             starting_tech: false,
+            rules_version: None,
             seeds: Seeds::Text(seeds.to_owned()),
         }
     }

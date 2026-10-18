@@ -581,7 +581,6 @@ pub fn separate_model_bundles(
     Ok(Some(bundles))
 }
 
-
 /// Read and fully validate one bundle.
 ///
 /// Every §4.4 bound is checked before a live model exists: the directory holds only recognised

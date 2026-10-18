@@ -36,6 +36,7 @@ export const TECHNOLOGIES = CONTENT.technologies;
 export const EXPLORATION_CARDS = CONTENT.explorationCards;
 export const PLANETS = CONTENT.planets;
 export const ATTACHMENTS = CONTENT.attachments;
+export const RELICS = CONTENT.relics;
 
 function exactLookup<T>(catalog: Record<string, T>, id: string): T | undefined {
   return catalog[id];
@@ -206,6 +207,10 @@ export function findPlanetMeta(id: string): PlanetStaticMeta | undefined {
 
 export function findAttachmentMeta(id: string): AttachmentStaticMeta | undefined {
   return exactLookup(ATTACHMENTS, id);
+}
+
+export function findRelicMeta(id: string): { id: string; name: string; text?: string } | undefined {
+  return exactLookup(RELICS, id);
 }
 
 export function getActionCardDescription(cardName: string): string {

@@ -1,15 +1,17 @@
-import { payState } from "../steps/PaymentList";
-import { useEffect, useRef, type ReactNode } from "react";
+import { payState } from "../steps/payState";
+import type { ReactNode } from "react";
 import type {
   ActionView,
   FooterView,
   HelpView,
   InterruptView,
   PillView,
+  ReviewView,
   StepContentView,
   TaskView,
 } from "../../model";
-import { Badge, Button, Eyebrow, Hint, StepTabs, Trail, cx, type TrailItem } from "../../ui";
+import { informs } from "../../model";
+import { Badge, Button, Card, Hint, ListRow, StepTabs, Trail, cx, type TrailItem } from "../../ui";
 import { ActionButton, useDispatch } from "../context";
 import { Blocks } from "../flows/Blocks";
 import { useLink } from "../link";
@@ -18,7 +20,8 @@ import { InvasionStep, SpaceCombatStep } from "../steps/BattleSteps";
 import { MovementStep } from "../steps/MovementStep";
 import { ProductionStep } from "../steps/ProductionStep";
 
-function StepContent({ view }: { view: StepContentView }) {
+/** The content of a step of a tactical action. */
+export function StepContent({ view }: { view: StepContentView }) {
   switch (view.kind) {
     case "activation":
       return <ActivationStep view={view} />;
@@ -33,27 +36,36 @@ function StepContent({ view }: { view: StepContentView }) {
   }
 }
 
-/** A reaction window on top of the open action: the trigger, and the cards that can be played now. */
-function Interrupt({ view }: { view: InterruptView }) {
+/**
+ * A window on top of the open action: a reaction window with the cards that can be played now, or
+ * an ability that asks in the middle of the action, its card in one line with the text behind "?".
+ * What opened it is its name; the heading and its context say it on the screen.
+ */
+export function Interrupt({ view, className }: { view: InterruptView; className?: string }) {
   const { linked, props } = useLink(view.link);
   return (
     <div
       role="group"
-      aria-label={view.eyebrow}
+      aria-label={view.label}
       className={cx(
-        "border-b border-cyan/30 bg-cyan/[.05] px-5 py-2.5 phone:px-3",
+        "space-y-1.5 border-b border-cyan/30 bg-cyan/[.05] px-5 py-2 phone:px-3",
         linked && "bg-cyan/[.09]",
+        className,
       )}
       {...props}
     >
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <Eyebrow className="text-cyan">{view.eyebrow}</Eyebrow>
-        <span className="flex gap-1.5">
-          {view.actions.map((action) => (
-            <ActionButton key={action.label} view={action} size="sm" />
-          ))}
-        </span>
-      </div>
+      {view.source && (
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <strong className="text-base font-semibold">{view.source.name}</strong>
+          <span className="text-xs text-muted">{view.source.type}</span>
+          {view.source.text && (
+            <span className="self-center">
+              <Hint label={`Text: ${view.source.name}`}>{view.source.text}</Hint>
+            </span>
+          )}
+        </p>
+      )}
+      {view.question && <p className="text-sm">{view.question}</p>}
       <Blocks blocks={view.blocks} />
     </div>
   );
@@ -96,50 +108,155 @@ export function ActionFooter({ view: footer }: { view: FooterView }) {
   );
 }
 
+/**
+ * Minimizes the step sheet ("▾", open) or restores it ("▴", minimized): the sheet goes down to its
+ * heading line, and the board is in view.
+ */
+export function SheetToggle({ open, onToggle }: { open: boolean; onToggle?: () => void }) {
+  const label = open ? "Minimize" : "Restore";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-expanded={open}
+      onClick={onToggle}
+      className="-mx-1 shrink-0 self-center rounded px-1 text-muted hover:text-text touch:min-h-9 touch:min-w-9"
+    >
+      <span aria-hidden="true">{open ? "▾" : "▴"}</span>
+    </button>
+  );
+}
+
+/**
+ * The pill of the heading, less what the toolbar already says: "Your decision" is gone, and
+ * "Your decision · Reaction" is "Reaction". A pill that says something else stays as it is.
+ */
+export function pillBeyond(pill: PillView | null, status: string): PillView | null {
+  if (!pill || pill.label === status) {
+    return null;
+  }
+  const prefix = `${status} · `;
+  if (!pill.label.startsWith(prefix)) {
+    return pill;
+  }
+  const rest = pill.label.slice(prefix.length);
+  return { ...pill, label: rest.charAt(0).toUpperCase() + rest.slice(1) };
+}
+
 /** The footer of the open action, whatever its kind. */
 export const footerOf = (view: ActionView): FooterView =>
   view.kind === "tactical" ? view.task.footer : view.footer;
 
-interface TaskPanelProps {
-  heading: string;
-  interrupt: InterruptView | null;
+interface HeadingRowProps {
+  /** Null: the selected step tab names it (a tactical action), and the context leads the row. */
+  heading: string | null;
+  /** What the heading does not say, muted beside it. */
+  context: string | null;
   pill: PillView | null;
+  /** "Not sent" while a choice is staged. */
+  badge: PillView | null;
   trail: TrailItem[];
   edit?: TaskView["edit"];
   /** Rules and explanations. They are shown on hover or click only. */
   help: HelpView[];
+  /** Minimizes the step sheet to its heading line. Absent where the panel is not a sheet. */
+  onMinimize?: () => void;
+}
+
+/**
+ * The first row of the panel: the heading, or for a tactical action its context (the step is the
+ * selected tab under it), with its state and the controls of the sheet.
+ */
+function HeadingRow({
+  heading,
+  context,
+  pill,
+  badge,
+  trail,
+  edit,
+  help,
+  onMinimize,
+}: HeadingRowProps) {
+  const dispatch = useDispatch();
+  const lead = heading ?? context ?? "";
+  return (
+    <div className="flex flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
+      {/* One line on both layouts: the context gives way with "…" first, then the heading; the
+          toggle, the pill, "Not sent" and "?" keep their place on the line. */}
+      <span className="flex min-w-0 max-w-full items-center gap-x-2.5">
+        {onMinimize && <SheetToggle open onToggle={onMinimize} />}
+        <h2
+          className={cx(
+            "min-w-0 truncate font-semibold tracking-[-.2px]",
+            heading ? "text-lg" : "text-base",
+          )}
+          title={lead}
+        >
+          {lead}
+        </h2>
+        {heading && context && (
+          <span className="min-w-0 shrink-[100000] truncate text-sm text-muted" title={context}>
+            {context}
+          </span>
+        )}
+        {pill && (
+          <Badge tone={pill.tone} className="shrink-0">
+            {pill.label}
+          </Badge>
+        )}
+        {badge && (
+          <Badge tone={badge.tone} className="shrink-0">
+            {badge.label}
+          </Badge>
+        )}
+        {help.length > 0 && (
+          <span className="shrink-0">
+            <Hint label={`Rules: ${lead}`}>
+              {help.map((item) => (
+                <p key={item.title}>
+                  <strong className="block">{item.title}</strong>
+                  {item.text}
+                </p>
+              ))}
+            </Hint>
+          </span>
+        )}
+      </span>
+      <Trail items={trail} />
+      {edit && (
+        <Button
+          tone="quiet"
+          size="sm"
+          icon="edit"
+          className="ml-auto"
+          disabled={edit.disabled}
+          title={edit.hint}
+          onClick={() => dispatch({ type: "editStep", step: edit.step })}
+        >
+          {edit.label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** The open step: the band of a window, the content, and a footer that says what the main button does. */
+function TaskPanel({
+  interrupt,
+  footer,
+  contentKey,
+  labelledBy,
+  children,
+}: {
+  interrupt: InterruptView | null;
   /** Null when the shell shows the footer itself. */
   footer: FooterView | null;
   /** Scroll position is kept while this stays the same. */
   contentKey: string;
   labelledBy?: string;
-  reveal: string | null;
   children: ReactNode;
-}
-
-/** The open step: heading with its state, the content, and a footer that says what the main button does. */
-function TaskPanel({
-  heading,
-  interrupt,
-  pill,
-  trail,
-  edit,
-  help,
-  footer,
-  contentKey,
-  labelledBy,
-  reveal,
-  children,
-}: TaskPanelProps) {
-  const dispatch = useDispatch();
-  const content = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (reveal) {
-      content.current
-        ?.querySelector(`[data-link~="${reveal}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    }
-  }, [reveal]);
+}) {
   return (
     <section
       id="step-panel"
@@ -148,38 +265,9 @@ function TaskPanel({
       tabIndex={-1}
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
-        <h2 className="text-lg font-semibold tracking-[-.2px]">{heading}</h2>
-        {pill && <Badge tone={pill.tone}>{pill.label}</Badge>}
-        {help.length > 0 && (
-          <Hint label={`Rules: ${heading}`}>
-            {help.map((item) => (
-              <p key={item.title}>
-                <strong className="block">{item.title}</strong>
-                {item.text}
-              </p>
-            ))}
-          </Hint>
-        )}
-        <Trail items={trail} />
-        {edit && (
-          <Button
-            tone="quiet"
-            size="sm"
-            icon="edit"
-            className="ml-auto"
-            disabled={edit.disabled}
-            title={edit.hint}
-            onClick={() => dispatch({ type: "editStep", step: edit.step })}
-          >
-            {edit.label}
-          </Button>
-        )}
-      </div>
       {interrupt && <Interrupt view={interrupt} />}
       <div
         key={contentKey}
-        ref={content}
         className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-5 pt-3 pb-4 phone:px-3"
       >
         {children}
@@ -189,106 +277,119 @@ function TaskPanel({
   );
 }
 
+/** The heading of an action: none where the selected step tab says it already. */
+export const headingOf = (view: ActionView): string | null => {
+  const heading = view.kind === "tactical" ? view.task.title : view.heading;
+  return view.tabs.length > 0 && view.tabs[view.selected]?.name === heading ? null : heading;
+};
+
 /**
  * The action panel: one frame for every action. A tactical action has five steps, a strategic action
- * has two, a component action has none. Live, Draft and History use the same frame.
- * The panel has one width for every step.
+ * has two, a component action has none. Live, Draft and an opened turn of the Log use the same frame:
+ * first the heading row with the context and the controls, then the step tabs of a tactical action,
+ * then the step. The panel has one width for every step. It is the viewer's decision (the step
+ * sheet): a block or a step that only informs (`BlockRole`) is not in it, but in the Log.
  */
 export function ActionPanel({
   view,
-  reveal,
+  status,
   footer = true,
+  onMinimize,
 }: {
   view: ActionView;
-  reveal: string | null;
+  /** The status in the toolbar. The pill of the heading does not say it again. */
+  status: string;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;
+  /** Minimizes the sheet to its heading line: "▾" before the heading. */
+  onMinimize?: () => void;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
-  const uncommitted = view.kind === "tactical" ? view.uncommitted : null;
   return (
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {view.past && (
-        <div className="flex items-center justify-between gap-2.5 border-b border-green/25 bg-green/[.07] py-1.5 pr-2.5 pl-4 text-sm">
-          <span>
-            <strong>History</strong> · {view.past.label} · read-only
-          </span>
-          <Button size="sm" iconAfter="arrow" onClick={() => dispatch({ type: "closeHistory" })}>
-            Back to Live
-          </Button>
-        </div>
+      {view.kind === "tactical" ? (
+        <HeadingRow
+          heading={headingOf(view)}
+          context={view.context}
+          pill={pillBeyond(view.task.pill, status)}
+          badge={view.badge}
+          trail={view.task.trail}
+          edit={view.task.edit}
+          help={view.task.help}
+          onMinimize={onMinimize}
+        />
+      ) : (
+        <HeadingRow
+          heading={headingOf(view)}
+          context={view.context}
+          pill={pillBeyond(view.pill, status)}
+          badge={view.badge}
+          trail={view.trail}
+          help={view.help}
+          onMinimize={onMinimize}
+        />
       )}
-      <div className="flex min-h-10 items-center gap-2 border-b border-line bg-surface py-1 pr-2 pl-4">
-        <strong className="whitespace-nowrap">{view.title}</strong>
-        <span className="min-w-0 truncate text-sm text-muted">{view.subtitle}</span>
-        <span className="ml-auto" />
-        {view.badge && <Badge tone={view.badge.tone}>{view.badge.label}</Badge>}
-      </div>
       {view.tabs.length > 0 && (
         <StepTabs
-          label={`${view.title} steps`}
+          label="Tactical action steps"
           tabs={view.tabs}
           selected={view.selected}
           current={view.current}
           onSelect={(step) => dispatch({ type: "selectStep", step })}
         />
       )}
-      {(uncommitted || away) && (
+      {away && (
         <div className="flex flex-none items-center justify-end gap-1.5 border-b border-line px-3 py-[5px]">
-          {uncommitted && (
-            <Button
-              tone="quiet"
-              size="sm"
-              icon="edit"
-              onClick={() => dispatch({ type: "returnToEdit" })}
-            >
-              {uncommitted.name} · uncommitted
-            </Button>
-          )}
-          {away && (
-            <Button
-              tone="quiet"
-              size="sm"
-              iconAfter="arrow"
-              onClick={() => dispatch({ type: "returnToCurrent" })}
-            >
-              Go to current
-            </Button>
-          )}
+          <Button
+            tone="quiet"
+            size="sm"
+            iconAfter="arrow"
+            onClick={() => dispatch({ type: "returnToCurrent" })}
+          >
+            Go to current
+          </Button>
         </div>
       )}
       {view.kind === "tactical" ? (
         <TaskPanel
-          heading={view.task.title}
           interrupt={view.interrupt}
-          pill={view.task.pill}
-          trail={view.task.trail}
-          edit={view.task.edit}
-          help={view.task.help}
           footer={footer ? view.task.footer : null}
           contentKey={view.contentKey}
           labelledBy={`step-tab-${view.selected}`}
-          reveal={reveal}
         >
-          <StepContent view={view.task.content} />
+          {view.task.review && <Review view={view.task.review} />}
+          {/* A step that only informs (a combat that the viewer watches) is of the Log. */}
+          {view.task.role === "decide" && <StepContent view={view.task.content} />}
           <Blocks blocks={view.closing} />
         </TaskPanel>
       ) : (
         <TaskPanel
-          heading={view.heading}
           interrupt={view.interrupt}
-          pill={view.pill}
-          trail={[]}
-          help={view.help}
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}
-          reveal={reveal}
         >
-          <Blocks blocks={view.blocks} />
+          {/* The blocks that only inform (the other seats, what happened) are of the Log. */}
+          <Blocks blocks={view.blocks.filter((block) => !informs(block))} />
           <Blocks blocks={view.closing} />
         </TaskPanel>
       )}
     </aside>
+  );
+}
+
+/** The entry of a draft that no longer fits: one marked row in its step, with what removes it. */
+export function Review({ view }: { view: ReviewView }) {
+  return (
+    <Card role="group" aria-label="Needs review">
+      <ListRow
+        invalid
+        icon={view.icon ?? "alert"}
+        // A sign, not only the colour: this entry no longer fits.
+        title={`✗ ${view.title}`}
+        subtitle={view.reason}
+        controls={view.remove && <ActionButton view={view.remove} size="sm" />}
+      />
+    </Card>
   );
 }

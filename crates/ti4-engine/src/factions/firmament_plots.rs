@@ -114,9 +114,14 @@ pub(crate) fn secondary_waivers(
         && !card.eq_ignore_ascii_case("leadership")
         && puppets(state, follower, ENERVATE).contains(primary)
     {
+        let worded = crate::phrases::Phrase::of(
+            "resolve {primary}'s secondary without a command token (Enervate)",
+        )
+        .with("primary", primary, crate::phrases::Subject::seat(primary));
         vec![SecondaryWaiver {
             id: "enervate".to_owned(),
-            label: format!("resolve {primary}'s secondary without a command token (Enervate)"),
+            label: worded.label(),
+            worded: Some(worded),
         }]
     } else {
         Vec::new()

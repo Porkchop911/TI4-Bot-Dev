@@ -1,0 +1,62 @@
+{
+  "title": "Produce units: capacity meter",
+  "description": "The produce dialog shows the capacity of the system being built in, live as builds are staged: ships there, queued ships, and what needs it (fighters, ground forces placed in space). Orange when queued units would not fit; never blocks. Values come from the engine (details.capacity and per-option capacity_* fields). Synthetic mocked game.",
+  "tag": "web/e2e/screenshots/FN-produce-capacity-meter",
+  "shots": [
+    {
+      "file": "out/1-no-capacity-yet-desktop.png",
+      "heading": "No capacity yet, desktop",
+      "caption": "No ships in the system and nothing queued: Capacity 0 / 0."
+    },
+    {
+      "file": "out/2-carrier-raises-capacity-desktop.png",
+      "heading": "A carrier queued raises capacity, desktop",
+      "caption": "One carrier and two fighters queued: the breakdown shows Queued ships +6 and the meter reads 4 / 6, still green."
+    },
+    {
+      "file": "out/3-fighters-over-capacity-desktop.png",
+      "heading": "Fighters over capacity, desktop",
+      "caption": "Capacity 8 / 4 with 4 fighters over: the meter and Build button turn alert orange, the fighter row is outlined with 'Over capacity: these would be removed'. Building is still allowed."
+    },
+    {
+      "file": "out/4-arborec-planetless-system-desktop.png",
+      "heading": "Arborec, system without a planet, desktop",
+      "caption": "Production in a system with no planet (space-area production): ground forces can only be placed in the space area, so the queued infantry count toward capacity (4 / 2, 2 units over)."
+    },
+    {
+      "file": "out/1-no-capacity-yet-phone.png",
+      "heading": "No capacity yet, phone (390x844)",
+      "caption": "No ships in the system and nothing queued: Capacity 0 / 0."
+    },
+    {
+      "file": "out/2-carrier-raises-capacity-phone.png",
+      "heading": "A carrier queued raises capacity, phone (390x844)",
+      "caption": "One carrier and two fighters queued: the breakdown shows Queued ships +6 and the meter reads 4 / 6, still green."
+    },
+    {
+      "file": "out/3-fighters-over-capacity-phone.png",
+      "heading": "Fighters over capacity, phone (390x844)",
+      "caption": "Capacity 8 / 4 with 4 fighters over: the meter and Build button turn alert orange, the fighter row is outlined with 'Over capacity: these would be removed'. Building is still allowed."
+    },
+    {
+      "file": "out/4-arborec-planetless-system-phone.png",
+      "heading": "Arborec, system without a planet, phone (390x844)",
+      "caption": "Production in a system with no planet (space-area production): ground forces can only be placed in the space area, so the queued infantry count toward capacity (4 / 2, 2 units over)."
+    }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    {
+      "title": "Source. ",
+      "text": "Capacity of each ship, Carrier II, faction and technology modifiers, dock fighter support and the destination of produced units all come from the engine; the dialog only adds them up."
+    },
+    {
+      "title": "Planetless systems. ",
+      "text": "With no planet, the space area is the only destination, so produced ground forces count toward capacity (the engine reports space_placement always)."
+    },
+    {
+      "title": "Over capacity. ",
+      "text": "Units over capacity are removed when production ends. Orange is a warning, not a block."
+    }
+  ]
+}

@@ -99,6 +99,16 @@ export function isProductionPayQuestion(
   return derivePaymentOffer(choice).currency === "Resources";
 }
 
+/** True while the shell answers this payment question from the confirmed plan: no prompt is shown. */
+export function isAnsweredFromPlan(
+  choice: PendingChoiceDto | null | undefined,
+  plan: ProductionPay | null | undefined,
+): boolean {
+  return Boolean(
+    choice && plan?.mode === "auto" && choice.nonce !== plan.panelNonce && isProductionPayQuestion(choice, plan),
+  );
+}
+
 export interface PlanPanel {
   /** The whole production's bill, as the one panel's `owed`. */
   offer: PaymentOffer;

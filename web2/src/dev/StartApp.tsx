@@ -5,12 +5,16 @@ import { SINGLE_ADDRESS } from "../session/savedGame";
 import {
   type OfflineSaveStore,
   type SaveRow,
+  exportSave,
+  importFailure,
+  importSave,
   removeSave,
   saveRows,
   saveStore,
   storeWarning,
   takeLeft,
 } from "../session/saves";
+import { deliverFile } from "./deliverFile";
 import { DEFAULT_NICKNAME, onlineAddress } from "./onlineStart";
 
 /** The saved games of this browser, as the start screen lists them. */
@@ -23,7 +27,8 @@ interface Saves {
 
 /**
  * The bare address: the choice between single player and multiplayer, and the saved games of
- * this browser. "Single player" opens the game of this browser, or the setup of a new one;
+ * this browser. "Single player" opens the setup of a new table; Export and Import of the list
+ * write and take the file of a saved game;
  * "Multiplayer" makes a table on the server and opens its lobby. A saved game opens at its
  * address.
  */
@@ -33,6 +38,8 @@ export function StartApp() {
   );
   const [store, setStore] = useState<OfflineSaveStore | null>(null);
   const [saves, setSaves] = useState<Saves | null>(null);
+  /** Why the last export or import failed. */
+  const [failure, setFailure] = useState<string | null>(null);
   const read = useCallback(async (from: OfflineSaveStore) => {
     const rows = saveRows(await from.list());
     const status = from.status();
@@ -76,6 +83,33 @@ export function StartApp() {
           void removeSave(store, localStorage, id).then(() => read(store));
         }
       }}
+      onExport={async (id) => {
+        if (!store) {
+          return;
+        }
+        setFailure(null);
+        let file: { filename: string; blob: Blob };
+        try {
+          file = await exportSave(store, localStorage, id);
+        } catch {
+          setFailure("The game could not be exported.");
+          return;
+        }
+        await deliverFile(file.filename, file.blob);
+      }}
+      onImport={async (chosen) => {
+        if (!store) {
+          return;
+        }
+        setFailure(null);
+        const text = await chosen.text();
+        try {
+          location.assign(`/${await importSave(store, text)}`);
+        } catch (error) {
+          setFailure(importFailure(error, text));
+        }
+      }}
+      failure={failure}
       onDeleteOld={() => {
         if (store) {
           void store.removeUnreadable().then(() => read(store));

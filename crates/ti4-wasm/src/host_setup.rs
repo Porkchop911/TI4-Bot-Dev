@@ -751,6 +751,16 @@ pub fn describe() -> serde_json::Value {
             ti4_content::provenance::embedded_digest().corpus.into(),
         );
         object.insert("engine_build".to_owned(), env!("CARGO_PKG_VERSION").into());
+        // Display only (the settings menu): the newest versions this engine knows. A game keeps
+        // the versions stored with it; these never reach a checksum or a save.
+        object.insert(
+            "rules_version".to_owned(),
+            ti4_model::state::RULES_VERSION.into(),
+        );
+        object.insert(
+            "bot_version".to_owned(),
+            ti4_rule_bot::tuning::BOT_VERSION.into(),
+        );
     }
     options
 }

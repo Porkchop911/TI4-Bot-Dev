@@ -922,6 +922,7 @@ fn a_rift_die_says_whether_the_ship_survived() {
         by: None,
         system: None,
         outcome: None,
+        subject: None,
     };
     let survived = view::roll_line(frame, &rift(7), content);
     assert!(

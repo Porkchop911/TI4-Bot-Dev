@@ -159,14 +159,15 @@ it("opens the same question again after the answer was refused", async () => {
   );
   await act(async () => result.current.session!.dispatch({ type: "flow", action: "resolve" }));
   expect(game.made.submitChoice).toHaveBeenCalledTimes(1);
-  const answered = main(result.current);
+  const status = () => result.current.session!.view.toolbar.status;
+  expect(status()).toBe("Sent · the game goes on");
 
   // The update of another seat leaves the answer sent.
   await game.tell({ kind: "update", update: { ...menu }, canUndo: false });
-  expect(main(result.current)).toEqual(answered);
+  expect(status()).toBe("Sent · the game goes on");
 
   // The transport says that the answer was refused, and tells the same question again.
   await game.tell({ kind: "rejected", reason: "stale" });
   await game.tell({ kind: "update", update: { ...menu }, canUndo: false });
-  expect(main(result.current)).not.toEqual(answered);
+  expect(status()).toBe("Your decision");
 });

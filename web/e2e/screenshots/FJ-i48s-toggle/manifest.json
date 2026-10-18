@@ -1,0 +1,18 @@
+{
+  "title": "I48S prompt toggle",
+  "description": "The L1Z1X agent I48S (after a player activates a system: exhaust it to let that player replace 1 infantry in the active system with a mech) is asked after every activation. A viewer-local switch now lets the client decline it automatically. The engine still asks; the decline is an ordinary recorded choice. Mocked game; regenerate with npm run screenshots -- FJ.",
+  "tag": "web/e2e/screenshots/FJ-i48s-toggle",
+  "shots": [
+    { "file": "out/1-offer-desktop.png", "heading": "The offer with the switch, desktop", "caption": "Default: asked as before. A checkbox under the question reads \"Don't ask about I48S after each activation (decline it for me)\"." },
+    { "file": "out/1-offer-390x844.png", "heading": "The offer with the switch, phone", "caption": "Same at 390 px wide." },
+    { "file": "out/5-switch-ticked.png", "heading": "Switch ticked in the offer", "caption": "Ticking it applies from the next activation on; this question is still yours to answer." },
+    { "file": "out/2-sheet-ask.png", "heading": "Player sheet, asking", "caption": "L1Z1X players get an \"I48S ask\" button next to Sound, Toasts and Auto." },
+    { "file": "out/3-sheet-skipped.png", "heading": "Player sheet, skipped", "caption": "Switched off the button reads \"I48S skipped\" and is shaded; it stays visible for any faction so it can be switched back on." },
+    { "file": "out/4-declined-toast.png", "heading": "Declined for you", "caption": "With the switch off the client sends decline after a short pause and shows the toast \"I48S skipped (switched off)\"." },
+    { "file": "out/6-after-undo.png", "heading": "After an undo", "caption": "An undo that lands on the offer is asked, never answered again, so the player can undo past it." }
+  ],
+  "notes": [
+    { "title": "When it acts", "text": "Only the agent owner's own client, only when the game moved forward to the offer (history cursor grew, nothing to redo). Page load, reconnect, undo, redo and restore never decline. The setting is stored in this browser only (localStorage key player_ask_i48s)." },
+    { "title": "Not changed", "text": "No engine, rules or checksum change. The question is still asked and the decline is a recorded submit_choice. Ssruu copying I48S uses a different question and is unaffected." }
+  ]
+}

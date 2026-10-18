@@ -21,6 +21,7 @@ import { Tooltip } from "../primitives/index.ts";
 import { useTurnSound } from "../hooks/useTurnSound.ts";
 import { useToastMute } from "../hooks/useToastMute.ts";
 import { useTurnRecapSetting } from "../hooks/useTurnRecapSetting.ts";
+import { useI48sSetting } from "../hooks/useI48sSetting.ts";
 import { useAutoSubmitSetting } from "../hooks/useAutoSubmitSetting.ts";
 import { SecretObjectiveProgress } from "./SecretObjectiveProgress.tsx";
 import { secretProgressOf } from "../presentation/secretProgress.ts";
@@ -277,6 +278,8 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
   const { muted: toastsMuted, toggleMute: toggleToastMute } = useToastMute();
   const { enabled: recapOn, toggle: toggleRecap } = useTurnRecapSetting();
   const { enabled: autoSubmit, toggle: toggleAutoSubmit } = useAutoSubmitSetting();
+  const { ask: askI48s, toggle: toggleI48s } = useI48sSetting();
+  const viewerIsL1z1x = players.some((p) => p.id === userSeat && p.faction === "l1z1x");
 
   // Sort players: current player first, then by turn order
   const sortedPlayers = React.useMemo(() => {
@@ -436,6 +439,31 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
             }}
           >
             {autoSubmit ? "⚡ Auto" : "⚡ Auto off"}
+          </button>
+        )}
+        {userSeat && (viewerIsL1z1x || !askI48s) && (
+          <button
+            type="button"
+            data-testid="i48s-ask-btn"
+            aria-pressed={askI48s}
+            title={
+              askI48s
+                ? "You are asked about the L1Z1X agent I48S after each activation. Click to skip it automatically."
+                : "I48S is declined for you after each activation (the game still asks). Click to be asked again."
+            }
+            onClick={toggleI48s}
+            style={{
+              background: askI48s ? "transparent" : "rgba(148, 163, 184, 0.1)",
+              border: "1px solid #94a3b8",
+              color: "#94a3b8",
+              borderRadius: 4,
+              padding: "4px 8px",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: "500",
+            }}
+          >
+            {askI48s ? "I48S ask" : "I48S skipped"}
           </button>
         )}
         </div>

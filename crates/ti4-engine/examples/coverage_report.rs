@@ -164,7 +164,8 @@ fn main() {
                 .is_some_and(|f| FACTIONS.contains(&f.to_ascii_lowercase().as_str()))
         })
         .count();
-    let missing_ours_leaders = ti4_engine::leaders::unimplemented(content, sources, &FACTIONS).len();
+    let missing_ours_leaders =
+        ti4_engine::leaders::unimplemented(content, sources, &FACTIONS).len();
     row(
         "leaders",
         ours_leaders.saturating_sub(missing_ours_leaders),

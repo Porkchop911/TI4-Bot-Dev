@@ -2,7 +2,7 @@
 //! opened right now.
 //!
 //! A client that wants to prepare a secondary while the primary resolves needs the real
-//! questions (which technologies are researchable and what the 4 resources would be paid with,
+//! questions (which technologies are researchable and how the 4 resources can be paid,
 //! which sites a structure may go on, which units the home system may build), not an estimate
 //! worked out from public data: skips, waivers, discounts, supply and production limits all live
 //! in the engine.
@@ -95,8 +95,9 @@ const fn is_zero(count: &usize) -> bool {
     *count == 0
 }
 
-/// How the engine would pay a Technology secondary's resources: the first plan of
-/// [`crate::payment::plans`], which is the one `paid_research` applies.
+/// The cheapest way to pay a Technology secondary's resources: the first plan of
+/// [`crate::payment::plans`]. The player chooses the payment when the game asks for it
+/// (`pay_resources`, one planet or trade good per question); a lone way is taken without asking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PaymentPreview {
@@ -123,7 +124,8 @@ pub struct SkippedPrompt {
 #[must_use]
 pub fn follow_up_subtypes(card_name: &str) -> &'static [&'static str] {
     match card_name {
-        "Technology" => &["research_technology"],
+        // Technology: the research, then its payment, one planet or trade good per question.
+        "Technology" => &["research_technology", "pay_resources"],
         "Diplomacy" => &["ready_planet"],
         "Construction" => &["place_structure"],
         // Production: the build list, then (after a scripted build) the payment or placement
@@ -372,7 +374,7 @@ fn preview_inner(
     }
 }
 
-/// Technology: the plan `paid_research` would apply for this question's cost.
+/// Technology: the cheapest plan that pays this question's cost.
 fn payment_preview(
     state: &GameState,
     content: &ContentStore,

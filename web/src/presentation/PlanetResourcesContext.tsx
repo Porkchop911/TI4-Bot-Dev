@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo } from "react";
 import type { BoardView } from "../protocol/types.ts";
-import { type PlanetBoost, wireBoosts } from "./planetValues.ts";
+import { type PlanetBoost, wireBoosts } from "@ti4/shared/planets/values.ts";
 
 /** What raises each planet above its printed values, by planet id (planets with no boost are absent). */
 export function planetBoostMap(board: BoardView | null | undefined): Map<string, PlanetBoost[]> {

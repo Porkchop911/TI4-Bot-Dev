@@ -1,7 +1,14 @@
 import { MemoryBackend, StoreError, openOfflineSaveStore } from "@ti4/shared/storage/index.ts";
 import { expect, it } from "vitest";
-import { readLeft, storeLeft } from "./savedGame";
-import { type SavedGameSummary, importFailure, saveRows, takeLeft } from "./saves";
+import { readLeft, storeCrash, storeLeft } from "./savedGame";
+import {
+  type SavedGameSummary,
+  exportSave,
+  importFailure,
+  importSave,
+  saveRows,
+  takeLeft,
+} from "./saves";
 import type { HostSave } from "./wasmTransport";
 
 const summary = (change: Partial<SavedGameSummary> = {}): SavedGameSummary => ({
@@ -33,7 +40,7 @@ it("lists a saved game by its kind, where it is and who plays it here", () => {
   expect(saveRows([summary()], 3 * hour)).toEqual([
     {
       id: "g1",
-      href: "/?single",
+      href: "/?single=g1",
       title: "Single player",
       detail: "Round 2 · action phase · 4 seats · Hacan · 17 answers",
       updated: "3 h ago",
@@ -114,4 +121,37 @@ it("puts the save that a left page kept into the store, unless the store has a l
   await takeLeft(store, local, "Player");
   expect((await store.load("g"))?.save.answers).toEqual(["a", "b"]);
   expect(local.length).toBe(0);
+});
+
+it("exports a game with its last error and the browser, and imports a game of a table as single player", async () => {
+  let ids = 0;
+  const store = await openOfflineSaveStore({
+    backend: new MemoryBackend(),
+    newId: () => `new-${++ids}`,
+  });
+  const local = storage();
+  const meta = {
+    nickname: "Ada",
+    factions: ["sol", null, null, null],
+    engine: { build: "b", contentDigest: "c", wasmSha256: "w" },
+    slot: "single",
+  };
+  const table = { ...save(["a"]), game: { table: { players: [] } } };
+  await store.put("g", table, meta);
+  storeCrash(local, "g", { at: 5, source: "render", message: "boom", decisions: 2 });
+  const { blob } = await exportSave(store, local, "g", "Pixel 9");
+  const text = await blob.text();
+  expect(JSON.parse(text).report).toEqual({
+    device: "Pixel 9",
+    crash: { at: 5, source: "render", message: "boom", decisions: 2 },
+  });
+  // The import reads the game and leaves the report: a game of a table opens as single player.
+  expect(await importSave(store, text)).toBe("?single=new-1");
+  expect((await store.load("new-1"))?.slot).toBe("single");
+  expect((await store.load("new-1"))?.save.answers).toEqual(["a"]);
+  // A game of a fixed setup keeps the address of its id.
+  await store.put("l", save(["b"]), { ...meta, slot: "local.3.4.1" });
+  const { blob: other } = await exportSave(store, local, "l", "");
+  expect(JSON.parse(await other.text()).report).toEqual({ device: "" });
+  expect(await importSave(store, await other.text())).toBe("?save=new-2");
 });

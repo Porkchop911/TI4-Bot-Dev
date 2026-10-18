@@ -16,6 +16,7 @@ import { explorationToasts, type ExplorationRecordDto } from "../presentation/ex
 import { breakthroughToasts } from "../presentation/breakthroughs.ts";
 import { leaderUnlockToasts, readLeaderStatuses } from "../presentation/leaderUnlocks.ts";
 import { agendaToasts, type AgendaRecordDto, type AgendaToast } from "../presentation/agendaToasts.ts";
+import { relicToasts, type RelicGainDto, type RelicToast } from "../presentation/relicToasts.ts";
 import { buildTurnRecap, trackTurns, type OpenTurn, type TurnRecap } from "../presentation/turnRecap.ts";
 import { isTurnMenuChoice } from "../presentation/turnBar.ts";
 import { trackInvasion, type InvasionToast, type InvasionTracker } from "../presentation/invasionToasts.ts";
@@ -46,6 +47,8 @@ export interface CornerToastsInput {
   breakthroughs?: Readonly<Record<string, string | null>>;
   /** The engine's public agenda log: every finished vote toasts, for every seat (voters too). */
   agendas?: readonly AgendaRecordDto[];
+  /** The engine's public relic log: every relic a player gains toasts, for every seat. */
+  relics?: readonly RelicGainDto[];
   /** The table of the latest snapshot: why the viewer's Imperial scored nothing is read from it. */
   table?: TableView | null;
   /** False until the first snapshot arrived: what is already in the log is history, not news. */
@@ -56,6 +59,8 @@ const MAX_RECAPS = 2;
 const MAX_INVASION_TOASTS = 3;
 const MAX_AGENDA_TOASTS = 2;
 const MAX_ROLL_TOASTS = 3;
+const MAX_RELIC_TOASTS = 3;
+const RELIC_LINGER_MS = 10000;
 
 // What a player gains from an exploration or a breakthrough is read, not glanced at: it stays longer.
 const LINGERING_CATEGORIES: ReadonlySet<ActionToast["category"]> = new Set(["explore", "breakthrough"]);
@@ -86,6 +91,7 @@ export function useCornerToasts({
   explorations,
   breakthroughs,
   agendas,
+  relics,
   table,
   ready,
 }: CornerToastsInput) {
@@ -102,6 +108,7 @@ export function useCornerToasts({
   const [actions, setActions] = useState<Shown[]>([]);
   const [invasionToasts, setInvasionToasts] = useState<InvasionToast[]>([]);
   const [agendaToastList, setAgendaToasts] = useState<AgendaToast[]>([]);
+  const [relicToastList, setRelicToasts] = useState<RelicToast[]>([]);
   const [rollToastList, setRollToasts] = useState<RollToast[]>([]);
   const [notices, setNotices] = useState<{ id: string; text: string; tag: string }[]>([]);
   const tableRef = useRef(table);
@@ -297,6 +304,25 @@ export function useCornerToasts({
     );
   }, [agendas, ready, historyGeneration]);
 
+  // Relic gains come from the state's relic log, like agenda results: what is there at load, or
+  // reappears after undo/redo, is history. Every seat is told, the gainer included.
+  const relicCursor = useRef<number | null>(null);
+  const relicGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (!ready || !relics) return;
+    if (relicCursor.current === null || relicGeneration.current !== historyGeneration) {
+      relicGeneration.current = historyGeneration;
+      relicCursor.current = relics.length;
+      return;
+    }
+    const { toasts, next } = relicToasts(relics, relicCursor.current, viewerSeat);
+    relicCursor.current = next;
+    if (toasts.length === 0 || mutedRef.current) return;
+    setRelicToasts((prev) =>
+      [...prev.filter((t) => !toasts.some((n) => n.id === t.id)), ...toasts].slice(-MAX_RELIC_TOASTS),
+    );
+  }, [relics, ready, historyGeneration, viewerSeat]);
+
   const { showToast } = auto;
   useEffect(() => {
     const auto1 = autoResolvedToast(pendingChoice, viewerSeat);
@@ -330,6 +356,7 @@ export function useCornerToasts({
       setActions([]);
       setInvasionToasts([]);
       setAgendaToasts([]);
+      setRelicToasts([]);
       setRollToasts([]);
       setNotices([]);
     }
@@ -348,6 +375,7 @@ export function useCornerToasts({
       setRecaps((prev) => prev.filter((r) => r.id !== id));
       setInvasionToasts((prev) => prev.filter((t) => t.id !== id));
       setAgendaToasts((prev) => prev.filter((t) => t.id !== id));
+      setRelicToasts((prev) => prev.filter((t) => t.id !== id));
       setRollToasts((prev) => prev.filter((t) => t.id !== id));
       setNotices((prev) => prev.filter((t) => t.id !== id));
       dismissAction(id);
@@ -390,6 +418,19 @@ export function useCornerToasts({
           tag: "Agenda",
         }),
       ),
+      ...relicToastList.map(
+        (t): AutoResolveNotification => ({
+          id: t.id,
+          kind: "relic",
+          decisionType: "",
+          selectedValue: "",
+          actor: t.actor,
+          text: t.text,
+          tag: "Relic",
+          emphasis: t.own,
+          durationMs: RELIC_LINGER_MS,
+        }),
+      ),
       ...rollToastList.map(
         (t): AutoResolveNotification => ({
           id: t.id,
@@ -423,7 +464,7 @@ export function useCornerToasts({
         }),
       ),
     ],
-    [auto.toasts, actions, recaps, invasionToasts, agendaToastList, rollToastList, notices],
+    [auto.toasts, actions, recaps, invasionToasts, agendaToastList, relicToastList, rollToastList, notices],
   );
 
   // Everything that was shown, kept so a toast that faded can be read again.

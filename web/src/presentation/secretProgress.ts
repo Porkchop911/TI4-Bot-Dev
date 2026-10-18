@@ -63,6 +63,50 @@ export const EVENT_SECRETS: ReadonlySet<string> = new Set([
   "uf",
 ]);
 
+/**
+ * Event secrets whose card says "Only 1 objective can be scored during or after each combat."
+ * The engine caps exactly these per combat window (`EventScoreLimit::OnePerPlayer`); Make an
+ * Example of Their World, Turn Their Fleets to Dust, Be a Martyr, Prove Endurance and Drive the
+ * Debate print no such note and may be scored together.
+ */
+export const COMBAT_CAPPED_SECRETS: ReadonlySet<string> = new Set([
+  "dtgs",
+  "sar",
+  "uf",
+  "baf",
+  "btv",
+  "dts",
+  "dyp",
+  "fwp",
+]);
+
+export const COMBAT_CAP_TEXT = "Only 1 objective can be scored during or after each combat.";
+
+export interface CombatCapNote {
+  /** The notice for the top of the secret section, or null when no offered secret is capped. */
+  notice: string | null;
+  /** Offered capped secrets that are given up once `selected` is scored. */
+  skipped: ReadonlySet<string>;
+}
+
+/**
+ * What a scoring window should say about the one-per-combat cap, from the secrets it offers (not
+ * Plots Within Plots options) and the one currently picked. Display only: the engine enforces it.
+ */
+export function combatCapNote(offered: readonly string[], selected: string | null): CombatCapNote {
+  const capped = offered.filter((alias) => COMBAT_CAPPED_SECRETS.has(alias));
+  if (capped.length === 0) return { notice: null, skipped: new Set() };
+  if (capped.length === 1) return { notice: COMBAT_CAP_TEXT, skipped: new Set() };
+  const skipped =
+    selected && capped.includes(selected)
+      ? new Set(capped.filter((alias) => alias !== selected))
+      : new Set<string>();
+  return {
+    notice: `${COMBAT_CAP_TEXT} ${capped.length} of your secrets are met; scoring one closes the window for the other${capped.length > 2 ? "s" : ""}.`,
+    skipped,
+  };
+}
+
 export interface SecretProgressDisplay {
   have: number;
   threshold: number;
@@ -101,6 +145,9 @@ export function secretProgressDisplay(
 
 /** A one-line note for a held secret that has no bar. */
 export function secretNoProgressNote(alias: string): string | null {
+  if (COMBAT_CAPPED_SECRETS.has(alias)) {
+    return `Met by an event: offered the moment it happens. ${COMBAT_CAP_TEXT}`;
+  }
   if (EVENT_SECRETS.has(alias)) return "Met by an event: offered the moment it happens";
   return null;
 }

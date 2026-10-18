@@ -642,6 +642,7 @@ pub(crate) fn timing_abilities(
     hooks()
         .filter_map(|h| h.timing_abilities)
         .flat_map(|f| f(state, owner_name, seat))
+        .chain(crate::technology::timing_abilities(owner_name, seat))
         .chain(borrowed_commanders::timing_abilities(owner_name, seat))
         .chain(borrowed_commanders_b::timing_abilities(owner_name, seat))
         .collect()

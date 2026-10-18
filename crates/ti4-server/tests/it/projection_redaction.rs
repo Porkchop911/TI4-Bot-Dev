@@ -449,12 +449,14 @@ fn event_history_is_projected_to_its_explicit_audience() {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail: Some(ti4_host::protocol::server::SeatDecisionDetail {
                 seat: PlayerId::new("seat_a"),
                 detail: "Private objective: hidden_test".into(),
             }),
             private_detail: None,
             roll: None,
+            board: None,
         },
         GameEvent {
             id: "test-2".to_owned(),
@@ -476,9 +478,11 @@ fn event_history_is_projected_to_its_explicit_audience() {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail: None,
             private_detail: None,
             roll: None,
+            board: None,
         },
     ];
 

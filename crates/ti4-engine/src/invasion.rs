@@ -894,7 +894,15 @@ pub(crate) fn landable_planets(
                 .filter(|planet| planet.in_sources(sources))
                 .map(|_| PlanetId::new(name))
         })
-        .filter(|planet| !crate::seating::is_mecatol_planet(planet.as_str()) || state.custodians_removed)
+        .filter(|planet| {
+            // Before `RULES_TE_MECATOL_LANDING` only the base Mecatol Rex was held back.
+            let mecatol = if state.rules_version >= ti4_model::state::RULES_TE_MECATOL_LANDING {
+                crate::seating::is_mecatol_planet(planet.as_str())
+            } else {
+                planet.as_str() == "mr"
+            };
+            !mecatol || state.custodians_removed
+        })
         // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
         // a space station." They are listed in the system's `planets` array because they carry a
         // planet card, so without this they were offered to every invasion like any other planet --
@@ -1197,6 +1205,7 @@ fn roll_ground(
         .filter(|unit| is_ground_force_here(state, content, sources, system, planet, unit))
         .cloned()
         .collect();
+    let mut sol_die_added = false;
     for (unit_index, unit) in roster.into_iter().enumerate() {
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
@@ -1231,6 +1240,18 @@ fn roll_ground(
         );
         // A galvanized unit rolls 1 additional die for its combat rolls (Last Bastion).
         slot.0 += i64::try_from(crate::factions::bastion::extra_die(&unit)).unwrap_or(0);
+        // The Sol agent's mark, set by `leaders::dispatch_leader` (rules version 16): one ground
+        // force of the chosen type rolls 1 additional die in the round it was used.
+        if !sol_die_added
+            && state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS
+            && state.player(player).is_some_and(|seat| {
+                seat.extra_die_round == Some(state.combat_round_seq)
+                    && seat.extra_die_unit.as_ref() == Some(&unit.type_id)
+            })
+        {
+            slot.0 += 1;
+            sol_die_added = true;
+        }
         slot.0 += crate::factions::borrowed_round_agents::extra_die_for(
             state,
             content,
@@ -2578,6 +2599,7 @@ impl InvasionWindow {
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
         if taken == held
             && victims.len() == 1
             && state
@@ -3330,7 +3352,14 @@ impl InvasionWindow {
             }
         }
         let copied_round = ctx.timing.is_some()
-            && crate::factions::borrowed_round_agents::has_round_copy(state, content, "solagent");
+            && (crate::factions::borrowed_round_agents::has_round_copy(state, content, "solagent")
+                || crate::factions::borrowed_round_agents::has_owner_round_agent(state));
+        // From rules version 16 every ground round is a numbered combat round, so what a card
+        // marks "for this round" (the Sol agent's extra die) cannot outlive it.
+        let numbered = state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS;
+        if numbered && !copied_round {
+            state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+        }
         if copied_round {
             state.combat_round_seq = state.combat_round_seq.saturating_add(1);
             let payload = std::collections::BTreeMap::from([
@@ -3616,6 +3645,7 @@ impl InvasionWindow {
                 harrow_hits: harrow,
             });
         }
+        record_ground_step(state);
         // After the whole round, so a handler sees the board once every hit has landed.
         for (name, payload) in log {
             self.emit_ground_event(state, ctx, name, payload);
@@ -3904,7 +3934,8 @@ impl InvasionWindow {
                             .is_some_and(UnitType::is_ground_force)
                     })
             };
-            if unowned
+            if state.rules_version >= ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL
+                && unowned
                 && holds_ground()
                 && !crate::coexistence::is_coexisting(state, &self.system, &planet, &self.invader)
                 && let Some(deck) =
@@ -4087,7 +4118,16 @@ impl InvasionWindow {
         // `choose_deck` rather than `trait_of`: a planet with two printed traits (several
         // Thunder's Edge worlds do) is the invader's choice of deck, not a fixed pick of
         // whichever trait happens to sort first.
-        // (The exploration itself now resolves in `advance_control`, before control is gained.)
+        // From `RULES_EXPLORE_BEFORE_CONTROL` the exploration resolves in `advance_control`, before
+        // control is gained.
+        if state.rules_version < ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL
+            && previous.is_none()
+            && let Some(deck) = crate::exploration::choose_deck(ctx, state, &self.invader, planet)
+            && let Some(outcome) =
+                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
+        {
+            self.report.explored.push((planet.clone(), outcome));
+        }
     }
 }
 
@@ -4902,6 +4942,7 @@ fn space_cannon_defense(
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
     }
 }
 
@@ -4940,6 +4981,31 @@ pub fn resolve(
         window.settle(state, &mut ctx);
     }
     Ok(window.into_report())
+}
+
+/// The step of the invasion that was just resolved, for the record of the turn
+/// ([`ti4_model::state::FightLog`]): an invasion that ends in this step of the engine leaves no
+/// board that shows it.
+fn record_ground_step(state: &mut GameState) {
+    let Some(active) = state.active_invasion.as_ref() else {
+        return;
+    };
+    let Some(step) = active.last_step.clone() else {
+        return;
+    };
+    // A step that this call did not resolve is still the last one: it is recorded once.
+    if state.fight_log.ground.last().is_some_and(|last| {
+        last.invasion_seq == active.seq && last.system == active.system && last.step == step
+    }) {
+        return;
+    }
+    let record = ti4_model::state::GroundStepRecord {
+        system: active.system.clone(),
+        invasion_seq: active.seq,
+        invader: active.invader.clone(),
+        step,
+    };
+    state.fight_log.ground.push(record);
 }
 
 #[cfg(test)]
@@ -5172,6 +5238,20 @@ mod tests {
     /// whole tile must offer nothing; 109 carries Bellatrix *and* Tsion Station, so it must offer
     /// exactly the real planet -- which is the case that distinguishes "filtered" from "skipped
     /// the tile".
+    /// The Thunder's Edge Mecatol Rex is held back while the custodians are on it from
+    /// `RULES_TE_MECATOL_LANDING`; an older game offers it.
+    #[test]
+    fn the_thunders_edge_mecatol_is_landable_only_in_an_older_game_while_the_custodians_hold_it() {
+        let content = ti4_content::ContentStore::embedded();
+        let mecatol = SystemId::new(crate::seating::MECATOL_TE);
+        let mut state = crate::fixtures::game(&["a"]);
+        assert!(!state.custodians_removed);
+        let landable = |state: &GameState| landable_planets(state, content, ALL_SOURCES, &mecatol);
+        assert!(landable(&state).is_empty(), "{:?}", landable(&state));
+        state.rules_version = ti4_model::state::RULES_TE_MECATOL_LANDING - 1;
+        assert_eq!(landable(&state), [PlanetId::new("mrte")]);
+    }
+
     #[test]
     fn ground_forces_cannot_land_on_a_space_station() {
         let content = ti4_content::ContentStore::embedded();
@@ -6147,8 +6227,9 @@ mod tests {
     fn taking_an_unowned_planet_explores_it_and_taking_one_off_a_rival_does_not() {
         // 35.1. A caller told merely that control changed would explore every conquest and
         // draw cards the rules do not give.
-        let explore_once = |previous_holder: Option<PlayerId>| {
+        let explore_once = |previous_holder: Option<PlayerId>, rules_version: u32| {
             let (mut state, system, planet) = arena();
+            state.rules_version = rules_version;
             // A planet with a trait, so it has a deck to explore into.
             let deck = crate::exploration::trait_of(ContentStore::embedded(), POK, &planet)?;
             state
@@ -6197,11 +6278,15 @@ mod tests {
             Some(window.into_report().explored.len())
         };
 
-        if let Some(unowned) = explore_once(None) {
-            assert_eq!(unowned, 1, "a planet nobody held is explored");
-        }
-        if let Some(conquered) = explore_once(Some(holder())) {
-            assert_eq!(conquered, 0, "a planet taken off a rival is not");
+        // Before control from `RULES_EXPLORE_BEFORE_CONTROL`, after it before.
+        let current = ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL;
+        for rules_version in [current, current - 1] {
+            if let Some(unowned) = explore_once(None, rules_version) {
+                assert_eq!(unowned, 1, "a planet nobody held is explored");
+            }
+            if let Some(conquered) = explore_once(Some(holder()), rules_version) {
+                assert_eq!(conquered, 0, "a planet taken off a rival is not");
+            }
         }
     }
 
@@ -8958,6 +9043,162 @@ mod ground_routes {
             Some(&a()),
             "and 49.5 then does what the event said"
         );
+    }
+
+    /// Self-Assembly Routines' second ability through a real ground combat: seat `b` defends with
+    /// `mechs` mechs against `attackers` infantry, every die hitting, and its trade goods after
+    /// the fight are returned.
+    fn goods_after_a_mech_fight(
+        rules_version: u32,
+        owns_the_card: bool,
+        mechs: usize,
+        attackers: usize,
+    ) -> i32 {
+        let (mut state, system, planet) = arena();
+        state.rules_version = rules_version;
+        state.system_mut(&system).set_control(planet.clone(), b());
+        for _ in 0..attackers {
+            on_planet(&mut state, &system, &planet, "infantry", &a());
+        }
+        for _ in 0..mechs {
+            on_planet(&mut state, &system, &planet, "mech", &b());
+        }
+        if owns_the_card {
+            state
+                .player_mut(&b())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new("sar"));
+        }
+        let before = state.player(&b()).unwrap().trade_goods;
+        let mut window = fight_window(&mut state, &system, &planet);
+        let mut resolver = crate::fixtures::armed_resolver(&state);
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(
+            std::iter::repeat_n("fight", 8),
+        )));
+        let mut dice = Dice::from_faces(std::iter::repeat_n(10, 60));
+        let mut rng = GameRng::new(7);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut ctx = Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: Some(crate::choice::TimingHandle {
+                resolver: &mut resolver,
+                sequence: &mut sequence,
+                galaxy: None,
+            }),
+        };
+        let mut rounds = 0;
+        while !window.is_done() && rounds < 50 {
+            rounds += 1;
+            window
+                .drive(&mut state, &mut ctx)
+                .expect("only offered answers");
+            while window.take_scoring_occurrence().is_some() {}
+            window.settle(&mut state, &mut ctx);
+        }
+        assert!(
+            !state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .is_some_and(|units| units.iter().any(|unit| unit.owner == b())),
+            "every defender fell"
+        );
+        state.player(&b()).unwrap().trade_goods - before
+    }
+
+    #[test]
+    fn self_assembly_routines_pays_a_trade_good_for_a_mech_lost_in_ground_combat() {
+        let now = ti4_model::state::RULES_SELF_ASSEMBLY;
+        assert_eq!(goods_after_a_mech_fight(now, true, 1, 2), 1);
+        assert_eq!(
+            goods_after_a_mech_fight(now, true, 2, 4),
+            2,
+            "one trade good per destroyed mech"
+        );
+        assert_eq!(
+            goods_after_a_mech_fight(now, false, 1, 2),
+            0,
+            "no card, no goods"
+        );
+        assert_eq!(
+            goods_after_a_mech_fight(now - 1, true, 1, 2),
+            0,
+            "a game from before the gate is unchanged"
+        );
+    }
+
+    /// The card pays for mechs only: infantry lost beside the card's owner earn nothing, and a
+    /// mech that only sustains is not destroyed.
+    #[test]
+    fn self_assembly_routines_ignores_infantry_and_a_sustained_mech() {
+        let (mut state, system, planet) = arena();
+        state.system_mut(&system).set_control(planet.clone(), b());
+        on_planet(&mut state, &system, &planet, "infantry", &b());
+        state
+            .player_mut(&b())
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("sar"));
+        crate::factions::hooks_ground::stage_ground_force_destroyed(
+            &mut state,
+            &system,
+            &planet,
+            &Unit::new(UnitTypeId::new("infantry"), b()),
+            "ground_combat",
+        );
+        let before = state.player(&b()).unwrap().trade_goods;
+        flush_staged_with_armed_resolver(&mut state);
+        assert_eq!(state.player(&b()).unwrap().trade_goods, before);
+    }
+
+    /// An action card (or agenda, or ability) stages its kills; the flush announces them and the
+    /// card pays.
+    #[test]
+    fn self_assembly_routines_pays_for_a_mech_destroyed_by_an_action_card() {
+        let (mut state, system, planet) = arena();
+        state
+            .player_mut(&b())
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("sar"));
+        for _ in 0..2 {
+            crate::factions::hooks_ground::stage_ground_force_destroyed(
+                &mut state,
+                &system,
+                &planet,
+                &Unit::new(UnitTypeId::new("mech"), b()),
+                "action_card:test",
+            );
+        }
+        let before = state.player(&b()).unwrap().trade_goods;
+        flush_staged_with_armed_resolver(&mut state);
+        assert_eq!(state.player(&b()).unwrap().trade_goods, before + 2);
+    }
+
+    fn flush_staged_with_armed_resolver(state: &mut GameState) {
+        let mut resolver = crate::fixtures::armed_resolver(state);
+        let mut table = Table::default();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(7);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut ctx = Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: Some(crate::choice::TimingHandle {
+                resolver: &mut resolver,
+                sequence: &mut sequence,
+                galaxy: None,
+            }),
+        };
+        crate::factions::hooks_ground::announce_staged_events(state, &mut ctx);
     }
 
     #[test]

@@ -34,10 +34,9 @@ export function redistributeChoice(floor: number, armada = false) {
     details: {
       kind: "command_tokens",
       mode: "redistribute",
-      pools: { tactic: 3, fleet: 4, strategic: 2 },
+      pools: { tactic: 3, fleet: 4, strategic: 2, ...(armada ? { fleet_supply_bonus: 2 } : {}) },
       reinforcements: 7,
       total,
-      ...(armada ? { fleet_supply_bonus: 2 } : {}),
     },
   };
 }

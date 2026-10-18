@@ -1,0 +1,34 @@
+{
+  "limits": {
+    "max_rounds": 50,
+    "max_steps": 400000,
+    "max_seconds": 300,
+    "loop_steps": 5000
+  },
+  "setups": [
+    {
+      "name": "4p",
+      "players": 4,
+      "maps": [
+        "4pHyperlanes",
+        "4pOuterRim"
+      ],
+      "map_policy": "cycle",
+      "seeds": "1..101",
+      "starting_tech": true,
+      "rules_version": 11
+    },
+    {
+      "name": "6p",
+      "players": 6,
+      "maps": [
+        "6pStandard",
+        "6pOuterRim"
+      ],
+      "map_policy": "cycle",
+      "seeds": "1..101",
+      "starting_tech": true,
+      "rules_version": 11
+    }
+  ]
+}

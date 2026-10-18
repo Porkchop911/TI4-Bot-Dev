@@ -1,0 +1,19 @@
+{
+  "title": "Secret objectives: one per combat",
+  "description": "Report fb_1792303387_e0ee89e2: a tester held Brave the Void and Demonstrate Your Power, both met after one combat, scored one and was not offered the other. The engine is right (the cards say 'Only 1 objective can be scored during or after each combat.'), but the UI never said so. The cap now shows on the held-secret line and in the scoring window, which also marks the secret that is skipped once the other is picked. Mocked fixtures; regenerate with npm run screenshots -- FM.",
+  "tag": "web/e2e/screenshots/FM-secret-combat-cap",
+  "shots": [
+    { "file": "out/one-qualifying-desktop.png", "heading": "One qualifying secret, desktop", "caption": "Brave the Void offered; the cap is stated above the card." },
+    { "file": "out/one-qualifying-390x844.png", "heading": "One qualifying secret, phone", "caption": "Same at 390 px wide." },
+    { "file": "out/two-qualifying-desktop.png", "heading": "Two qualifying secrets, desktop", "caption": "Both met; picking Demonstrate Your Power marks Brave the Void as skipped." },
+    { "file": "out/two-qualifying-390x844.png", "heading": "Two qualifying secrets, phone", "caption": "Same at 390 px wide." },
+    { "file": "out/uncapped-mew-desktop.png", "heading": "Uncapped secret, desktop", "caption": "Make an Example of Their World prints no cap, so no note." },
+    { "file": "out/uncapped-mew-390x844.png", "heading": "Uncapped secret, phone", "caption": "Same at 390 px wide." },
+    { "file": "out/held-note-desktop.png", "heading": "Held secrets, desktop", "caption": "The small 'Met by an event' line now carries the cap for Brave the Void, not for Make an Example of Their World." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Display only", "text": "The cap is read from the card notes in the client; the engine rule (EventScoreLimit::OnePerPlayer) is unchanged, so no rules version." },
+    { "title": "Turn Their Fleets to Dust", "text": "The card prints no cap and the engine scores it in an AnyPerPlayer window: consistent." }
+  ]
+}

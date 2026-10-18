@@ -179,11 +179,9 @@ fn main() {
     let vocabulary = loaded.vocabulary;
     // One actor for every seat, or, given a bundle of a separate-models run, each faction's own
     // (in FACTIONS order), all at the chosen bundle's update count.
-    let separate = ti4_mlp::bundle::separate_model_bundles(
-        std::path::Path::new(&bundle_path),
-        &FACTIONS,
-    )
-    .unwrap_or_else(|error| refuse(&error));
+    let separate =
+        ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path), &FACTIONS)
+            .unwrap_or_else(|error| refuse(&error));
     let actors: Vec<ti4_mlp::Actor> = match &separate {
         None => vec![loaded.actor],
         Some(bundles) => FACTIONS
@@ -314,7 +312,9 @@ fn main() {
                                     FACTIONS
                                         .iter()
                                         .position(|faction| *faction == seated[player].as_str())
-                                        .ok_or_else(|| format!("{player}: no model for its faction"))?
+                                        .ok_or_else(|| {
+                                            format!("{player}: no model for its faction")
+                                        })?
                                 };
                                 let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
                                     &local[model],

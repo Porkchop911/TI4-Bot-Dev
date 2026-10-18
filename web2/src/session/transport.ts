@@ -1,3 +1,4 @@
+import type { EventLog } from "./events";
 import type { MovementPlan, PlanStep } from "./movementPlan";
 import type { SeatStore } from "./seatStore";
 import type {
@@ -5,7 +6,12 @@ import type {
   Catalog,
   DraftOutcome,
   DraftStep,
+  FleetCounts,
+  FleetStanding,
+  GroundOddsRequest,
+  GroundOddsResponse,
   PlanScope,
+  PublicRoll,
   PublicTurnStatus,
   ReactionMode,
   ReactionModes,
@@ -41,6 +47,16 @@ export type TransportEvent =
       plan?: PlanStopped;
       /** The steps of the movement or of the landings that the undo before this update took back, in order. */
       undone?: PlanStep[];
+      /**
+       * The public rolls of the action that is played now, in the order of the game, as the
+       * events told them (`rolls.ts`). Empty outside an action.
+       */
+      rolls?: PublicRoll[];
+      /**
+       * The public events of the game, in its order (`events.ts`): those of the snapshot, then
+       * each that was told after it. An undo takes the later ones back.
+       */
+      events?: EventLog;
       /** The game waits before a decision of this seat, which is not played here: `capabilities.stepping.step` goes on. */
       stepping?: { seat: string };
     }
@@ -163,6 +179,13 @@ export interface Transport {
    * same sides give the same numbers. Nothing of the game is read or changed.
    */
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
+  /** The odds of a ground combat, from the engine of this page as `odds` is. */
+  groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
+  /**
+   * The fleet supply and the capacity of some counts (a production with the staged units), from
+   * the engine of this page as `odds` is.
+   */
+  fleetStanding(counts: FleetCounts): Promise<FleetStanding>;
   /** Ends the game on this side. */
   close(): void;
 }

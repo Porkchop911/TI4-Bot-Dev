@@ -168,7 +168,7 @@ describe("command token panel (redistribute)", () => {
     expect(screen.queryByTestId("token-armada")).not.toBeInTheDocument();
     plain.unmount();
     const letnev = redistributeChoice();
-    letnev.details = { ...letnev.details, fleet_supply_bonus: 2 };
+    letnev.details = { ...letnev.details, pools: { ...(letnev.details?.pools as object), fleet_supply_bonus: 2 } };
     render(<PendingChoiceModal choice={letnev} onSubmit={vi.fn()} />);
     const chip = screen.getByTestId("token-armada");
     expect(chip).toHaveTextContent("+2 supply");
