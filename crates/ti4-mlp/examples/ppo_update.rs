@@ -56,6 +56,14 @@ use ti4_model::id::{FactionId, PlayerId};
 
 /// The six factions a `--roster six` game seats, in rotation order: the historical six, or
 /// `--factions a,b,c,d,e,f`.
+/// Overpay, unused ready-planet resources and build value (half-resources) summed over this
+/// update's seat-games; read and reset when the update is reported.
+static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 3] = [
+    std::sync::atomic::AtomicI64::new(0),
+    std::sync::atomic::AtomicI64::new(0),
+    std::sync::atomic::AtomicI64::new(0),
+];
+
 static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
     let Some(list) = argument("--factions") else {
         return ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
@@ -260,6 +268,9 @@ const VALUE_FLAGS: &[&str] = &[
     "--tech-weight",
     "--temperature",
     "--trade-goods-hoard-weight",
+    "--overpay-penalty",
+    "--unused-resources-weight",
+    "--build-weight",
     "--unit-weight",
     "--updates",
     "--vp-weight",
@@ -935,6 +946,24 @@ fn play_one(
             strategy_card_plays: seat.episode.strategy_card_plays.clone(),
         };
         let per_decision = ti4_training::reward::returns(&episode, reward);
+        {
+            // Telemetry, always on: what the three production terms would price in this seat-game.
+            let mut all = episode.steps.clone();
+            all.push(episode.final_progress);
+            let terms = ti4_training::reward::production_terms(&all);
+            PRODUCTION_TELEMETRY[0].fetch_add(
+                terms.overpay.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[1].fetch_add(
+                terms.unused.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[2].fetch_add(
+                terms.built_halves.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
         if per_decision.len() != recorded.len() {
             return Err(format!(
                 "seed {seed} rotation {rotation} {}: {} returns for {} decisions",
@@ -1932,6 +1961,12 @@ fn main() {
         reward.trade_goods_hoard_weight,
     );
     reward.styx_bonus = weight("--styx-bonus", reward.styx_bonus);
+    reward.overpay_penalty = weight("--overpay-penalty", reward.overpay_penalty);
+    reward.unused_resources_weight = weight(
+        "--unused-resources-weight",
+        reward.unused_resources_weight,
+    );
+    reward.build_weight = weight("--build-weight", reward.build_weight);
     // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
     // must select it explicitly, but no flag existed, so the term could not be selected at all:
     // runs built before that change had it silently on at 0.1, and runs built after it silently
@@ -1951,6 +1986,9 @@ fn main() {
             reward.trade_goods_hoard_weight,
         ),
         ("--styx-bonus", reward.styx_bonus),
+        ("--overpay-penalty", reward.overpay_penalty),
+        ("--unused-resources-weight", reward.unused_resources_weight),
+        ("--build-weight", reward.build_weight),
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
         // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
@@ -2054,6 +2092,10 @@ fn main() {
             reward.styx_bonus,
             reward.fracture_entry_bonus,
             reward.fracture_planet_bonus
+        );
+        println!(
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (fighters/infantry half)",
+            reward.overpay_penalty, reward.unused_resources_weight, reward.build_weight
         );
     }
     println!(
@@ -2999,6 +3041,15 @@ fn main() {
             let per_tactical = wasted_activations as f64 / tactical_actions.max(1) as f64;
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
+            );
+            let [overpaid, unused, built] = std::array::from_fn(|i| {
+                PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
+            });
+            println!(
+                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, fighters/infantry counted full)",
+                overpaid / seats,
+                unused / seats,
+                built / 2.0 / seats
             );
             if self_imitation > 0.0 {
                 println!(

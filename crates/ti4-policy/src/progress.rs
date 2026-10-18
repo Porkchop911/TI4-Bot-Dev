@@ -86,6 +86,27 @@ pub struct Progress {
     /// bookkeeping only.
     #[serde(default)]
     pub support_for_the_throne_points: i64,
+    /// Spendable resources (ready planets plus trade goods); reward bookkeeping only.
+    #[serde(default)]
+    pub spend_pool: i64,
+    /// Whether the game is in the Action phase.
+    #[serde(default)]
+    pub action_phase: bool,
+    /// Printed resources of the controlled, still-ready planets; measured in the Action phase only.
+    #[serde(default)]
+    pub ready_planet_resources: i64,
+    /// The decision offers a produce, pay or place option (set by the recording bot).
+    #[serde(default)]
+    pub production_related: bool,
+    /// The decision offers a produce option (set by the recording bot).
+    #[serde(default)]
+    pub produce_offered: bool,
+    /// Cost of the units the chosen produce option builds, excluding fighters and infantry.
+    #[serde(default)]
+    pub built_cost: i64,
+    /// Cost of the fighters and infantry the chosen produce option builds.
+    #[serde(default)]
+    pub built_cost_light: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -172,6 +193,28 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         projection_permille: 0,
         home_planets_lost: count(seen.home_planets_lost(player)),
         support_for_the_throne_points: seen.support_for_the_throne_points(player),
+        spend_pool: seen.available_spend(player, ti4_engine::production::Spend::Resources),
+        action_phase: seen.phase() == ti4_model::state::Phase::Action,
+        ready_planet_resources: if seen.phase() == ti4_model::state::Phase::Action {
+            controlled
+                .iter()
+                .filter(|(_, planet)| seen.planet_is_ready(planet))
+                .map(|(_, planet)| {
+                    ti4_engine::production::planet_value(
+                        seen.content(),
+                        seen.sources(),
+                        planet,
+                        ti4_engine::production::Spend::Resources,
+                    )
+                })
+                .sum()
+        } else {
+            0
+        },
+        production_related: false,
+        produce_offered: false,
+        built_cost: 0,
+        built_cost_light: 0,
         non_home_planet_value: {
             let home = seen
                 .seat(player)
