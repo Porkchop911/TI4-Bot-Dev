@@ -1314,6 +1314,12 @@ pub const RULES_TECH_PAYMENT_KEEPS_SPECIALTIES: u32 = 17;
 /// pool.
 pub const RULES_STATUS_REDISTRIBUTION_REFUSED: u32 = 17;
 
+/// The first rules version where Reverse Engineer is offered after a discard only when the
+/// discarded card has a component action, another player discarded it, and it is still in the
+/// discard pile. Before, it was offered after every discard of another player's action card, and
+/// the qualifier was checked only when the card resolved.
+pub const RULES_REVERSE_ENGINEER_QUALIFIER: u32 = 17;
+
 /// The whole game, as a value.
 ///
 /// `initiative_order` is derived from held strategy cards rather than stored, so it cannot

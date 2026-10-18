@@ -1475,6 +1475,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reverse_engineer_is_offered_only_for_a_component_action_card_in_the_pile() {
+        // "After another player discards an action card that has a component action: Take that
+        // action card from the discard pile." Flank Speed has no component action, so the card
+        // would be spent for nothing; Industrial Initiative has one.
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player()).unwrap().action_cards =
+            vec![ActionCardId::new("reverse_engineer")];
+        let offered = |state: &GameState, event: &Event| {
+            playable_now(state, content, &player(), event, Relation::After)
+                == vec![ActionCardId::new("reverse_engineer")]
+        };
+        let flank = event_with_card("ACTION_CARD_DISCARDED", "b", "fs1");
+        let industrial = event_with_card("ACTION_CARD_DISCARDED", "b", "industrial_initiative");
+        let own = event_with_card("ACTION_CARD_DISCARDED", "a", "industrial_initiative");
+        state.discarded_action_cards = vec![
+            ActionCardId::new("fs1"),
+            ActionCardId::new("industrial_initiative"),
+        ];
+
+        state.rules_version = ti4_model::state::RULES_REVERSE_ENGINEER_QUALIFIER;
+        assert!(!offered(&state, &flank), "no component action: not offered");
+        assert!(offered(&state, &industrial), "a component action: offered");
+        assert!(
+            !offered(&state, &own),
+            "the holder's own discard: not offered"
+        );
+        state.discarded_action_cards = vec![ActionCardId::new("fs1")];
+        assert!(
+            !offered(&state, &industrial),
+            "the card left the pile: not offered"
+        );
+
+        state.rules_version = ti4_model::state::RULES_REVERSE_ENGINEER_QUALIFIER - 1;
+        assert!(offered(&state, &flank), "the old rules offered it anyway");
+        assert!(offered(&state, &industrial), "the old rules offered it");
+    }
+
     /// An `INVASION_BEGAN` event: `invader` invades system 18.
     fn invasion_of_18(invader: &str) -> Event {
         let mut payload = BTreeMap::new();

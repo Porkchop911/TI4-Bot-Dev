@@ -588,6 +588,15 @@ pub fn reaction_can_matter(
     };
     let actor = event.text("player");
     let is_actor = actor == Some(player.as_str());
+    // Reverse Engineer: "After another player discards an action card that has a component
+    // action: Take that action card from the discard pile." The discard event names no system,
+    // so the card is read before the board. Games below rules version 17 are offered it after
+    // every discard of another player.
+    if alias.as_str() == "reverse_engineer"
+        && state.rules_version >= ti4_model::state::RULES_REVERSE_ENGINEER_QUALIFIER
+    {
+        return reverse_engineer_can_take(state, content, player, event);
+    }
     let Some(system) = event.text("system").map(ti4_model::id::SystemId::new) else {
         return true;
     };
@@ -675,6 +684,36 @@ pub fn reaction_can_matter(
             .any(|unit| &unit.owner == player && unit.sustained_damage),
         _ => true,
     }
+}
+
+/// Whether Reverse Engineer, played into this discard's window, would take a card: the discarded
+/// card has a component action, another player discarded it, and it is still in the discard pile
+/// (Data Skimmer or a faster Reverse Engineer can leave it elsewhere). The event names the card
+/// and the discarder; the frame's `last_action_discarded` stands in when it does not.
+fn reverse_engineer_can_take(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    event: &crate::event::Event,
+) -> bool {
+    let frame = state.last_action_discarded.as_ref();
+    let Some(by) = event
+        .text("player")
+        .map(PlayerId::new)
+        .or_else(|| frame.map(|(by, _)| by.clone()))
+    else {
+        return false;
+    };
+    let Some(card) = event
+        .text("card")
+        .map(ActionCardId::new)
+        .or_else(|| frame.map(|(_, card)| card.clone()))
+    else {
+        return false;
+    };
+    by != *player
+        && is_component_action(content, &card)
+        && state.discarded_action_cards.contains(&card)
 }
 
 /// Component actions this player could take with the cards in hand (22.1).

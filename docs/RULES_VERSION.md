@@ -167,8 +167,8 @@ Version 16 = the Thunder's Edge Mecatol (niko, `RULES_TE_MECATOL_LANDING`):
 1. `invasion::landable_planets`: `mrte` is not landable while the custodians token is on it, as
    `mr`. Version < 16: only `mr` is held back.
 
-Version 17 = the research payment window and the refused redistribution (`mock-removal`, two
-constants of one version):
+Version 17 = the research payment window, the refused redistribution and the Reverse Engineer
+qualifier (`mock-removal`, three constants of one version):
 
 1. `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES`, `strategy_cards::paid_research` (Technology secondary,
    and the primary's second technology): the payment is asked inside the research's own payment
@@ -184,6 +184,13 @@ constants of one version):
    gained or announced for the seat. Version < 17: the refusal is passed over, and the gain goes
    into the tactic pool. Both versions keep the gain of `RULES_STATUS_GAIN` (version < 12: token
    by token).
+3. `RULES_REVERSE_ENGINEER_QUALIFIER`, `action_cards::reaction_can_matter`
+   (`reverse_engineer_can_take`): Reverse Engineer is offered in the window of
+   `ACTION_CARD_DISCARDED` only when the discarded card (the event's `card`, else the frame's
+   `last_action_discarded`) has a component action, another player discarded it, and it is still
+   in the discard pile. Version < 17: it is offered after every discard of another player, and the
+   qualifier is checked only when the card resolves (`reverse_engineer`), so a play on a card with
+   no component action is spent for nothing (the reaction preview's `no_component_action`).
 
 ## Adding the next gate
 
