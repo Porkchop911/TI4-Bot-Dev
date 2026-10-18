@@ -565,6 +565,47 @@ impl MlpBot {
         progress
     }
 
+    /// Stamp the record just pushed with the production facts only the choice knows: whether it was
+    /// a production decision, and what the chosen produce option builds (`cost` is the option's
+    /// total bill, as `production_eval` counts it).
+    fn annotate_production(
+        &self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+        answer: &ChoiceOption,
+    ) {
+        use ti4_engine::production::{PAY_KIND, PLACE_KIND, PRODUCE_KIND};
+        let produce_offered = choice.options.iter().any(|o| o.kind == PRODUCE_KIND);
+        let related = produce_offered
+            || choice
+                .options
+                .iter()
+                .any(|o| o.kind == PAY_KIND || o.kind == PLACE_KIND);
+        if !related {
+            return;
+        }
+        let mut records = self.records.borrow_mut();
+        let Some(record) = records.last_mut() else {
+            return;
+        };
+        record.progress.production_related = true;
+        record.progress.produce_offered = produce_offered;
+        if answer.kind == PRODUCE_KIND {
+            let cost = answer
+                .payload
+                .get("cost")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            let unit = answer
+                .payload
+                .get("unit")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            record.progress.built_cost = cost;
+            record.progress.built_value_permille = seen.build_value_permille(unit, cost);
+        }
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "the behaviour quantities are only jointly meaningful; splitting them into a struct would move the coupling rather than remove it"
@@ -864,6 +905,7 @@ impl MlpBot {
                 )?;
             }
             self.note(prepared.requested_head, &picked.label, picked.declined);
+            self.annotate_production(choice, seen, &picked.option);
         }
 
         let fleet = self

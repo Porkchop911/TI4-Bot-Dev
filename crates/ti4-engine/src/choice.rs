@@ -1399,6 +1399,18 @@ impl<'a> Observed<'a> {
             .sum()
     }
 
+    /// Value in per-mille resources of buying `unit_id` for a total `bill`: the bill itself, times
+    /// 1.3 when the unit is an upgraded ship (same convention as [`Self::fleet_value_permille`]:
+    /// no premium for fighters or ground forces).
+    #[must_use]
+    pub fn build_value_permille(&self, unit_id: &str, bill: i64) -> i64 {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        let upgraded = types.get(unit_id).is_some_and(|stats| {
+            stats.is_ship() && !stats.is_fighter() && stats.upgrades_from().is_some()
+        });
+        if upgraded { bill * 1300 } else { bill * 1000 }
+    }
+
     /// One ship or ground force's share of [`Self::fleet_value_permille`].
     fn unit_value_permille(
         stats: ti4_content::units::UnitType<'_>,
@@ -1438,6 +1450,18 @@ impl<'a> Observed<'a> {
     pub fn is_fracture_system(&self, system: &SystemId) -> bool {
         self.state.fracture_in_play
             && crate::fracture::is_fracture_system(self.content, self.sources, system)
+    }
+
+    /// Victory points this seat currently holds from Support for the Throne, from the public
+    /// ledger of every point moved. Used only by training progress; not a policy feature.
+    #[must_use]
+    pub fn support_for_the_throne_points(&self, player: &PlayerId) -> i64 {
+        self.state
+            .vp_ledger
+            .iter()
+            .filter(|(holder, _, reason)| holder == player && reason == "support_for_the_throne")
+            .map(|(_, delta, _)| i64::from(*delta))
+            .sum()
     }
 
     /// How many of this seat's home planets it does not control (61.16 bars public scoring while

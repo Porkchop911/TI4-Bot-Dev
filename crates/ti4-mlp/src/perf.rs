@@ -363,14 +363,48 @@ fn take_flag(input: &mut impl Read) -> Result<bool, String> {
     }
 }
 
-/// Read a capture written by [`write_capture`].
+/// [`write_capture`], zstd-compressed: the same bytes inside one zstd frame, which
+/// [`read_capture`] opens directly. Full training records run ~30 KB a decision raw.
+///
+/// # Errors
+/// The file exists, or a write fails.
+pub fn write_capture_zstd(steps: &[Step], path: &Path) -> std::io::Result<()> {
+    let file = std::fs::File::create_new(path)?;
+    let mut out = zstd::Encoder::new(BufWriter::new(file), 3)?;
+    out.write_all(MAGIC)?;
+    out.write_all(&(steps.len() as u64).to_le_bytes())?;
+    for step in steps {
+        encode_step(&mut out, step)?;
+    }
+    out.finish()?
+        .into_inner()
+        .map_err(std::io::IntoInnerError::into_error)?
+        .sync_all()
+}
+
+/// The first four bytes of every zstd frame.
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+
+/// Read a capture written by [`write_capture`] or [`write_capture_zstd`].
 ///
 /// # Errors
 /// A missing or truncated file, a wrong magic, trailing bytes, or a faction row outside the roster.
 pub fn read_capture(path: &Path) -> Result<Vec<Step>, String> {
-    let file = std::fs::File::open(path)
-        .map_err(|error| format!("opening {}: {error}", path.display()))?;
-    let mut input = BufReader::new(file);
+    let open = || {
+        std::fs::File::open(path).map_err(|error| format!("opening {}: {error}", path.display()))
+    };
+    let mut head = [0u8; 4];
+    let compressed = open()?.read_exact(&mut head).is_ok() && head == ZSTD_MAGIC;
+    if compressed {
+        let decoder = zstd::Decoder::new(open()?)
+            .map_err(|error| format!("opening {}: {error}", path.display()))?;
+        read_capture_from(BufReader::new(decoder), path)
+    } else {
+        read_capture_from(BufReader::new(open()?), path)
+    }
+}
+
+fn read_capture_from(mut input: impl Read, path: &Path) -> Result<Vec<Step>, String> {
     if &take::<8>(&mut input)? != MAGIC {
         return Err(format!("{} is not a PPO batch capture", path.display()));
     }
@@ -515,6 +549,31 @@ mod tests {
             Some(vec![4, 5])
         );
         assert!(read[1].critic.is_none() && read[1].behaviour_value.is_none());
+    }
+
+    #[test]
+    fn a_compressed_capture_reads_back_through_the_same_reader() {
+        // A file, not a directory: nothing here creates a folder.
+        let path = std::env::temp_dir().join(format!(
+            "ti4-perf-capture-zstd-{}-{:?}.bin",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let steps = vec![sample(2, true), sample(0, false), sample(5, true)];
+        write_capture_zstd(&steps, &path).expect("writes");
+        let overwritten = write_capture_zstd(&steps, &path);
+        let first = std::fs::read(&path).expect("bytes");
+        let read = read_capture(&path).expect("reads");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(overwritten.is_err(), "an existing capture was overwritten");
+        assert_eq!(&first[..4], &ZSTD_MAGIC, "the file is a zstd frame");
+        assert_eq!(
+            steps_digest(&read).expect("digest"),
+            steps_digest(&steps).expect("digest"),
+            "every field the optimiser reads survives compression bit for bit"
+        );
     }
 
     #[test]

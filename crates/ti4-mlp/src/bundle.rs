@@ -535,27 +535,33 @@ pub fn trained_updates(bundle: &Path) -> Option<u64> {
 }
 
 /// A separate-models run (`ppo_update --separate-models`) writes `<out>/<faction>/checkpoint-N`,
-/// one directory per faction in `factions`. Given one faction's bundle there, every faction's
-/// bundle trained for the same number of updates (folder numbers are each model's own optimiser
-/// steps, so they differ). `Ok(None)` when the bundle is not in that layout.
+/// one directory per faction it trained. Given one faction's bundle there, every faction's bundle
+/// trained for the same number of updates, keyed by faction (folder numbers are each model's own
+/// optimiser steps, so they differ). The factions are the run's own folders that name a roster
+/// faction. `Ok(None)` when the bundle is not in that layout.
 ///
 /// # Errors
 /// The layout is there but a faction has no bundle at that update count.
-pub fn separate_model_bundles(
-    directory: &Path,
-    factions: &[&str],
-) -> Result<Option<BTreeMap<String, PathBuf>>, String> {
-    let Some(faction_directory) = directory.parent() else {
+pub fn separate_model_bundles(directory: &Path) -> Result<Option<BTreeMap<String, PathBuf>>, String> {
+    let is_faction = |path: &Path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| FACTION_ROSTER.contains(&name))
+    };
+    let Some(faction_directory) = directory.parent().filter(|parent| is_faction(parent)) else {
         return Ok(None);
     };
-    let is_faction = faction_directory
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| factions.contains(&name));
-    let Some(run) = faction_directory.parent().filter(|_| is_faction) else {
+    let Some(run) = faction_directory.parent() else {
         return Ok(None);
     };
-    if !factions.iter().all(|faction| run.join(faction).is_dir()) {
+    let mut factions: Vec<String> = std::fs::read_dir(run)
+        .map_err(|error| format!("separate models {}: {error}", run.display()))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_dir() && is_faction(path))
+        .filter_map(|path| path.file_name().and_then(|name| name.to_str()).map(str::to_owned))
+        .collect();
+    factions.sort();
+    if factions.len() < 2 {
         return Ok(None);
     }
     let wanted = trained_updates(directory).ok_or_else(|| {
@@ -565,7 +571,7 @@ pub fn separate_model_bundles(
         )
     })?;
     let mut bundles = BTreeMap::new();
-    for faction in factions {
+    for faction in &factions {
         let entries = std::fs::read_dir(run.join(faction))
             .map_err(|error| format!("separate models {faction}: {error}"))?;
         let bundle = entries
@@ -576,7 +582,7 @@ pub fn separate_model_bundles(
             .ok_or_else(|| {
                 format!("separate models: no {faction} checkpoint at {wanted} update(s)")
             })?;
-        bundles.insert((*faction).to_owned(), bundle);
+        bundles.insert(faction.clone(), bundle);
     }
     Ok(Some(bundles))
 }

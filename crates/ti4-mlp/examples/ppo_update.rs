@@ -54,7 +54,39 @@ use ti4_mlp::ppo::{Batch, Settings, Step};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
-const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+/// The six factions a `--roster six` game seats, in rotation order: the historical six, or
+/// `--factions a,b,c,d,e,f`.
+/// Overpay, unused ready-planet resources and build value (per-mille resources) and final fleet value (per-mille) summed over this
+/// update's seat-games; read and reset when the update is reported.
+static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 4] = [
+    std::sync::atomic::AtomicI64::new(0),
+    std::sync::atomic::AtomicI64::new(0),
+    std::sync::atomic::AtomicI64::new(0),
+    std::sync::atomic::AtomicI64::new(0),
+];
+
+static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
+    let Some(list) = argument("--factions") else {
+        return ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+    };
+    let parsed: Vec<&'static str> = list
+        .split(',')
+        .map(|name| &*Box::leak(name.trim().to_owned().into_boxed_str()))
+        .collect();
+    let mut distinct = parsed.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if distinct.len() != 6
+        || parsed
+            .iter()
+            .any(|name| ti4_mlp::FactionRow::of(name).is_err())
+    {
+        refuse("--factions expects six distinct roster factions, comma separated");
+    }
+    parsed
+        .try_into()
+        .unwrap_or_else(|_| refuse("--factions expects six factions"))
+});
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// `build_positive_corpus`'s map convention. Corpus replay must reproduce that generator, not PPO.
 const CORPUS_TILE_SEED_OFFSET: u64 = 0;
@@ -206,6 +238,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--projection-rank-weight",
     "--negotiation-step-penalty",
     "--r1-expansion-weight",
+    "--sftt-weight",
+    "--require-faction",
     "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
@@ -226,12 +260,18 @@ const VALUE_FLAGS: &[&str] = &[
     "--seeds-per-update",
     "--rotations",
     "--roster",
+    "--factions",
+    "--record-best",
+    "--record-vp",
     "--stage",
     "--strategy-diversity-weight",
     "--styx-bonus",
     "--tech-weight",
     "--temperature",
     "--trade-goods-hoard-weight",
+    "--overpay-penalty",
+    "--unused-resources-weight",
+    "--build-weight",
     "--unit-weight",
     "--updates",
     "--vp-weight",
@@ -258,6 +298,7 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--hash-games",
     "--diplomacy",
     "--separate-models",
+    "--collect-only",
 ];
 
 fn check_flags() {
@@ -618,12 +659,14 @@ fn play_one(
     sil_margin: f64,
     focus: Option<&BTreeMap<&'static str, u32>>,
     gae_lambda: f64,
+    record: Option<&Recorder>,
+    update: usize,
 ) -> Result<Played, String> {
     // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
     // the seed (BF-22). With --faction-focus the wide draw is weighted toward trailing factions.
     let factions = match focus {
         None => ti4_training::rollout::game_factions(
-            content, roster, &FACTIONS, players, DEFAULT, seed,
+            content, roster, &*FACTIONS, players, DEFAULT, seed,
         )?,
         Some(weights) => {
             let weight = |entry: &str| weights.get(entry).copied().unwrap_or(FOCUS_SCALE);
@@ -904,6 +947,28 @@ fn play_one(
             strategy_card_plays: seat.episode.strategy_card_plays.clone(),
         };
         let per_decision = ti4_training::reward::returns(&episode, reward);
+        {
+            // Telemetry, always on: what the three production terms would price in this seat-game.
+            let mut all = episode.steps.clone();
+            all.push(episode.final_progress);
+            let terms = ti4_training::reward::production_terms(&all);
+            PRODUCTION_TELEMETRY[0].fetch_add(
+                terms.overpay.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[1].fetch_add(
+                terms.unused.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[2].fetch_add(
+                terms.built_permille.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[3].fetch_add(
+                episode.final_progress.fleet_value_permille,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
         if per_decision.len() != recorded.len() {
             return Err(format!(
                 "seed {seed} rotation {rotation} {}: {} returns for {} decisions",
@@ -1050,7 +1115,25 @@ fn play_one(
             seat_qualifies.then_some(seat_number),
             recorded.len(),
         ));
+        let first = steps.len();
         steps.extend(recorded.drain(..).map(|record| record.step));
+        // --record-best: this seat's exact training records, when it reached its faction's bar.
+        if let Some(recorder) = record {
+            let points = seat.episode.final_progress.victory_points;
+            if points >= recorder.bar(seat.faction.as_str()) {
+                recorder
+                    .write(
+                        &steps[first..],
+                        seat.faction.as_str(),
+                        update,
+                        seed,
+                        rotation,
+                        &seat.player,
+                        points,
+                    )
+                    .map_err(|error| format!("--record-best: {error}"))?;
+            }
+        }
     }
     // With --hash-games: what this game did, in forms two runs can be compared by exactly.
     let record = if hash {
@@ -1093,6 +1176,69 @@ fn play_one(
         ));
     }
     Ok((steps, outcomes, wasted, tactical, record, qualifying))
+}
+
+/// `--record-best`: where a seat's training records go when its final points reach its faction's
+/// bar (`--record-vp`, e.g. `6,hacan=7`: 6 for every faction, 7 for Hacan).
+struct Recorder {
+    directory: std::path::PathBuf,
+    default_bar: i64,
+    bars: BTreeMap<String, i64>,
+}
+
+impl Recorder {
+    fn parse(directory: String, bars: &str) -> Result<Self, String> {
+        let mut default_bar = None;
+        let mut by_faction = BTreeMap::new();
+        for part in bars.split(',').map(str::trim) {
+            match part.split_once('=') {
+                Some((faction, points)) => {
+                    ti4_mlp::FactionRow::of(faction).map_err(|error| error.to_string())?;
+                    let points = points
+                        .parse()
+                        .map_err(|_| format!("--record-vp {part}: not a number of points"))?;
+                    by_faction.insert(faction.to_owned(), points);
+                }
+                None => {
+                    default_bar = Some(
+                        part.parse()
+                            .map_err(|_| format!("--record-vp {part}: not a number of points"))?,
+                    );
+                }
+            }
+        }
+        Ok(Self {
+            directory: directory.into(),
+            default_bar: default_bar.ok_or("--record-vp needs a default bar, e.g. 6,hacan=7")?,
+            bars: by_faction,
+        })
+    }
+
+    fn bar(&self, faction: &str) -> i64 {
+        self.bars.get(faction).copied().unwrap_or(self.default_bar)
+    }
+
+    /// `<dir>/<faction>/u<update>-s<seed>-r<rotation>-<seat>-vp<points>.ti4ppo.zst`, read back by
+    /// `ti4_mlp::perf::read_capture`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the record's name is these facts"
+    )]
+    fn write(
+        &self,
+        steps: &[Step],
+        faction: &str,
+        update: usize,
+        seed: u64,
+        rotation: usize,
+        player: &PlayerId,
+        points: i64,
+    ) -> std::io::Result<()> {
+        let directory = self.directory.join(faction);
+        std::fs::create_dir_all(&directory)?;
+        let name = format!("u{update:04}-s{seed}-r{rotation}-{player}-vp{points}.ti4ppo.zst");
+        ti4_mlp::perf::write_capture_zstd(steps, &directory.join(name))
+    }
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
@@ -1465,7 +1611,7 @@ fn main() {
     let demo_corpus: BTreeMap<String, Vec<Trajectory>> =
         argument("--demo-corpus").map_or_else(BTreeMap::new, |directory| {
             let mut all = BTreeMap::new();
-            for faction in FACTIONS {
+            for faction in *FACTIONS {
                 let path = std::path::Path::new(&directory).join(format!("{faction}.corpus"));
                 let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
                     refuse(&format!("reading {}: {error}", path.display()))
@@ -1769,6 +1915,7 @@ fn main() {
     reward.r1_bonus = weight("--r1-bonus", reward.r1_bonus);
     reward.r1_shaping = weight("--r1-shaping", reward.r1_shaping);
     reward.r1_expansion_weight = weight("--r1-expansion-weight", reward.r1_expansion_weight);
+    reward.sftt_weight = weight("--sftt-weight", reward.sftt_weight);
     reward.clearance_weight = weight("--clearance-weight", reward.clearance_weight);
     reward.high_vp_bonus = weight("--high-vp-bonus", reward.high_vp_bonus);
     // The three shapings the profile trainer already exposed. They live on the shared `Reward` and
@@ -1819,6 +1966,12 @@ fn main() {
         reward.trade_goods_hoard_weight,
     );
     reward.styx_bonus = weight("--styx-bonus", reward.styx_bonus);
+    reward.overpay_penalty = weight("--overpay-penalty", reward.overpay_penalty);
+    reward.unused_resources_weight = weight(
+        "--unused-resources-weight",
+        reward.unused_resources_weight,
+    );
+    reward.build_weight = weight("--build-weight", reward.build_weight);
     // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
     // must select it explicitly, but no flag existed, so the term could not be selected at all:
     // runs built before that change had it silently on at 0.1, and runs built after it silently
@@ -1838,6 +1991,9 @@ fn main() {
             reward.trade_goods_hoard_weight,
         ),
         ("--styx-bonus", reward.styx_bonus),
+        ("--overpay-penalty", reward.overpay_penalty),
+        ("--unused-resources-weight", reward.unused_resources_weight),
+        ("--build-weight", reward.build_weight),
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
         // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
@@ -1913,8 +2069,9 @@ fn main() {
             reward.high_vp_bonus
         );
         println!(
-            "  points      vp {} | objective {} | secret {} | zero at horizon {} | home lost {}",
+            "  points      vp {} (Support for the Throne x{}) | objective {} | secret {} | zero at horizon {} | home lost {}",
             reward.vp_weight,
+            reward.sftt_weight,
             reward.objective_weight,
             reward.secret_weight,
             reward.zero_terminal_objectives,
@@ -1940,6 +2097,10 @@ fn main() {
             reward.styx_bonus,
             reward.fracture_entry_bonus,
             reward.fracture_planet_bonus
+        );
+        println!(
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (fighters/infantry half)",
+            reward.overpay_penalty, reward.unused_resources_weight, reward.build_weight
         );
     }
     println!(
@@ -2017,6 +2178,12 @@ fn main() {
     actor = actor.to_device(device);
     let mut optimizer = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
         .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
+    // Optimiser state sits beside a checkpoint as `<checkpoint>.adam`; older ones have none.
+    let adam_file = format!("{}.adam", bundle_path.trim_end_matches(['/', '\\']));
+    match optimizer.load_state(std::path::Path::new(&adam_file)) {
+        Ok(()) => println!("  optimiser   resumed from {adam_file} at step {}", optimizer.steps()),
+        Err(error) => println!("  optimiser   fresh ({error})"),
+    }
     if faction_rows_only {
         if critic_mode == ti4_mlp::bundle::CriticMode::Separate {
             refuse("--faction-rows-only covers the shared and batch-mean critics");
@@ -2037,6 +2204,33 @@ fn main() {
         );
     }
 
+    // --collect-only: play and record, never optimise or checkpoint (gathering data from a fixed model).
+    let collect_only = std::env::args().any(|a| a == "--collect-only");
+    let require_faction = argument("--require-faction");
+    if let Some(faction) = &require_faction {
+        ti4_mlp::FactionRow::of(faction).unwrap_or_else(|error| refuse(&error.to_string()));
+        if faction_focus > 0.0 {
+            refuse("--require-faction filters the unweighted draw; use --faction-focus 0");
+        }
+    }
+    let recorder = argument("--record-best").map(|directory| {
+        let bars =
+            argument("--record-vp").unwrap_or_else(|| refuse("--record-best needs --record-vp"));
+        let recorder = Recorder::parse(directory, &bars).unwrap_or_else(|error| refuse(&error));
+        println!(
+            "  record      seats at >= {} VP ({}) -> {}",
+            recorder.default_bar,
+            recorder
+                .bars
+                .iter()
+                .map(|(faction, points)| format!("{faction} >= {points}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            recorder.directory.display()
+        );
+        recorder
+    });
+
     // --separate-models: one network and optimiser per faction of the six, each from the same
     // bundle and trained only on its own seats' decisions. Otherwise one shared model.
     let separate_models = std::env::args().any(|a| a == "--separate-models");
@@ -2049,33 +2243,47 @@ fn main() {
         }
         if opponent_actor.is_some()
             || demo_per_update > 0
-            || self_imitation > 0.0
             || faction_rows_only
             || check_likelihood
             || hash_games
             || capture_path.is_some()
         {
             refuse(
-                "--separate-models does not combine with --opponent, demos, self-imitation, \
+                "--separate-models does not combine with --opponent, demos, \
                  --faction-rows-only, --check-likelihood, --hash-games or --capture-batch",
             );
         }
     }
     let mut models: Vec<(ti4_mlp::Actor, ti4_mlp::ppo::Adam)> = vec![(actor, optimizer)];
     if separate_models {
-        for _ in 1..FACTIONS.len() {
-            let mut copy = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
-                .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")))
+        // Each faction starts from its own model when --bundle is a checkpoint of a separate-models
+        // run that trained it, else from --bundle itself (a faction new to the set).
+        let previous = ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
+            .unwrap_or_else(|error| refuse(&error))
+            .unwrap_or_default();
+        models.clear();
+        for faction in FACTIONS.iter() {
+            let start = previous
+                .get(*faction)
+                .map_or_else(|| bundle_path.clone(), |path| path.display().to_string());
+            println!("  model       {faction} starts from {start}");
+            let mut actor = ti4_mlp::bundle::read(std::path::Path::new(&start))
+                .unwrap_or_else(|error| refuse(&format!("reading {start}: {error}")))
                 .actor
                 .to_device(device);
-            let adam = ti4_mlp::ppo::Adam::new(&mut copy, critic_mode, settings)
+            let adam = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
                 .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
-            models.push((copy, adam));
+            models.push((actor, adam));
         }
         println!(
             "  models      separate: one per faction ({})",
             FACTIONS.join(", ")
         );
+        if self_imitation > 0.0 {
+            println!(
+                "  cross-imit  every model imitates the self-imitation picks of all six factions as its own"
+            );
+        }
     }
 
     // F-M10-034-D6. Loss telemetry is not evidence that an update happened: a broken optimiser
@@ -2205,6 +2413,23 @@ fn main() {
                 all[start..start + seeds_per_update as usize].to_vec()
             },
         );
+        // --require-faction: only the seeds whose faction draw seats that faction.
+        let update_seeds: Vec<u64> = match &require_faction {
+            None => update_seeds,
+            Some(wanted) => update_seeds
+                .into_iter()
+                .filter(|seed| {
+                    ti4_training::rollout::game_factions(
+                        content, roster, &*FACTIONS, &players, DEFAULT, *seed,
+                    )
+                    .is_ok_and(|drawn| drawn.iter().any(|faction| faction.as_str() == wanted))
+                })
+                .collect(),
+        };
+        if update_seeds.is_empty() {
+            println!("  update {update:>3}  no seed seats the required faction");
+            continue;
+        }
         let jobs: Vec<(u64, usize)> = update_seeds
             .into_iter()
             .flat_map(|seed| (0..rotations).map(move |rotation| (seed, rotation)))
@@ -2323,6 +2548,8 @@ fn main() {
                             sil_margin,
                             focus_weights.as_ref(),
                             gae_lambda,
+                            recorder.as_ref(),
+                            update,
                         ),
                     ));
                 }
@@ -2485,6 +2712,13 @@ fn main() {
                 steps.len()
             ));
         }
+        // --collect-only: the games were played (and recorded); nothing is trained.
+        if collect_only {
+            println!(
+                "  update {update:>3}  games {games}  decisions {seated_decisions:>7}  rollout {rollout_time:>6.1?}  (collect only, no update)"
+            );
+            continue;
+        }
 
         // ---- optimise ----
         // Reconstruct a small, faction-balanced clean slice under the frozen source policy. The
@@ -2499,7 +2733,7 @@ fn main() {
                 ));
             }
             let each = demo_per_update / buckets;
-            for faction in FACTIONS {
+            for faction in *FACTIONS {
                 let rows = demo_corpus
                     .get(faction)
                     .unwrap_or_else(|| refuse(&format!("demo corpus has no {faction} rows")));
@@ -2696,7 +2930,12 @@ fn main() {
             };
         // One update per model, each on its own batch with its own optimiser.
         let mut stats_by_model = Vec::with_capacity(models.len());
-        for ((actor, optimizer), batch) in models.iter_mut().zip(&batches) {
+        let separate = models.len() > 1;
+        for (index, ((actor, optimizer), batch)) in models.iter_mut().zip(&batches).enumerate() {
+            // Separate models learn from every faction's good decisions, taken as their own: the
+            // demonstration's row becomes this model's faction, so its critic judges the advantage.
+            let own_row =
+                separate.then(|| ti4_mlp::FactionRow::of(FACTIONS[index]).expect("a roster row"));
             let stats = if auxiliary.is_empty() {
                 ti4_mlp::ppo::update(
                     actor,
@@ -2720,7 +2959,14 @@ fn main() {
                         let width = 128usize;
                         let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
                         let selected: Vec<_> = (0..width.min(auxiliary.len()))
-                            .map(|offset| auxiliary[(start + offset) % auxiliary.len()].clone())
+                            .map(|offset| {
+                                let mut demo =
+                                    auxiliary[(start + offset) % auxiliary.len()].clone();
+                                if let Some(row) = own_row {
+                                    demo.demo.row = row;
+                                }
+                                demo
+                            })
                             .collect();
                         ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
                     },
@@ -2801,6 +3047,16 @@ fn main() {
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
+            let [overpaid, unused, built, fleet] = std::array::from_fn(|i| {
+                PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
+            });
+            println!(
+                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, all units full, upgraded x1.3)",
+                overpaid / seats,
+                unused / seats,
+                built / 1000.0 / seats
+            );
+            println!("              fleet/seat {:.1}", fleet / 1000.0 / seats);
             if self_imitation > 0.0 {
                 println!(
                     "              self-imitation  {sil_selected_count} decisions from {sil_seat_count} seats this update, buffer {}",
@@ -2867,6 +3123,12 @@ fn main() {
                     },
                     &fingerprint,
                 );
+                if models.len() == 1 {
+                    let file = directory.join(format!("checkpoint-{}.adam", optimizer.steps()));
+                    if let Err(error) = optimizer.save_state(&file) {
+                        println!("  optimiser   state not saved: {error}");
+                    }
+                }
             }
             previous = Some(std::mem::take(&mut window));
         }
@@ -2928,8 +3190,10 @@ fn main() {
         }
     }
 
-    for ((after_parameters, after_state), (before_parameters, before_state)) in
-        fingerprints(&models).into_iter().zip(&before)
+    for ((after_parameters, after_state), (before_parameters, before_state)) in fingerprints(&models)
+        .into_iter()
+        .zip(&before)
+        .filter(|_| !collect_only)
     {
         if after_parameters == *before_parameters {
             refuse(
