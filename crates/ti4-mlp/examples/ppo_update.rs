@@ -65,6 +65,12 @@ static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 4] = [
     std::sync::atomic::AtomicI64::new(0),
 ];
 
+thread_local! {
+    /// The same four counters for the game the current thread is playing: the async rollout reads
+    /// it after each game so a batch's telemetry describes exactly that batch's games.
+    static GAME_TELEMETRY: std::cell::Cell<[i64; 4]> = const { std::cell::Cell::new([0; 4]) };
+}
+
 static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
     let Some(list) = argument("--factions") else {
         return ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
@@ -956,22 +962,22 @@ fn play_one(
             let mut all = episode.steps.clone();
             all.push(episode.final_progress);
             let terms = ti4_training::reward::production_terms(&all);
-            PRODUCTION_TELEMETRY[0].fetch_add(
+            let seat_terms: [i64; 4] = [
                 terms.overpay.iter().map(|t| t.1).sum(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            PRODUCTION_TELEMETRY[1].fetch_add(
                 terms.unused.iter().map(|t| t.1).sum(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            PRODUCTION_TELEMETRY[2].fetch_add(
                 terms.built_permille.iter().map(|t| t.1).sum(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            PRODUCTION_TELEMETRY[3].fetch_add(
                 episode.final_progress.fleet_value_permille,
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            ];
+            for (counter, value) in PRODUCTION_TELEMETRY.iter().zip(seat_terms) {
+                counter.fetch_add(value, std::sync::atomic::Ordering::Relaxed);
+            }
+            GAME_TELEMETRY.with(|cell| {
+                let mut total = cell.get();
+                for (sum, value) in total.iter_mut().zip(seat_terms) {
+                    *sum += value;
+                }
+                cell.set(total);
+            });
         }
         if per_decision.len() != recorded.len() {
             return Err(format!(
@@ -1496,7 +1502,17 @@ mod cadence_tests {
 }
 
 /// One finished game of the async rollout: job index, policy version it was played with, result.
-type Finished = (usize, usize, Result<Played, String>);
+type Finished = (usize, usize, Result<Played, String>, [i64; 4]);
+
+/// A batch the freeze thread has already turned into `Batch`es (the games' steps are moved out of
+/// the played games), so the optimiser only optimises.
+struct Prefrozen {
+    batches: Vec<Batch>,
+    decisions: usize,
+    freeze: Duration,
+    /// Overpay, unused, built and fleet counters summed over exactly this batch's games.
+    telemetry: [i64; 4],
+}
 
 /// Shared state of `--async-batch-games`: the rollout workers, which play games continuously, and
 /// the optimiser, which trains on the batches they cut.
@@ -1506,7 +1522,10 @@ struct AsyncState {
     /// Batches the optimiser has taken off the queue.
     consumed: usize,
     pending: Vec<Finished>,
-    ready: std::collections::VecDeque<Vec<Finished>>,
+    /// Cut batches waiting for the freeze thread.
+    raw: std::collections::VecDeque<Vec<Finished>>,
+    /// Frozen batches waiting for the optimiser (the queue `--async-queue-batches` bounds).
+    ready: std::collections::VecDeque<(Vec<Finished>, Prefrozen)>,
     stop: bool,
     failure: Option<String>,
     warned: bool,
@@ -2374,6 +2393,36 @@ fn main() {
     let mut smoothed_vp: BTreeMap<String, f64> = BTreeMap::new();
     let wide_entries = ti4_engine::seating::wide_roster(content, DEFAULT);
 
+    // One frozen batch per model: everything for the shared model, else each faction's own seats
+    // (a step's faction row names the faction that took it).
+    let model_count = models.len();
+    let freeze_steps = |steps: Vec<Step>| -> Vec<Batch> {
+        let grouped: Vec<Vec<Step>> = if model_count == 1 {
+            vec![steps]
+        } else {
+            let rows: Vec<ti4_mlp::FactionRow> = FACTIONS
+                .iter()
+                .map(|faction| ti4_mlp::FactionRow::of(faction).expect("a roster row"))
+                .collect();
+            let mut grouped: Vec<Vec<Step>> = rows.iter().map(|_| Vec::new()).collect();
+            for step in steps {
+                let model = rows
+                    .iter()
+                    .position(|row| *row == step.row)
+                    .unwrap_or_else(|| refuse("a decision from a faction outside the six"));
+                grouped[model].push(step);
+            }
+            grouped
+        };
+        grouped
+            .into_iter()
+            .map(|steps| {
+                Batch::freeze(steps, critic_mode)
+                    .unwrap_or_else(|error| refuse(&format!("freezing: {error}")))
+            })
+            .collect()
+    };
+
     // The current weights packed once per model for ti4-infer, shared by every worker.
     let pack_models = |models: &[(ti4_mlp::Actor, ti4_mlp::ppo::Adam)]| -> Vec<Arc<ti4_mlp::infer::InferModel>> {
         models
@@ -2409,6 +2458,9 @@ fn main() {
             refuse(
                 "--async-batch-games does not combine with --collect-only, --require-faction or --curriculum-seeds",
             );
+        }
+        if self_imitation > 0.0 || check_likelihood {
+            refuse("--async-batch-games does not combine with --self-imitation or --check-likelihood (batches are frozen off-thread)");
         }
         if batch_games != seeds_per_update as usize * rotations {
             refuse("--async-batch-games must equal --seeds-per-update x --rotations");
@@ -2457,6 +2509,54 @@ fn main() {
 
     std::thread::scope(|scope| {
     if let Some(shared) = &async_rt {
+        // One CPU thread freezes cut batches, so the queue holds batches the optimiser can use
+        // at once.
+        scope.spawn(|| {
+            loop {
+                let mut batch = {
+                    let mut state = shared.state.lock().expect("async state");
+                    loop {
+                        if state.stop || state.failure.is_some() {
+                            return;
+                        }
+                        if let Some(batch) = state.raw.pop_front() {
+                            break batch;
+                        }
+                        state = shared.changed.wait(state).expect("async state");
+                    }
+                };
+                let started = Instant::now();
+                let frozen = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut steps: Vec<Step> = Vec::new();
+                    let mut telemetry = [0i64; 4];
+                    for game in &mut batch {
+                        if let Ok(played) = &mut game.2 {
+                            steps.extend(std::mem::take(&mut played.0));
+                        }
+                        for (sum, value) in telemetry.iter_mut().zip(game.3) {
+                            *sum += value;
+                        }
+                    }
+                    if steps.is_empty() {
+                        return Err("self-play recorded no decisions".to_owned());
+                    }
+                    let decisions = steps.len();
+                    Ok(Prefrozen {
+                        batches: freeze_steps(steps),
+                        decisions,
+                        freeze: started.elapsed(),
+                        telemetry,
+                    })
+                }));
+                let mut state = shared.state.lock().expect("async state");
+                match frozen {
+                    Ok(Ok(pre)) => state.ready.push_back((batch, pre)),
+                    Ok(Err(error)) => state.failure = Some(error),
+                    Err(_) => state.failure = Some("freeze thread panicked".to_owned()),
+                }
+                shared.changed.notify_all();
+            }
+        });
         for _ in 0..async_workers {
             scope.spawn(|| {
                 loop {
@@ -2497,6 +2597,7 @@ fn main() {
                         .as_ref()
                         .map(|model| FrozenInference::Infer(Arc::clone(model)));
                     let (seed, rotation) = (seed_base + (job / rotations) as u64, job % rotations);
+                    GAME_TELEMETRY.with(|cell| cell.set([0; 4]));
                     let played = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         play_one(
                             &local,
@@ -2528,11 +2629,12 @@ fn main() {
                     match played {
                         Ok(result) => {
                             state.finished += 1;
-                            state.pending.push((job, version, result));
+                            let telemetry = GAME_TELEMETRY.with(std::cell::Cell::get);
+                            state.pending.push((job, version, result, telemetry));
                             if state.pending.len() == shared.batch_games {
                                 let mut batch = std::mem::take(&mut state.pending);
                                 batch.sort_by_key(|game| game.0);
-                                state.ready.push_back(batch);
+                                state.raw.push_back(batch);
                             }
                         }
                         Err(panic) => {
@@ -2566,6 +2668,7 @@ fn main() {
         let mut tactical_actions = 0usize;
         let mut game_lines = Vec::new();
         let mut async_report = None;
+        let mut prefrozen: Option<Prefrozen> = None;
         let (
             inference_copy_time,
             rolled,
@@ -2581,21 +2684,22 @@ fn main() {
         ) = if let Some(shared) = &async_rt {
             // Wait for the next batch: this wait is the optimiser's idle time.
             let rolled = Instant::now();
-            let (batch, queued, blocked, finished) = {
+            let (batch, pre, queued, blocked, finished) = {
                 let mut state = shared.state.lock().expect("async state");
                 let batch = loop {
                     if let Some(failure) = state.failure.clone() {
                         drop(state);
                         refuse(&failure);
                     }
-                    if let Some(batch) = state.ready.pop_front() {
+                    if let Some(ready) = state.ready.pop_front() {
                         state.consumed += 1;
-                        break batch;
+                        break ready;
                     }
                     state = shared.changed.wait(state).expect("async state");
                 };
                 let taken = (
-                    batch,
+                    batch.0,
+                    batch.1,
                     state.ready.len(),
                     std::mem::take(&mut state.blocked),
                     std::mem::take(&mut state.finished),
@@ -2616,6 +2720,7 @@ fn main() {
                 lags.iter().copied().max().unwrap_or(0),
                 lags.iter().sum::<usize>() as f64 / lags.len().max(1) as f64,
             ));
+            prefrozen = Some(pre);
             let by_job: Vec<Option<Result<Played, String>>> =
                 batch.into_iter().map(|game| Some(game.2)).collect();
             let merge_started = Instant::now();
@@ -3006,14 +3111,18 @@ fn main() {
         let merge_time = merge_started.elapsed();
         let rollout_time = rolled.elapsed();
         drop(rollout_lock);
-        if steps.is_empty() {
+        // Async: the freeze thread already took the steps; it counted them.
+        if let Some(pre) = &prefrozen {
+            seated_decisions = pre.decisions;
+        }
+        if steps.is_empty() && prefrozen.is_none() {
             refuse("self-play recorded no decisions");
         }
         // F-M10-034-D4, the global half. Each seat's returns were already checked against its own
         // decisions; this checks that every seat's decisions reached the batch. A seat lost between
         // the two — by a filter, a drain, a shadowed accumulator — shrinks the batch toward
         // whichever seats survived, and every number downstream stays plausible.
-        if steps.len() != seated_decisions {
+        if prefrozen.is_none() && steps.len() != seated_decisions {
             refuse(&format!(
                 "{seated_decisions} decisions were recorded across seats but {} reached the batch",
                 steps.len()
@@ -3150,34 +3259,18 @@ fn main() {
             }
         }
         let freeze_started = Instant::now();
-        // One batch per model: everything for the shared model, else each faction's own seats
-        // (a step's faction row names the faction that took it).
-        let grouped: Vec<Vec<Step>> = if models.len() == 1 {
-            vec![steps]
-        } else {
-            let rows: Vec<ti4_mlp::FactionRow> = FACTIONS
-                .iter()
-                .map(|faction| ti4_mlp::FactionRow::of(faction).expect("a roster row"))
-                .collect();
-            let mut grouped: Vec<Vec<Step>> = rows.iter().map(|_| Vec::new()).collect();
-            for step in steps {
-                let model = rows
-                    .iter()
-                    .position(|row| *row == step.row)
-                    .unwrap_or_else(|| refuse("a decision from a faction outside the six"));
-                grouped[model].push(step);
+        let mut batch_telemetry = None;
+        let mut freeze_off_thread = None;
+        let batches: Vec<Batch> = match prefrozen.take() {
+            Some(pre) => {
+                batch_telemetry = Some(pre.telemetry);
+                freeze_off_thread = Some(pre.freeze);
+                pre.batches
             }
-            grouped
+            None => freeze_steps(steps),
         };
-        let batches: Vec<Batch> = grouped
-            .into_iter()
-            .map(|steps| {
-                Batch::freeze(steps, critic_mode)
-                    .unwrap_or_else(|error| refuse(&format!("freezing: {error}")))
-            })
-            .collect();
         let batch = &batches[0];
-        let freeze_time = freeze_started.elapsed();
+        let freeze_time = freeze_off_thread.unwrap_or_else(|| freeze_started.elapsed());
         // With --hash-games: the whole frozen batch, content and order, as one digest -- the same
         // encoding `ppo_replay` reports for a captured batch, so the two compare directly.
         let batch_digest = hash_games.then(|| {
@@ -3311,7 +3404,7 @@ fn main() {
             let workers = async_workers as f64;
             let lost = blocked.as_secs_f64() / workers;
             println!(
-                "  update {update:>3}  games {games}  decisions {decisions:>7}  optimiser idle {idle:>6.1?}  merge {merge_time:>5.1?}  freeze {freeze_time:>5.1?}  optimise {optimise_time:>6.1?}  lag max {lag_max} mean {lag_mean:.2}  queued {queued}",
+                "  update {update:>3}  games {games}  decisions {decisions:>7}  optimiser idle {idle:>6.1?}  merge {merge_time:>5.1?}  freeze(thread) {freeze_time:>5.1?}  optimise {optimise_time:>6.1?}  lag max {lag_max} mean {lag_mean:.2}  queued {queued}",
             );
             println!(
                 "              rollout {:.2} games/s  workers blocked {:.1}% ({lost:.1} s/update of {:.1} s)",
@@ -3386,9 +3479,14 @@ fn main() {
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
-            let [overpaid, unused, built, fleet] = std::array::from_fn(|i| {
-                PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
-            });
+            let [overpaid, unused, built, fleet] = batch_telemetry.map_or_else(
+                || {
+                    std::array::from_fn(|i| {
+                        PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
+                    })
+                },
+                |sums| sums.map(|value| value as f64),
+            );
             println!(
                 "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, all units full, upgraded x1.3)",
                 overpaid / seats,
