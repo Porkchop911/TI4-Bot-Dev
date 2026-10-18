@@ -182,8 +182,9 @@ pub struct Reward {
     #[serde(default)]
     pub unused_resources_weight: f64,
     /// Bonus per resource of units built (the produce option's bill), paid on the producing
-    /// decision. Fighters and infantry count half, so infantry spam cannot farm it; everything else
-    /// at full cost. Rewards spending, unlike the fleet-value potential. Off by default.
+    /// decision. Every unit counts at full cost, including fighters, infantry and mechs; upgraded
+    /// ships count 1.3x their bill, the `Progress::fleet_value_permille` convention. Rewards
+    /// spending, unlike the fleet-value potential. Off by default.
     #[serde(default)]
     pub build_weight: f64,
     /// One small Stage-2 bonus on the first observed entry into the Fracture. Paid once per
@@ -574,8 +575,8 @@ pub struct ProductionTerms {
     pub overpay: Vec<(usize, i64)>,
     /// Ready planet resources at each round's last Action-phase decision.
     pub unused: Vec<(usize, i64)>,
-    /// Build value in half-resources: full cost doubled, fighters and infantry at their cost.
-    pub built_halves: Vec<(usize, i64)>,
+    /// Build value in per-mille resources: full bill, upgraded ships at 1.3x.
+    pub built_permille: Vec<(usize, i64)>,
 }
 
 /// A window runs from the first decision offering a produce option until the first later decision
@@ -609,11 +610,10 @@ pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
             window = Some((0, 0, true));
         }
         if let Some(open) = window.as_mut() {
-            open.0 += now.built_cost + now.built_cost_light;
+            open.0 += now.built_cost;
         }
-        let halves = 2 * now.built_cost + now.built_cost_light;
-        if halves > 0 {
-            terms.built_halves.push((index, halves));
+        if now.built_value_permille > 0 {
+            terms.built_permille.push((index, now.built_value_permille));
         }
         if now.action_phase {
             last_action.insert(now.round_number, (index, now.ready_planet_resources));
@@ -683,9 +683,9 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
             for &(slot, ready) in &terms.unused {
                 rewards[slot] -= reward.unused_resources_weight * ready as f64;
             }
-            for &(slot, halves) in &terms.built_halves {
+            for &(slot, permille) in &terms.built_permille {
                 if let Some(paid) = rewards.get_mut(slot) {
-                    *paid += reward.build_weight * 0.5 * halves as f64;
+                    *paid += reward.build_weight * permille as f64 / 1000.0;
                 }
             }
         }
@@ -1543,24 +1543,24 @@ mod tests {
     }
 
     /// Round one has three production windows: bills 3 and 3 paid exactly, then a bill of 2 that
-    /// shrinks the pool by 4 (overpaid 2). Light units are the bill-1 infantry.
+    /// shrinks the pool by 4 (overpaid 2). Decision 1 buys an upgraded ship (2 -> 2.6); decision 2 a bill-1 infantry.
     fn production_episode() -> Episode {
-        let produce = |pool, built, light| Progress {
+        let produce = |pool, built, permille| Progress {
             production_related: true,
             produce_offered: true,
             built_cost: built,
-            built_cost_light: light,
+            built_value_permille: permille,
             ..step(1, pool, 5)
         };
         holdings_episode(
             vec![
                 step(1, 6, 5),
-                produce(6, 2, 0),
-                produce(4, 0, 1),
+                produce(6, 2, 2600),
+                produce(4, 1, 1000),
                 step(1, 3, 3),
-                produce(3, 3, 0),
+                produce(3, 3, 3000),
                 step(1, 0, 0),
-                produce(7, 2, 0),
+                produce(7, 2, 2000),
                 step(1, 3, 3),
                 step(2, 0, 4),
             ],
@@ -1596,13 +1596,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_pay_full_cost_except_fighters_and_infantry_at_half() {
+    fn builds_pay_full_cost_and_upgraded_ships_a_premium() {
         let mut reward = Reward::for_stage(Stage::Two);
         reward.build_weight = 0.1;
         let shifted = shift(&production_episode(), &reward);
-        // Rewards 0.2 (bill 2), 0.05 (bill-1 infantry), 0.3 (bill 3), 0.2 (bill 2) at decisions
+        // Rewards 0.26 (upgraded bill 2), 0.1 (bill-1 infantry, full), 0.3 (bill 3), 0.2 (bill 2) at decisions
         // 1, 2, 4 and 6; returns are their suffix sums.
-        assert_shift(&shifted, &[0.75, 0.75, 0.55, 0.5, 0.5, 0.2, 0.2, 0.0, 0.0]);
+        assert_shift(&shifted, &[0.86, 0.86, 0.6, 0.5, 0.5, 0.2, 0.2, 0.0, 0.0]);
     }
 
     #[test]

@@ -1327,6 +1327,18 @@ impl<'a> Observed<'a> {
             .sum()
     }
 
+    /// Value in per-mille resources of buying `unit_id` for a total `bill`: the bill itself, times
+    /// 1.3 when the unit is an upgraded ship (same convention as [`Self::fleet_value_permille`]:
+    /// no premium for fighters or ground forces).
+    #[must_use]
+    pub fn build_value_permille(&self, unit_id: &str, bill: i64) -> i64 {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        let upgraded = types.get(unit_id).is_some_and(|stats| {
+            stats.is_ship() && !stats.is_fighter() && stats.upgrades_from().is_some()
+        });
+        if upgraded { bill * 1300 } else { bill * 1000 }
+    }
+
     /// One ship or ground force's share of [`Self::fleet_value_permille`].
     fn unit_value_permille(
         stats: ti4_content::units::UnitType<'_>,

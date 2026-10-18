@@ -601,14 +601,8 @@ impl MlpBot {
                 .get("unit")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let light = ti4_content::units::catalogue(seen.content(), seen.sources())
-                .get(unit)
-                .is_some_and(|kind| matches!(kind.base_type(), "fighter" | "infantry"));
-            if light {
-                record.progress.built_cost_light = cost;
-            } else {
-                record.progress.built_cost = cost;
-            }
+            record.progress.built_cost = cost;
+            record.progress.built_value_permille = seen.build_value_permille(unit, cost);
         }
     }
 

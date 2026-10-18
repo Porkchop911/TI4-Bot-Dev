@@ -56,9 +56,10 @@ use ti4_model::id::{FactionId, PlayerId};
 
 /// The six factions a `--roster six` game seats, in rotation order: the historical six, or
 /// `--factions a,b,c,d,e,f`.
-/// Overpay, unused ready-planet resources and build value (half-resources) summed over this
+/// Overpay, unused ready-planet resources and build value (per-mille resources) and final fleet value (per-mille) summed over this
 /// update's seat-games; read and reset when the update is reported.
-static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 3] = [
+static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 4] = [
+    std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
@@ -960,7 +961,11 @@ fn play_one(
                 std::sync::atomic::Ordering::Relaxed,
             );
             PRODUCTION_TELEMETRY[2].fetch_add(
-                terms.built_halves.iter().map(|t| t.1).sum(),
+                terms.built_permille.iter().map(|t| t.1).sum(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            PRODUCTION_TELEMETRY[3].fetch_add(
+                episode.final_progress.fleet_value_permille,
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
@@ -3042,15 +3047,16 @@ fn main() {
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
-            let [overpaid, unused, built] = std::array::from_fn(|i| {
+            let [overpaid, unused, built, fleet] = std::array::from_fn(|i| {
                 PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
             });
             println!(
-                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, fighters/infantry counted full)",
+                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, all units full, upgraded x1.3)",
                 overpaid / seats,
                 unused / seats,
-                built / 2.0 / seats
+                built / 1000.0 / seats
             );
+            println!("              fleet/seat {:.1}", fleet / 1000.0 / seats);
             if self_imitation > 0.0 {
                 println!(
                     "              self-imitation  {sil_selected_count} decisions from {sil_seat_count} seats this update, buffer {}",

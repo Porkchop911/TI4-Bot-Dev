@@ -101,12 +101,13 @@ pub struct Progress {
     /// The decision offers a produce option (set by the recording bot).
     #[serde(default)]
     pub produce_offered: bool,
-    /// Cost of the units the chosen produce option builds, excluding fighters and infantry.
+    /// Bill of the units the chosen produce option builds (every unit type, full cost).
     #[serde(default)]
     pub built_cost: i64,
-    /// Cost of the fighters and infantry the chosen produce option builds.
+    /// Build value in per-mille resources: the bill, times 1.3 for upgraded ships (the
+    /// `fleet_value_permille` convention, `SeatObservation::build_value_permille`).
     #[serde(default)]
-    pub built_cost_light: i64,
+    pub built_value_permille: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -214,7 +215,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         production_related: false,
         produce_offered: false,
         built_cost: 0,
-        built_cost_light: 0,
+        built_value_permille: 0,
         non_home_planet_value: {
             let home = seen
                 .seat(player)
