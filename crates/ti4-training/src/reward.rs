@@ -229,6 +229,11 @@ pub struct Reward {
     /// at the seat's last round-one decision like `r1_bonus`. Off by default.
     #[serde(default)]
     pub r1_expansion_weight: f64,
+    /// The same holding payment for every later round: per resource and influence of the non-home
+    /// planets held when the round ends, credited at the seat's last decision of that round.
+    /// Off by default.
+    #[serde(default)]
+    pub round_expansion_weight: f64,
     /// What a Support for the Throne point is worth as a share of `vp_weight` (1 counts it like any
     /// other point). The default keeps every earlier reward exact.
     #[serde(default = "full_weight")]
@@ -306,6 +311,7 @@ impl Default for Reward {
             projection_rank_weight: 0.0,
             negotiation_step_penalty: 0.0,
             r1_expansion_weight: 0.0,
+            round_expansion_weight: 0.0,
             sftt_weight: 1.0,
         }
     }
@@ -520,6 +526,25 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                     .get(index + 1)
                     .map_or(0.0, |after| after.non_home_planet_value as f64);
                 *slot += reward.r1_expansion_weight * expanded;
+            }
+            if reward.round_expansion_weight > 0.0 {
+                // The last decision of each later round, paid what is held right after it.
+                for (index, step) in episode.steps.iter().enumerate() {
+                    let last_of_round = episode
+                        .steps
+                        .get(index + 1)
+                        .is_none_or(|next| next.round_number != step.round_number);
+                    if step.round_number < 2 || !last_of_round {
+                        continue;
+                    }
+                    #[expect(clippy::cast_precision_loss, reason = "planet values are small")]
+                    let held = snapshots
+                        .get(index + 1)
+                        .map_or(0.0, |after| after.non_home_planet_value as f64);
+                    if let Some(slot) = rewards.get_mut(index) {
+                        *slot += reward.round_expansion_weight * held;
+                    }
+                }
             }
             if let Some(last) = rewards.last_mut() {
                 *last += reward.trade_bonus * episode.traded_goods;
@@ -1283,6 +1308,32 @@ mod tests {
         );
         assert!((with[1] - without[1] - 2.5).abs() < 1e-9);
         assert!((with[2] - without[2]).abs() < 1e-9, "round two does not");
+    }
+
+    #[test]
+    fn later_rounds_pay_what_is_held_at_each_rounds_end() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let held = |round, value| Progress {
+            non_home_planet_value: value,
+            ..at(round)
+        };
+        // Paid on the snapshot after each round's last decision: 6 after round 2, 7 (final) after round 3.
+        let episode = Episode {
+            steps: vec![at(1), held(2, 3), held(2, 5), held(3, 6)],
+            final_progress: held(3, 7),
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let without = returns(&episode, &reward);
+        reward.round_expansion_weight = 0.5;
+        let with = returns(&episode, &reward);
+        let added: Vec<f64> = with.iter().zip(&without).map(|(w, o)| w - o).collect();
+        // Suffix sums: every decision up to round 2's last carries 0.5x6 + 0.5x7; round 3's only 0.5x7.
+        assert!((added[3] - 3.5).abs() < 1e-9, "{added:?}");
+        assert!((added[1] - 6.5).abs() < 1e-9, "{added:?}");
+        assert!((added[0] - added[1]).abs() < 1e-9, "round one earns nothing itself: {added:?}");
     }
 
     #[test]
