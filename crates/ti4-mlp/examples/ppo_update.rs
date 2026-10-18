@@ -2132,7 +2132,7 @@ fn main() {
     let mut optimizer = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
         .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
     // Optimiser state sits beside a checkpoint as `<checkpoint>.adam`; older ones have none.
-    let adam_file = format!("{}.adam", bundle_path.trim_end_matches(['/', '\']));
+    let adam_file = format!("{}.adam", bundle_path.trim_end_matches(['/', '\\']));
     match optimizer.load_state(std::path::Path::new(&adam_file)) {
         Ok(()) => println!("  optimiser   resumed from {adam_file} at step {}", optimizer.steps()),
         Err(error) => println!("  optimiser   fresh ({error})"),
