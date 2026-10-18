@@ -201,12 +201,42 @@ pub fn are_neighbours(state: &GameState, galaxy: &Galaxy, a: &PlayerId, b: &Play
     if here.intersection(&there).next().is_some() {
         return true;
     }
-    here.iter().any(|system| {
-        galaxy
-            .adjacent(system.as_str())
-            .into_iter()
-            .any(|adjacent| there.contains(&SystemId::new(adjacent)))
-    })
+    // Adjacency is either neighbour's: breach links are everyone's, a Quantum Entanglement or
+    // Lazax Gate Folding link is its holder's. Only built when the plain map says "not adjacent".
+    let touches = |from: &BTreeSet<SystemId>, to: &BTreeSet<SystemId>, owner: &PlayerId| {
+        from.iter().any(|system| {
+            galaxy
+                .adjacent(system.as_str())
+                .into_iter()
+                .any(|adjacent| to.contains(&SystemId::new(adjacent)))
+        }) || {
+            let adjacency = adjacency_of(state, galaxy, owner);
+            from.iter().any(|system| {
+                adjacency
+                    .neighbours(system.as_str())
+                    .iter()
+                    .any(|adjacent| to.contains(&SystemId::new(adjacent.as_str())))
+            })
+        }
+    };
+    touches(&here, &there, a) || touches(&there, &here, b)
+}
+
+/// `player`'s adjacency on `galaxy`. The movement hooks that add links (Crimson, Creuss, Winnu)
+/// read neither the content nor the sources, so the embedded store and default scope stand in
+/// for callers that hold neither.
+pub(crate) fn adjacency_of<'g>(
+    state: &GameState,
+    galaxy: &'g Galaxy,
+    player: &PlayerId,
+) -> crate::movement::PlayerAdjacency<'g> {
+    crate::movement::PlayerAdjacency::new(
+        state,
+        ti4_content::ContentStore::embedded(),
+        ti4_model::content_types::DEFAULT,
+        galaxy,
+        player,
+    )
 }
 
 /// Neighbours of `player` who have resolved a transaction this round.

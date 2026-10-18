@@ -1160,6 +1160,8 @@ impl<'a> Observed<'a> {
         {
             return OpponentRelationship::Support;
         }
+        // Plain map on purpose: this feeds an existing policy slot, and a trained checkpoint must
+        // see the same value it was trained on. Links are observed through `route:link-adjacent`.
         if let Some(galaxy) = self.galaxy {
             let mine = self.state.systems_with_units_of(player);
             let theirs = self.state.systems_with_units_of(other);

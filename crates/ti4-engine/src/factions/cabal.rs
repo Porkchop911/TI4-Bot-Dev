@@ -820,7 +820,7 @@ fn leader_action(
 /// Every ship the hero rolls for, in a fixed order: each other player's non-fighter ship in or
 /// adjacent to a system that contains a dimensional tear. Adjacency needs the map; without one only
 /// the tear's own system is reached.
-fn carrion_targets(
+pub(crate) fn carrion_targets(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,

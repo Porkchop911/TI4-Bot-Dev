@@ -160,17 +160,21 @@ fn occupied(state: &GameState, player: &PlayerId) -> BTreeSet<SystemId> {
         .collect()
 }
 
-/// `systems` and every system adjacent to one of them (just `systems` without a map).
-fn with_adjacent(systems: &BTreeSet<SystemId>, galaxy: Option<&Galaxy>) -> BTreeSet<SystemId> {
+/// `systems` and every system adjacent to one of them for `player` (just `systems` without a map).
+fn with_adjacent(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    systems: &BTreeSet<SystemId>,
+    galaxy: Option<&Galaxy>,
+    player: &PlayerId,
+) -> BTreeSet<SystemId> {
     let mut reach = systems.clone();
     if let Some(galaxy) = galaxy {
+        let adjacency =
+            crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
         for system in systems {
-            reach.extend(
-                galaxy
-                    .adjacent(system.as_str())
-                    .into_iter()
-                    .map(SystemId::new),
-            );
+            reach.extend(adjacency.neighbours(system.as_str()).into_iter().map(SystemId::new));
         }
     }
     reach
@@ -191,7 +195,7 @@ fn ingress_moves(
     if !state.fracture_in_play {
         return Vec::new();
     }
-    let mut targets = with_adjacent(&occupied(state, player), galaxy);
+    let mut targets = with_adjacent(state, content, sources, &occupied(state, player), galaxy, player);
     targets.retain(|system| {
         !state.ingress_tokens.contains(system)
             && !crate::fracture::is_fracture_system(content, sources, system)
@@ -278,7 +282,7 @@ fn planesplitter(owner_name: &str, seat: &PlayerId) -> Ability {
 
 /// One infantry that Neural Parasite may destroy: where it stands (`None` for the space area), whose
 /// it is and its unit type.
-pub(super) type Victim = (SystemId, Option<PlanetId>, PlayerId, String);
+pub(crate) type Victim = (SystemId, Option<PlanetId>, PlayerId, String);
 
 pub(super) fn is_infantry(
     types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType<'_>>,
@@ -290,7 +294,7 @@ pub(super) fn is_infantry(
 }
 
 /// Another player's infantry in or adjacent to a system that contains `owner`'s infantry.
-fn parasite_victims(
+pub(crate) fn parasite_victims(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -312,7 +316,7 @@ fn parasite_victims(
         .map(|(system, _)| system.clone())
         .collect();
     let mut found: BTreeSet<Victim> = BTreeSet::new();
-    for system in with_adjacent(&mine, galaxy) {
+    for system in with_adjacent(state, content, sources, &mine, galaxy, owner) {
         let Some(board) = state.board.get(&system) else {
             continue;
         };

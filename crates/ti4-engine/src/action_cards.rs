@@ -3841,7 +3841,7 @@ fn upgrade_ship(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
 /// The roll is three faces on the ten-sided die, hits on 5 or higher, and the hits go through
 /// the combat engine's own absorption, so sustain damage and the owner's casualty choices are
 /// honoured exactly as in a real space-cannon exchange.
-fn experimental_battlestation(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+pub(crate) fn experimental_battlestation(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let Some(system) = context.state.active_system.clone() else {
         return;
     };
@@ -4559,7 +4559,7 @@ fn divert_funding_research(context: &mut crate::timing::TimingContext<'_>, playe
 /// The frontier token is removed when its card is drawn; a deck that runs out before the draw
 /// keeps its token, because nothing was explored. Adjacency needs a map, so a game without one
 /// can only probe tokens in systems its ships already sit in.
-fn exploration_probe(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+pub(crate) fn exploration_probe(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let mine = systems_with_my_ships(context.state, context.content, context.sources, player);
     let mut eligible: BTreeSet<String> = mine.into_iter().collect();
     if let Some(galaxy) = context.galaxy {

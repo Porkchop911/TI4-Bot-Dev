@@ -158,7 +158,7 @@ fn repair_target(event: &Event, state: &GameState) -> Option<Repair> {
 }
 
 /// Whether `owner` has a Dynamo in the space area of `system` or of a system next to it.
-fn dynamo_reaches(
+pub(crate) fn dynamo_reaches(
     state: &GameState,
     galaxy: Option<&PlayerAdjacency<'_>>,
     owner: &PlayerId,
@@ -263,7 +263,7 @@ type Place = (SystemId, Option<PlanetId>);
 
 /// The places `owner`'s mechs stand in a system that contains or is adjacent to a unit of `actor`,
 /// in board order.
-fn watcher_sites(
+pub(crate) fn watcher_sites(
     state: &GameState,
     galaxy: Option<&PlayerAdjacency<'_>>,
     owner: &PlayerId,

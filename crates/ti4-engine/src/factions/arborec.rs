@@ -450,7 +450,7 @@ fn mitosis(owner_name: &str, seat: &PlayerId) -> Ability {
 
 /// One infantry moved between planets.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Shift {
+pub(crate) struct Shift {
     from: (SystemId, PlanetId),
     to: (SystemId, PlanetId),
 }
@@ -472,28 +472,31 @@ fn infantry_sources(
         .collect()
 }
 
-/// Systems that count as "the same or adjacent" to `system`.
-fn near(galaxy: Option<&ti4_content::galaxy::Galaxy>, system: &SystemId) -> BTreeSet<SystemId> {
+/// Systems that count as "the same or adjacent" to `system`, as the owner sees adjacency.
+fn near(
+    adjacency: Option<&crate::movement::PlayerAdjacency<'_>>,
+    system: &SystemId,
+) -> BTreeSet<SystemId> {
     let mut near = BTreeSet::new();
     near.insert(system.clone());
-    if let Some(galaxy) = galaxy {
-        near.extend(
-            galaxy
-                .adjacent(system.as_str())
-                .into_iter()
-                .map(SystemId::new),
-        );
+    if let Some(adjacency) = adjacency {
+        near.extend(adjacency.neighbours(system.as_str()).into_iter().map(SystemId::new));
     }
     near
 }
 
 /// Every single-infantry move still open, given what has been taken from each planet already.
-fn shifts(
+pub(crate) fn shifts(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     available: &BTreeMap<(SystemId, PlanetId), usize>,
 ) -> Vec<Shift> {
+    let adjacency = galaxy.map(|galaxy| {
+        crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+    });
     let controlled: Vec<(SystemId, PlanetId)> = state
         .controlled_planets(player)
         .into_iter()
@@ -504,7 +507,7 @@ fn shifts(
         if *count == 0 {
             continue;
         }
-        let reach = near(galaxy, &from.0);
+        let reach = near(adjacency.as_ref(), &from.0);
         for to in &controlled {
             if to != from && reach.contains(&to.0) {
                 found.push(Shift {
@@ -521,6 +524,8 @@ fn bioplasmosis_ready(context: &TimingContext<'_>, player: &PlayerId) -> bool {
     has_technology(context.state, player, "bio")
         && !shifts(
             context.state,
+            context.content,
+            context.sources,
             context.galaxy,
             player,
             &infantry_sources(context.state, context.content, context.sources, player),
@@ -576,7 +581,14 @@ fn bioplasmosis(owner_name: &str, seat: &PlayerId) -> Ability {
                 infantry_sources(context.state, context.content, context.sources, &owner);
             let mut planned: Vec<Shift> = Vec::new();
             loop {
-                let open = shifts(context.state, context.galaxy, &owner, &available);
+                let open = shifts(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    context.galaxy,
+                    &owner,
+                    &available,
+                );
                 if open.is_empty() {
                     break;
                 }
