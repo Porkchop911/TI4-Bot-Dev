@@ -37,6 +37,8 @@ Use this route to explain a choice, run a controlled comparison or inspect a lea
 
 The runner can construct different deciders. Start from the [runner's actual setup](../crates/ti4-sim/src/run.rs) or [server session](https://github.com/Porkchop911/TI4-Bot-Dev/blob/1f3556d1e1007aad69d658ce3aa4024d141d90c0/crates/ti4-server/src/session) before attributing an action to a policy. An option can be legal yet have no authored score, or have a vocabulary feature that was not emitted in this position. [Engine observations](../crates/ti4-engine/src/choice.rs) expose public facts and the acting seat's private facts; [model redaction](../crates/ti4-model/src/view.rs) defines hidden identities. The [MLP API boundary tests](../crates/ti4-mlp/tests/api_boundary.rs) instead check that inference without a position or with an invalid temperature fails rather than guessing.
 
+The [battle and trade arena guide](TECHNICAL_WIKI_ARENAS.md) explains two narrower learning tools. Battle prediction estimates outcomes of a specified fight; the trade arena and teacher value or label a negotiation. Neither replaces the game-playing decider or proves complete-game strength by its local accuracy.
+
 ## Reconstruct one surprising choice
 
 ### Design philosophy and mechanics

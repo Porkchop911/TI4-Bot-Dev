@@ -26,3 +26,10 @@
 - Publication validation: 157 Markdown pages, 14,238 local links and 46 unique pinned repository source references checked in the prepared Git tree; no missing targets or fragments. Changed manual pages pass whitespace check. Independent Tier A review corrected branch provenance, historical manifest scope, Diplomacy-off conditioning and source-link targets. Documentation evidence was checked; no new benchmark or engine test was run.
 
 Append dated entries with changed pages, source scope, checks and review state. This log covers the technical wiki in this checkout; the strategy vault has its own log.
+
+## [2026-10-18] depth | Explain the battle and trade arenas
+
+- Added [arena guide](TECHNICAL_WIKI_ARENAS.md) and linked it from the [index](TECHNICAL_WIKI.md) and [bot guide](TECHNICAL_WIKI_BOTS.md). Source scope: `main` `a7975206` code for battle simulation/prediction and trade value/teacher paths; dated [arena predictor](../plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md) and [wide-roster review](../plans/evidence/BF-22B-REVIEW-2026-10-11.md) for measurements and open gates.
+- Arena fit and teacher accuracy are kept separate from full-game strength. Publication validation: 158 Markdown pages and 14,266 local links/fragments checked, zero issues; changed pages pass whitespace check. Independent Tier A reviewer matched the cited predictor and teacher figures to dated reports and found no actionable issue. No new arena or gameplay run was performed.
+
+Append dated entries with changed pages, source scope, checks and review state. This log covers the technical wiki in this checkout; the strategy vault has its own log.

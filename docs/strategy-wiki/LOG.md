@@ -64,3 +64,8 @@ Append entries chronologically using `## [YYYY-MM-DD] operation | title`. Record
 - Expanded [bot guide](REPO_BOTS.md) with authored, linear, MLP and rule-bot mechanics; linked source hooks, inference status and dated comparisons. The [technical benchmark guide](../TECHNICAL_WIKI_BENCHMARKS.md) separates gameplay, completion and latency protocols for the shared wiki published on `main` and `DEVniko`.
 - Source scope: `rule-bot` `592e5716` for policy code; the October 13 holdout/mechanism reports were untracked in that checkout and enter Git with this publication. `main` `a7975206` supplies self-play and native inference. These pages report earlier measurements and no new gameplay run or checkpoint promotion.
 - Publication validation: the prepared Git tree's 157 Markdown pages have 14,238 checked local links and 46 checked pinned repository references, with no missing targets or fragments. Independent Tier A review corrected server-rule-bot attribution, historical manifest scope and Diplomacy-off benchmark wording. No new gameplay or training test was run for this documentation change.
+
+## [2026-10-18] depth | Route battle and trade arena concepts
+
+- Linked the [technical arena guide](../TECHNICAL_WIKI_ARENAS.md) from [bot navigation](REPO_BOTS.md). Its code scope is `main` `a7975206`; this strategy vault's source checkout remains `rule-bot` `592e5716`. The guide distinguishes combat predictor labels and negotiation teacher labels from full-game policy outcomes.
+- Publication validation: 158 Markdown pages and 14,266 local links/fragments checked, zero issues. Independent Tier A reviewer checked the arena page's source and measured figures and found no actionable issue. No arena training or gameplay benchmark was run.
