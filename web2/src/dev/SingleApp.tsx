@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LobbyScreen } from "../game/lobby/LobbyScreen";
 import type { LobbyIntent } from "../model";
+import { useChosenBot } from "../session/chosenBot";
 import { localTable } from "../session/localTable";
 import { type ServedModel, listModels } from "../session/models";
 import { PLAYER_COUNT_KEY, keptNickname, validNickname } from "../session/onlineKeys";
@@ -52,6 +53,7 @@ function SingleSetup({
   const [state, setState] = useState<TableState | null>(null);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [inspected, setInspected] = useState<string | null>(null);
+  const [bot, chooseBot] = useChosenBot();
 
   useEffect(() => {
     let stale = false;
@@ -106,8 +108,9 @@ function SingleSetup({
 
   const view = useMemo(
     () =>
-      state && selectLobby(state, { mine: [], inspected, offline: false }, engine?.catalog ?? null),
-    [state, inspected, engine],
+      state &&
+      selectLobby(state, { mine: [], inspected, offline: false, bot }, engine?.catalog ?? null),
+    [state, inspected, engine, bot],
   );
 
   // The engine did not load.
@@ -124,6 +127,8 @@ function SingleSetup({
         return setInspected(intent.system);
       case "closeInspector":
         return setInspected(null);
+      case "chooseBot":
+        return chooseBot(intent.kind);
       case "addBot":
         return table?.addBots(intent.kind);
       case "fillBots":

@@ -83,7 +83,7 @@ const VIEW: LobbyView = {
     }),
     row("slot_2", "Bo", { faction: "Sol", sheet: { ...SHEET, title: "The Federation of Sol" } }),
   ],
-  fill: null,
+  bots: null,
   shuffle: null,
   footer: { note: "", main: null, nickname: false },
 };

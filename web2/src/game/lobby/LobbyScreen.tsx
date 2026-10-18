@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from "rea
 import type {
   FactionSheetView,
   Intent,
+  LobbyBotActionView,
+  LobbyBotsView,
   LobbyButtonView,
   LobbyFactionEditorView,
   LobbyFactionOptionView,
@@ -82,6 +84,77 @@ function RowButton({
     <Button tone="quiet" size="sm" title={view.title} onClick={() => dispatch(view.intent)}>
       {view.label}
     </Button>
+  );
+}
+
+/** One part of the joined control of the bots, after a divider. */
+function BotAction({
+  view,
+  dispatch,
+}: {
+  view: LobbyBotActionView;
+  dispatch: (intent: LobbyIntent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={view.title}
+      disabled={view.intent === null}
+      onClick={() => view.intent && dispatch(view.intent)}
+      className="border-l border-line px-3 font-strong text-sm whitespace-nowrap enabled:hover:bg-hover disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
+    >
+      {view.label}
+    </button>
+  );
+}
+
+/**
+ * The row under the seats, in the form of a seat: the sign of the chosen bot, then one joined
+ * control, the list of the bots with "+ Bot" and "Fill". With no seat to fill all of it is there,
+ * disabled, and says why on hover.
+ */
+function BotRow({
+  view,
+  dispatch,
+}: {
+  view: LobbyBotsView;
+  dispatch: (intent: LobbyIntent) => void;
+}) {
+  const why = view.enabled ? undefined : view.add.title;
+  return (
+    <li className="flex min-h-9 items-center gap-2.5 border-t border-line/50 px-5 py-1 phone:px-3 phone:py-1.5">
+      <span className={cx("flex", !view.enabled && "opacity-50")}>
+        <Sign sign={view.sign} />
+      </span>
+      <div
+        role="group"
+        aria-label="Add bots"
+        title={why}
+        className="inline-flex min-h-8 items-stretch overflow-hidden rounded-md border border-line bg-canvas touch:min-h-10"
+      >
+        <select
+          aria-label="Bot"
+          title={why ?? "The bot that + Bot and Fill put in a seat"}
+          disabled={!view.enabled}
+          value={view.chosen}
+          onChange={(event) => {
+            const chosen = view.options.find((option) => option.id === event.target.value);
+            if (chosen) {
+              dispatch(chosen.intent);
+            }
+          }}
+          className="max-w-56 bg-transparent pr-1 pl-2.5 font-mid text-sm enabled:hover:bg-hover disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
+        >
+          {view.options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <BotAction view={view.add} dispatch={dispatch} />
+        <BotAction view={view.fill} dispatch={dispatch} />
+      </div>
+    </li>
   );
 }
 
@@ -671,7 +744,6 @@ function Players({
             )}
             <span className="ml-auto" />
             {view.shuffle && <RowButton view={view.shuffle} dispatch={dispatch} />}
-            {view.fill && <RowButton view={view.fill} dispatch={dispatch} />}
           </>
         }
       >
@@ -689,6 +761,8 @@ function Players({
             dispatch={dispatch}
           />
         ))}
+        {/* Under the last seat: the bot that "+ Bot" and "Fill" put in a seat. */}
+        {view.bots && <BotRow view={view.bots} dispatch={dispatch} />}
       </ul>
     </section>
   );
