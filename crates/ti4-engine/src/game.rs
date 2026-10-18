@@ -2192,6 +2192,30 @@ impl<'a> Game<'a> {
         if self.state.phase == Phase::Agenda && !self.agenda_resolved {
             return self.step_agenda();
         }
+        // Crimson Rebellion starts with its breakthrough and makes the breakthrough roll for The
+        // Fracture once, before the first strategy phase (operator ruling 2026-10-18). Marked in
+        // state rather than on `Game` so a fork or replay does not roll twice.
+        if self.state.phase == Phase::Strategy
+            && self.state.round == 1
+            && self.state.starting_tech_picks.is_empty()
+        {
+            for player in crate::factions::crimson::setup_rollers(&self.state) {
+                crate::factions::crimson::mark_setup_rolled(&mut self.state, &player);
+                match crate::fracture::after_breakthrough_gained(
+                    &mut self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                    &mut self.table,
+                    &mut self.rng,
+                    &player,
+                ) {
+                    Ok(true) => self.emit("FRACTURE_ENTERED_PLAY"),
+                    Ok(false) => {}
+                    Err(error) => return self.result(false, Some(error.into())),
+                }
+            }
+        }
         if self.state.phase == Phase::Strategy
             && self.state.round == 1
             && !self.strategy_phase_announced
@@ -7150,6 +7174,7 @@ fn wormhole_hops(
         copy.extra_links.clear();
         stripped = Some(copy);
     }
+    // Geometric on purpose: this counts wormhole hops (the +1 move), and a breach link is not a wormhole.
     let wormhole_map = stripped.as_ref().unwrap_or(galaxy);
     let quantum_entanglement = state
         .player(player)
@@ -7174,7 +7199,6 @@ fn wormhole_hops(
             let ordinary = wormhole_map.are_adjacent(previous, step)
                 && !wormhole_map.wormhole_kinds(previous).is_empty()
                 && !wormhole_map.wormhole_kinds(step).is_empty();
-    // Geometric on purpose: this counts wormhole hops (the +1 move), and a breach link is not a wormhole.
             let quantum =
                 quantum_entanglement && has_alpha_or_beta(previous) && has_alpha_or_beta(step);
             hops += u32::from(ordinary || quantum);

@@ -738,6 +738,13 @@ pub fn deploy(
         seat.technologies.insert(TechnologyId::new("vax"));
         seat.technologies.insert(TechnologyId::new("vay"));
     }
+    // Crimson Rebellion starts with its breakthrough, Resonance Generator (operator ruling
+    // 2026-10-18); every other faction gains theirs from its first expedition slice.
+    if alias.as_str() == crate::factions::crimson::FACTION {
+        seat.breakthrough = Some(ti4_model::id::BreakthroughId::new(
+            crate::factions::crimson::BREAKTHROUGH,
+        ));
+    }
     // Sorrow: "place an inactive breach there" (the Sorrow, where the home position is).
     if home == SORROW {
         crate::factions::crimson::place_sorrow_breach(state);
@@ -2221,6 +2228,13 @@ mod tests {
             assert!(seat.home_system.is_some(), "{alias} has a home");
             if alias == "crimson" {
                 assert_eq!(seat.home_system, Some(SystemId::new(CRIMSON_HOME)));
+                assert_eq!(
+                    seat.breakthrough.as_ref().map(|held| held.as_str()),
+                    Some(crate::factions::crimson::BREAKTHROUGH),
+                    "Crimson starts with Resonance Generator"
+                );
+            } else {
+                assert!(seat.breakthrough.is_none(), "{alias} starts without a breakthrough");
             }
         }
     }

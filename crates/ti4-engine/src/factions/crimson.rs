@@ -258,6 +258,39 @@ pub fn place_sorrow_breach(state: &mut GameState) {
     state.faction_marks.remove(&active_key(&sorrow));
 }
 
+/// Public mark: this Crimson seat has made its setup breakthrough roll for The Fracture.
+fn setup_roll_key(player: &PlayerId) -> String {
+    format!("crimson:setup_roll:{player}")
+}
+
+/// Crimson seats that hold Resonance Generator from setup and have not yet made the breakthrough
+/// roll (operator ruling 2026-10-18: Crimson starts with its breakthrough and rolls for The
+/// Fracture like any player gaining one). Holding it does not close the expedition to them.
+#[must_use]
+pub fn setup_rollers(state: &GameState) -> Vec<PlayerId> {
+    state
+        .seating_order
+        .iter()
+        .filter(|player| {
+            state.player(player).is_some_and(|seat| {
+                seat.faction.as_str() == FACTION
+                    && seat
+                        .breakthrough
+                        .as_ref()
+                        .is_some_and(|held| held.as_str() == BREAKTHROUGH)
+            }) && !state.faction_marks.contains_key(&setup_roll_key(player))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Record that `player` has made the setup roll, so it is never made twice.
+pub fn mark_setup_rolled(state: &mut GameState, player: &PlayerId) {
+    state
+        .faction_marks
+        .insert(setup_roll_key(player), "1".to_owned());
+}
+
 /// Flip the breach in `system`; `false`, changing nothing, when it holds none.
 pub fn flip_breach(state: &mut GameState, system: &SystemId) -> bool {
     if !has_breach(state, system) {
@@ -521,6 +554,11 @@ fn linked_systems(
     _galaxy: &Galaxy,
     _player: &PlayerId,
 ) -> Vec<(String, String)> {
+    breach_pairs(state)
+}
+
+/// Every pair of systems that active breaches make adjacent (for every player).
+pub(crate) fn breach_pairs(state: &GameState) -> Vec<(String, String)> {
     let active = active_breaches(state);
     let mut pairs = Vec::new();
     for (index, first) in active.iter().enumerate() {
@@ -554,11 +592,6 @@ fn crimson_homes(state: &GameState) -> Vec<(PlayerId, SystemId)> {
 /// relocation, production, an action card, an exploration or a leader, and each of those writes the
 /// board itself. It runs once per step (`Game::step`, beside the station and Keleres reconciles) and
 /// again when a movement step finishes, before anything fires (`sundered_after_movement`), so a
-    breach_pairs(state)
-}
-
-/// Every pair of systems that active breaches make adjacent (for every player).
-pub(crate) fn breach_pairs(state: &GameState) -> Vec<(String, String)> {
 /// unit never survives to be shot at, fight or take a planet. Ships are destroyed through the
 /// engine's staging (`SHIP_DESTROYED` follows); ground forces through the ground staging.
 pub fn enforce_sundered(state: &mut GameState, content: &ContentStore, sources: SourceSet) {
@@ -983,6 +1016,13 @@ pub(crate) mod testkit {
             .collect()
     }
 
+    /// Make `first` and `second` adjacent through two active breaches.
+    pub(crate) fn link(state: &mut GameState, first: &str, second: &str) {
+        for system in [first, second] {
+            super::put_breach(state, &a(), &SystemId::new(system), true);
+        }
+    }
+
     pub(crate) fn emit(
         state: &mut GameState,
         galaxy: Option<&Galaxy>,
@@ -1016,13 +1056,6 @@ pub(crate) mod testkit {
             ("player", player.into()),
         ]
     }
-    /// Make `first` and `second` adjacent through two active breaches.
-    pub(crate) fn link(state: &mut GameState, first: &str, second: &str) {
-        for system in [first, second] {
-            super::put_breach(state, &a(), &SystemId::new(system), true);
-        }
-    }
-
 }
 
 #[cfg(test)]
@@ -1034,6 +1067,31 @@ mod tests {
 
     fn home(state: &GameState) -> SystemId {
         state.player(&a()).unwrap().home_system.clone().unwrap()
+    }
+
+    // -- starting breakthrough -----------------------------------------------------------------
+
+    #[test]
+    fn the_crimson_starts_with_its_breakthrough_and_makes_the_fracture_roll_once() {
+        let mut state = game();
+        assert!(crate::breakthroughs::holds(&state, &a(), BREAKTHROUGH));
+        assert_eq!(setup_rollers(&state), vec![a()]);
+        state.phase = ti4_model::state::Phase::Strategy;
+        state.round = 1;
+        state.starting_tech_picks.clear();
+        let mut game = crate::game::Game::new(state, content()).with_sources(DEFAULT);
+        let _ = game.step();
+        assert!(
+            setup_rollers(&game.state).is_empty(),
+            "the roll is made and marked"
+        );
+        let fracture = game.state.fracture_in_play;
+        let _ = game.step();
+        assert_eq!(game.state.fracture_in_play, fracture, "never rolled twice");
+        assert!(
+            crate::breakthroughs::holds(&game.state, &a(), BREAKTHROUGH),
+            "the roll does not take the breakthrough away"
+        );
     }
 
     // -- Sorrow -------------------------------------------------------------------------------
@@ -2210,6 +2268,8 @@ mod tests {
             crate::tactical::effective_move_value(state, cruiser, player, origin)
         };
         let base = value(&state, &quiet, &a());
+        // Crimson starts with it; take it away to see the bonus is the breakthrough's.
+        state.player_mut(&a()).unwrap().breakthrough = None;
         assert_eq!(
             value(&state, &home, &a()),
             base,
