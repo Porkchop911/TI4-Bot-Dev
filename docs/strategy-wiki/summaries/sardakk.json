@@ -1,0 +1,1311 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "sardakk",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Prioritize unlocking G’hom Sek’kus early when Sardakk can reach five non-home planets without stretching its position.",
+      "conditions": "Nearby planets must be accessible without overcommitting ships; the unlock requires five planets outside the home system.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Podcast strategy, not current-rules verification.",
+      "components": [
+        "leader:sardakkcommander"
+      ],
+      "segment_ids": [
+        "s000477",
+        "s000478",
+        "s000479",
+        "s000480",
+        "s000481",
+        "s000482",
+        "s000483",
+        "s000484",
+        "s000485",
+        "s000486",
+        "s000487",
+        "s000488",
+        "s000489",
+        "s000490",
+        "s000491"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1746.48,
+          "end": 1831.16
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Use adjacent-system commitment to attack planets without sending ships into the target system, while respecting its timing and route restrictions.",
+      "conditions": "Requires the commander, eligible ground forces in the active or adjacent systems, and a tactical action that reaches the commit step; do not assume tokened systems or prohibited routes qualify.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The FAQ clarifications were not all in the LRR at the time of recording.",
+      "components": [
+        "leader:sardakkcommander"
+      ],
+      "segment_ids": [
+        "s000508",
+        "s000509",
+        "s000510",
+        "s000511",
+        "s000512",
+        "s000513",
+        "s000514",
+        "s000515",
+        "s000516",
+        "s000517",
+        "s000518",
+        "s000519",
+        "s000520",
+        "s000521",
+        "s000522",
+        "s000523",
+        "s000525",
+        "s000526",
+        "s000527",
+        "s000528",
+        "s000529",
+        "s000530",
+        "s000531",
+        "s000532",
+        "s000533",
+        "s000548",
+        "s000549",
+        "s000550"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1889.96,
+          "end": 1969.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1973.64,
+          "end": 2018.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2065.6899999999996,
+          "end": 2085.59
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Project the possibility of a ground invasion to negotiate access, objective cooperation, or peace before starting an expensive fight.",
+      "conditions": "Most useful with connected planets, an unlocked or imminent commander, and neighbors open to deals; intimidation is table-dependent.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts correct ‘fleet’ to ‘force’—often only a carrier plus nearby ground forces.",
+      "components": [
+        "leader:sardakkcommander",
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s001071",
+        "s001072",
+        "s001073",
+        "s001074",
+        "s001075",
+        "s001076",
+        "s001077",
+        "s001078",
+        "s001079",
+        "s001080",
+        "s001081",
+        "s001082",
+        "s001083",
+        "s001084",
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001088",
+        "s001089",
+        "s001090",
+        "s001091",
+        "s001092",
+        "s001093",
+        "s001094",
+        "s001095",
+        "s001096",
+        "s001097",
+        "s001098"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3974.29,
+          "end": 4056.19
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use T’ro to add two infantry to a controlled planet in the active system after a tactical action, especially to reinforce a forward invasion lane.",
+      "conditions": "Once per round, after a tactical action, on a planet Sardakk controls in the active system.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The transcript briefly calls this a ‘Soul’ ability before describing the effect; this summary follows the described Sardakk agent text.",
+      "components": [
+        "leader:sardakkagent",
+        "leader:sardakkcommander"
+      ],
+      "segment_ids": [
+        "s000457",
+        "s000458",
+        "s000459",
+        "s000460",
+        "s000461",
+        "s000462",
+        "s000463",
+        "s000464",
+        "s000465",
+        "s000466",
+        "s000467",
+        "s000468"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1677.56,
+          "end": 1718.26
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Use Sh’val’s hero for a high-value ground strike only when ships can reach the system and a likely win justifies returning them to reinforcements.",
+      "conditions": "Needs the unlocked hero, ships in the active system, enough ground forces to win, and a target worth the ships’ loss.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Target defenses and the ability to reach the system still matter.",
+      "components": [
+        "leader:sardakkhero"
+      ],
+      "segment_ids": [
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2287.68,
+          "end": 2318.64
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Treat Light/Wave Deflectors as the key reach enabler for using Sh’val against a chosen target.",
+      "conditions": "Most valuable in a tech-rich game or when a decisive hero strike is plausible; the ordinary path expects it around round five.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Round-five Technology is not guaranteed, so this is a timing risk, not an assured combination.",
+      "components": [
+        "technology:lwd",
+        "leader:sardakkhero"
+      ],
+      "segment_ids": [
+        "s001237",
+        "s001238",
+        "s001239",
+        "s001240",
+        "s001241",
+        "s001242"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4580.0,
+          "end": 4604.53
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Account for the mech’s sustain trigger and direct counters before committing Sardakk mechs.",
+      "conditions": "Strongest when mechs survive long enough to sustain in ground combat; check the target’s abilities and pre-combat losses.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Some surrounding ASR words are poor, but the trigger and Mentak exception are clear.",
+      "components": [
+        "unit:sardakk_mech"
+      ],
+      "segment_ids": [
+        "s000405",
+        "s000406",
+        "s000407",
+        "s000408",
+        "s000409",
+        "s000410",
+        "s000411",
+        "s000412",
+        "s000413",
+        "s000414",
+        "s000415",
+        "s000416"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1476.08,
+          "end": 1533.08
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Count Unrelenting only on combat rolls; do not add it to space cannon, anti-fighter barrage, or bombardment ability rolls.",
+      "conditions": "Applies when estimating space or ground combat dice; keep separate ability rolls distinct.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Their ‘cowboy math’ is approximate, and action cards or table effects can change outcomes.",
+      "components": [
+        "ability:unrelenting"
+      ],
+      "segment_ids": [
+        "s000321",
+        "s000322",
+        "s000323",
+        "s000324",
+        "s000325",
+        "s000326",
+        "s000327",
+        "s000747",
+        "s000748",
+        "s000749",
+        "s000770",
+        "s000771",
+        "s000772",
+        "s000773",
+        "s000774",
+        "s000775",
+        "s000776",
+        "s000777",
+        "s000778",
+        "s000779",
+        "s000780"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1243.83,
+          "end": 1265.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2864.88,
+          "end": 2884.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2783.16,
+          "end": 2795.51
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Do not plan around Exotrireme I bombardment or a dreadnought-heavy identity; the guide sees Sardakk mainly as a carrier-and-ground-force faction.",
+      "conditions": "Early capacity and broad planet reach usually matter more than bombardment; a board that rewards bombardment can change this.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is a strategic preference, not a claim that dreadnoughts are never useful.",
+      "components": [
+        "unit:sardakk_dreadnought",
+        "unit:carrier"
+      ],
+      "segment_ids": [
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1301.7,
+          "end": 1367.34
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Treat combat as a means to secure a point, planet, defense, or bargaining position—not as a scoring plan by itself.",
+      "conditions": "Before a fight, name the objective or position it advances; avoid fighting only because the dice are better.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Comparative faction rankings are podcast opinion, not universal results.",
+      "components": [
+        "ability:unrelenting"
+      ],
+      "segment_ids": [
+        "s000873",
+        "s000874",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000896",
+        "s000897",
+        "s000898",
+        "s000899",
+        "s000900",
+        "s000901",
+        "s000902",
+        "s000903",
+        "s000904",
+        "s000905",
+        "s000906",
+        "s000907",
+        "s000908",
+        "s000909",
+        "s000910"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3185.81,
+          "end": 3348.64
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Plan around zero starting technologies and a weak economy instead of assuming Sardakk can keep pace without early research.",
+      "conditions": "Especially relevant with technology objectives, prerequisites, or a desired unit upgrade.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts explicitly exclude techless Sardakk from this guide; this is their competitive preference, not a universal requirement.",
+      "components": [
+        "faction:sardakk"
+      ],
+      "segment_ids": [
+        "s000849",
+        "s000850",
+        "s000851",
+        "s000852",
+        "s000853",
+        "s000854",
+        "s000855",
+        "s000856",
+        "s000857",
+        "s000858",
+        "s000859",
+        "s000860",
+        "s001025",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3128.74,
+          "end": 3156.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3793.53,
+          "end": 3848.74
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Expect planet-control objectives to be the more accessible category; do not confuse combat strength with broad scoring strength.",
+      "conditions": "Draft and expand toward the revealed objectives; technology and non-planet control asks can be unusually difficult.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This assessment is broad and does not analyze a specific objective deck, map, or player count.",
+      "components": [
+        "faction:sardakk"
+      ],
+      "segment_ids": [
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001053",
+        "s001054",
+        "s001055",
+        "s001056",
+        "s001057",
+        "s001484",
+        "s001485",
+        "s001486",
+        "s001487",
+        "s001488",
+        "s001489",
+        "s001490",
+        "s001491",
+        "s001492",
+        "s001493",
+        "s001494",
+        "s001495",
+        "s001496"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3891.05,
+          "end": 3919.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 5320.4,
+          "end": 5358.63
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "In a Milty-style draft, seek a planet-rich slice and connected planets or a ‘land bridge,’ especially if premium strategy cards are unlikely.",
+      "conditions": "Slice geometry matters more than assuming a favorable card pick; avoid a planetless gap along the intended route.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is anecdotal draft advice, not a guaranteed pattern.",
+      "components": [
+        "leader:sardakkcommander"
+      ],
+      "segment_ids": [
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001516",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524",
+        "s001525",
+        "s001526",
+        "s001527",
+        "s001528",
+        "s001529",
+        "s001530",
+        "s001531",
+        "s001532",
+        "s001533",
+        "s001534",
+        "s001535",
+        "s001536",
+        "s001537",
+        "s001538",
+        "s001539",
+        "s001540",
+        "s001541",
+        "s001542",
+        "s001543",
+        "s001544",
+        "s001545",
+        "s001546",
+        "s001547",
+        "s001548",
+        "s001549",
+        "s001550"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 5404.67,
+          "end": 5554.14
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Consider Warfare the preferred round-one primary pick when commander access and expansion leverage matter.",
+      "conditions": "Compare Warfare with Technology and Trade according to slice and economy.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts reject ‘always’ preferences and make card selection conditional on the actual game.",
+      "components": [
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s000966",
+        "s000967",
+        "s000968",
+        "s000969",
+        "s000970",
+        "s000971",
+        "s000972",
+        "s000973",
+        "s000974",
+        "s000975",
+        "s000976",
+        "s000977",
+        "s000978",
+        "s000979",
+        "s000980",
+        "s000981",
+        "s000982",
+        "s000983",
+        "s000984",
+        "s000985",
+        "s000986",
+        "s000987",
+        "s000988",
+        "s000989",
+        "s000990",
+        "s001025",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3609.9399999999996,
+          "end": 3694.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3793.53,
+          "end": 3848.74
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Follow Technology in round one even if another card is the primary pick; double technology only when its immediate value justifies a round-one build sacrifice.",
+      "conditions": "Double tech suits a position with favorable costs and enough time to recover the fleet; selecting Warfare does not replace following Technology.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Techless variants exist, but the guide excludes them; ‘must’ reflects its preferred plan.",
+      "components": [
+        "strategy-card:pok7technology",
+        "strategy-card:pok6warfare",
+        "technology:det",
+        "technology:gd"
+      ],
+      "segment_ids": [
+        "s001023",
+        "s001024",
+        "s001025",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036",
+        "s001115",
+        "s001116",
+        "s001117",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001121",
+        "s001122",
+        "s001123",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3789.1,
+          "end": 3848.73
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4078.21,
+          "end": 4154.67
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Take Trade as a round-one alternative when cash is needed to build units and still afford a Technology follow.",
+      "conditions": "Favor Trade when cash or commodity exchange is binding; favor Warfare when expansion and threat projection dominate.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Trade helps the opening but does not remove Sardakk’s structural economy problem.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok7technology"
+      ],
+      "segment_ids": [
+        "s000954",
+        "s000955",
+        "s000956",
+        "s000957",
+        "s000958",
+        "s000959",
+        "s000960",
+        "s001020",
+        "s001021",
+        "s001022",
+        "s001023",
+        "s001024",
+        "s001025"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3782.11,
+          "end": 3801.61
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 3567.44,
+          "end": 3597.06
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Prioritize Dark Energy Tap (DET) as an early exploration investment when the slice offers safe access.",
+      "conditions": "Budget the command tokens for exploration; avoid routes made dangerous by anomalies or enemy space cannon.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "One nearby retreat sentence is transcribed as “BET,” likely DET from context; individual exploration draws remain uncertain.",
+      "components": [
+        "technology:det",
+        "unit:cruiser"
+      ],
+      "segment_ids": [
+        "s001148",
+        "s001149",
+        "s001150",
+        "s001151",
+        "s001152",
+        "s001153",
+        "s001154",
+        "s001155",
+        "s001156",
+        "s001157",
+        "s001158",
+        "s001159",
+        "s001160",
+        "s001161",
+        "s001162",
+        "s001348",
+        "s001349",
+        "s001350",
+        "s001351",
+        "s001360",
+        "s001361",
+        "s001362",
+        "s001363",
+        "s001364",
+        "s001365",
+        "s001366"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4200.0,
+          "end": 4276.610000000001
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4918.2,
+          "end": 4988.58
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Treat Gravity Drive and Carrier II as the core movement-and-capacity package, not a complete winning plan by themselves.",
+      "conditions": "Prioritize in blue-focused paths; skips and bonus research can alter order.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The speakers do not prescribe one fixed sequence for every slice.",
+      "components": [
+        "technology:gd",
+        "technology:cv2"
+      ],
+      "segment_ids": [
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001147"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4160.03,
+          "end": 4199.97
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Use Sling Relay to ease production limits, especially when it can add a capital ship alongside normal fighter and infantry builds.",
+      "conditions": "Useful when research tempo permits and production is binding; an alternative Exotrireme path gives it up.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "The unit mix is an example, not a universal recipe.",
+      "components": [
+        "technology:sr",
+        "leader:sardakkagent"
+      ],
+      "segment_ids": [
+        "s001167",
+        "s001168",
+        "s001169",
+        "s001170",
+        "s001171",
+        "s001172",
+        "s001173",
+        "s001174",
+        "s001175",
+        "s001176"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4300.02,
+          "end": 4331.28
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Treat Fighter II and Bio-Stims from a green skip as optional additions after the core blue path and Light/Wave.",
+      "conditions": "Requires bonus tech tempo; protect resources and tokens needed for scoring and production.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "A stall action is not a pass, and the hosts’ hit-threshold math is approximate.",
+      "components": [
+        "technology:ff2",
+        "technology:bs",
+        "technology:sr",
+        "technology:lwd"
+      ],
+      "segment_ids": [
+        "s001233",
+        "s001234",
+        "s001235",
+        "s001236",
+        "s001237",
+        "s001238",
+        "s001239",
+        "s001240",
+        "s001241",
+        "s001242",
+        "s001243",
+        "s001244",
+        "s001245",
+        "s001246",
+        "s001247",
+        "s001248",
+        "s001249",
+        "s001250",
+        "s001251",
+        "s001252",
+        "s001253",
+        "s001254",
+        "s001255",
+        "s001256",
+        "s001257",
+        "s001258"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4551.0,
+          "end": 4649.0
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Pursue Exotrireme II on the flashy late-game path only when both yellow and blue skips make room without sacrificing Light/Wave.",
+      "conditions": "Needs both skips and enough research tempo; the default route already expects Light/Wave near round five.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is a possible high-upside line, not a routine plan.",
+      "components": [
+        "technology:det",
+        "technology:gd",
+        "technology:cv2",
+        "technology:exo2",
+        "technology:lwd"
+      ],
+      "segment_ids": [
+        "s001271",
+        "s001272",
+        "s001273",
+        "s001274",
+        "s001275",
+        "s001276",
+        "s001277",
+        "s001278",
+        "s001279",
+        "s001280",
+        "s001281",
+        "s001282",
+        "s001283",
+        "s001284",
+        "s001285",
+        "s001286",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001290",
+        "s001291",
+        "s001292"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4661.2,
+          "end": 4730.16
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Usually avoid a red-skip detour and Valkyrie Particle Weave; the guide calls it costly win-more research, not a needed ground-combat fix.",
+      "conditions": "Reconsider only when concrete objectives, discounts, or bonus research make it timely.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Low research frequency is anecdotal in the episode, not measured evidence.",
+      "components": [
+        "technology:vpw",
+        "technology:aida",
+        "unit:sardakk_mech"
+      ],
+      "segment_ids": [
+        "s001312",
+        "s001313",
+        "s001314",
+        "s001315",
+        "s001316",
+        "s001317",
+        "s001318",
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001322",
+        "s001323",
+        "s001324",
+        "s001325",
+        "s001326",
+        "s001327",
+        "s001328",
+        "s001329",
+        "s001330",
+        "s001331",
+        "s001332",
+        "s001333",
+        "s001334",
+        "s001335",
+        "s001336",
+        "s001337",
+        "s001338",
+        "s001339",
+        "s001340",
+        "s001341",
+        "s001342",
+        "s001343",
+        "s001344",
+        "s001345",
+        "s001346",
+        "s001347"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4808.08,
+          "end": 4917.5
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Remember Exotrireme II’s ship-destruction ability when attacking Sardakk, but first check that the upgrade is actually present.",
+      "conditions": "Attackers should plan capacity for possible ship losses; the ability matters only if the unit survives to use it.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This reports the episode’s explanation, not an independent current-rules ruling.",
+      "components": [
+        "technology:exo2",
+        "unit:sardakk_dreadnought2"
+      ],
+      "segment_ids": [
+        "s000653",
+        "s000654",
+        "s000655",
+        "s000656",
+        "s000657",
+        "s000658",
+        "s000659",
+        "s000660",
+        "s000661",
+        "s000662",
+        "s000663",
+        "s000664",
+        "s000665",
+        "s000666",
+        "s000667",
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679",
+        "s000680",
+        "s000681",
+        "s000682",
+        "s000683"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2466.5899999999997,
+          "end": 2591.75
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Advertise and sell Tekklar Legion near the ground-combat window; accept a modest offer rather than expecting it to sell itself.",
+      "conditions": "Best when the buyer expects a consequential ground fight and can use the note at the relevant timing window.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "Market value depends on table behavior; current mechanics are not reviewed.",
+      "components": [
+        "promissory:tekklar"
+      ],
+      "segment_ids": [
+        "s000423",
+        "s000424",
+        "s000425",
+        "s000426",
+        "s000427",
+        "s001397",
+        "s001398",
+        "s001399",
+        "s001400",
+        "s001401",
+        "s001402",
+        "s001403",
+        "s001404",
+        "s001405",
+        "s001406",
+        "s001407",
+        "s001408"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 5048.6,
+          "end": 5109.43
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1568.81,
+          "end": 1594.6299999999999
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Arrange an Alliance buyer early and favor a partner that can keep ground forces positioned for adjacent-system commitments.",
+      "conditions": "Buyer, terrain, and unit mix determine value; Sardakk itself is particularly built to exploit the commander.",
+      "compatibility": "SCPT 379 Super Guide, published 2024-11-27; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is a tentative market assessment from the hosts.",
+      "components": [
+        "leader:sardakkcommander",
+        "leader:sardakkagent"
+      ],
+      "segment_ids": [
+        "s001410",
+        "s001411",
+        "s001412",
+        "s001413",
+        "s001414",
+        "s001415",
+        "s001416",
+        "s001417",
+        "s001418",
+        "s001419",
+        "s001420",
+        "s001421",
+        "s001422",
+        "s001423",
+        "s001424",
+        "s001425",
+        "s001426",
+        "s001427",
+        "s001428",
+        "s001429",
+        "s001430",
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001436",
+        "s001437",
+        "s001438",
+        "s001439",
+        "s001440",
+        "s001441",
+        "s001442",
+        "s001443",
+        "s001444",
+        "s001445",
+        "s001446",
+        "s001465",
+        "s001466",
+        "s001467",
+        "s001468",
+        "s001469",
+        "s001470",
+        "s001471",
+        "s001472",
+        "s001473",
+        "s001474",
+        "s001475",
+        "s001476",
+        "s001477",
+        "s001478",
+        "s001479",
+        "s001480",
+        "s001481"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 5110.98,
+          "end": 5220.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 5274.66,
+          "end": 5316.52
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "leader:sardakkcommander",
+      "to": "leader:sardakkagent",
+      "relation": "synergizes-with",
+      "conditions": "T’ro puts infantry on an active front that can support adjacent-system commitment.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1677.56,
+          "end": 1718.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1787.4,
+          "end": 1831.16
+        }
+      ]
+    },
+    {
+      "from": "leader:sardakkcommander",
+      "to": "leader:sardakkhero",
+      "relation": "synergizes-with",
+      "conditions": "Both can threaten ground invasions without relying on winning ordinary space combat; the hero is a more costly, decisive strike.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1889.96,
+          "end": 1935.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2290.32,
+          "end": 2308.02
+        }
+      ]
+    },
+    {
+      "from": "technology:lwd",
+      "to": "leader:sardakkhero",
+      "relation": "enables",
+      "conditions": "Light/Wave improves the chance Sardakk ships can reach the hero’s chosen active system.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4583.46,
+          "end": 4604.52
+        }
+      ]
+    },
+    {
+      "from": "technology:sr",
+      "to": "leader:sardakkagent",
+      "relation": "synergizes-with",
+      "conditions": "Sling Relay supplements home production; T’ro adds infantry at the active front.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4295.06,
+          "end": 4331.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 1677.56,
+          "end": 1718.26
+        }
+      ]
+    },
+    {
+      "from": "unit:sardakk_mech",
+      "to": "technology:vpw",
+      "relation": "synergizes-with",
+      "conditions": "Particle Weave can add a ground-combat hit alongside the mech’s sustain-triggered hit; the guide considers the tech too costly as a default.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2623.72,
+          "end": 2635.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2670.54,
+          "end": 2712.7
+        }
+      ]
+    },
+    {
+      "from": "technology:gd",
+      "to": "technology:cv2",
+      "relation": "synergizes-with",
+      "conditions": "The guide treats both as the core blue movement-and-capacity package; order may vary with skips.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4160.03,
+          "end": 4199.97
+        }
+      ]
+    },
+    {
+      "from": "technology:exo2",
+      "to": "unit:carrier",
+      "relation": "counters",
+      "conditions": "If Exotrireme II survives a combat round, the described ability can remove up to two ships and threaten carrier capacity.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 2476.7,
+          "end": 2589.18
+        }
+      ]
+    },
+    {
+      "from": "technology:ff2",
+      "to": "ability:unrelenting",
+      "relation": "synergizes-with",
+      "conditions": "The guide likes Fighter II because improved fighters also receive Sardakk’s combat-roll modifier; hit-threshold math is approximate.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-379-8077e0ed04b0",
+          "start": 4630.96,
+          "end": 4660.26
+        }
+      ]
+    }
+  ]
+}

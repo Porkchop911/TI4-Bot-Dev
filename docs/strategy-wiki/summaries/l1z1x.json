@@ -1,0 +1,691 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "l1z1x",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat L1 as a high-variance combat faction whose strength depends on whether objectives, map, and table make its unusually strong invasion and fleet tools relevant.",
+      "conditions": "Best fit when combat can convert into points or useful leverage; performance may be poor when the game emphasizes economy.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts’ assessment, not tournament data.",
+      "components": [
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s000256",
+        "s000272"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1063.96,
+          "end": 1126.26
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Prioritize a high-influence slice, ideally with a blue skip, because tokens sustain repeated activations and a blue skip eases the costly technology path.",
+      "conditions": "Especially important in six-player and tournament contexts; reconsider L1 if both are absent.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Map-dependent advice; no exact influence threshold is asserted.",
+      "components": [
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s001671",
+        "s001676"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 6338.5,
+          "end": 6366.98
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Use Diplomacy as a leading round-one option to refresh the five-resource home planet, control timing, and fund technology or production.",
+      "conditions": "Attractive when the planet is ready to refresh and timing lets you exploit resources twice; consider skips and slice resources.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts rank it highly but call Trade better in some tables.",
+      "components": [
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s000958",
+        "s000974"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 3857.23,
+          "end": 3909.31
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Consider Leadership when the slice is influence-poor and Diplomacy is likely to remain available for a follow; its tokens help a faction with no home influence.",
+      "conditions": "Less attractive if Diplomacy is taken before you or Construction rather than Diplomacy is the final pick.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts call Leadership middling and table-order dependent.",
+      "components": [
+        "strategy-card:pok1leadership"
+      ],
+      "segment_ids": [
+        "s000900",
+        "s000920"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 3661.71,
+          "end": 3729.89
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Prefer Trade when the table cooperates with debt-meta and commodity washing, since trade goods address L1’s structural economic weakness.",
+      "conditions": "More valuable with reachable, willing neighbors; without a trade ship, neighbors must come to you, so early cash may trail Diplomacy.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts compare conditional cases and disagree on exact note value.",
+      "components": [
+        "strategy-card:pok5trade"
+      ],
+      "segment_ids": [
+        "s001050",
+        "s001073"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4177.59,
+          "end": 4256.88
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Do not default to Warfare just to spread farther: the opening already has two-capacity ships, and a concentrated rollout can make L1 a stronger round-three threat.",
+      "conditions": "Use Warfare when map or objective makes reach more valuable than a stronger fleet build.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Preferred plan, not prohibition.",
+      "components": [
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s001100",
+        "s001122"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4347.4,
+          "end": 4414.7
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Technology is the ambitious round-one pick when a double research compensates for awkward starting colors; it has a higher ceiling but depends on economy and follows.",
+      "conditions": "Choose when funds and Diplomacy or Trade make the secondary affordable.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts call Tech a ceiling play yet describe the opening as expensive.",
+      "components": [
+        "strategy-card:pok7technology"
+      ],
+      "segment_ids": [
+        "s001123",
+        "s001143"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4415.9,
+          "end": 4505.08
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "With no skip, aim toward Gravity Drive, Super Dreadnought II, and Carrier II for flagship movement, dreadnought reach, and capacity for home production.",
+      "conditions": "A demanding multi-round plan; adapt to tempo and funds.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Recommended path, not required sequence or rules audit.",
+      "components": [
+        "technology:gd",
+        "technology:sdn2",
+        "technology:cv2"
+      ],
+      "segment_ids": [
+        "s001209",
+        "s001215"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4700.26,
+          "end": 4740.66
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "A blue skip can accelerate Gravity Drive in round one and then be spent on Super Dreadnought II or Carrier II through AI Development Algorithm.",
+      "conditions": "Exploit the skip repeatedly when research tempo permits.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Exact prerequisite legality was not independently checked.",
+      "components": [
+        "technology:gd",
+        "technology:aida",
+        "technology:sdn2",
+        "technology:cv2"
+      ],
+      "segment_ids": [
+        "s001304",
+        "s001316"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5059.74,
+          "end": 5115.18
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "A yellow skip offers a situational early Cruiser II detour, then can help resume the core dreadnought path.",
+      "conditions": "Consider when research is affordable and the cruiser has a concrete job.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Modest alternative, not default.",
+      "components": [
+        "technology:cr2",
+        "technology:sdn2"
+      ],
+      "segment_ids": [
+        "s001256",
+        "s001272"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4892.1,
+          "end": 4944.88
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Do not chase Inheritance Systems routinely; the hosts regard its two-yellow path and two-resource activation as too costly.",
+      "conditions": "Reconsider only with unusual technology tempo or a specific objective.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Strong podcast opinion; current value unverified.",
+      "components": [
+        "technology:is"
+      ],
+      "segment_ids": [
+        "s000590",
+        "s000615"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 2349.6,
+          "end": 2426.26
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Assimilate makes a planet with an enemy PDS or space dock unusually valuable because the structure becomes an L1 copy before tactical-action production.",
+      "conditions": "Requires taking such a planet and an opportunity to produce afterward.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Timing is the hosts’ account; full rules legality not reviewed.",
+      "components": [
+        "ability:assimilate",
+        "unit:pds",
+        "unit:spacedock"
+      ],
+      "segment_ids": [
+        "s000429",
+        "s000434"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1698.88,
+          "end": 1730.54
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Harrow can turn a close ground invasion into a win by applying ships’ bombardment after each ground-combat round.",
+      "conditions": "Most relevant when bombardment ships are in the active system and the invasion is contested.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Conditional advantage, not automatic win.",
+      "components": [
+        "ability:harrow",
+        "unit:l1z1x_dreadnought"
+      ],
+      "segment_ids": [
+        "s000444",
+        "s000458"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1748.08,
+          "end": 1824.1
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Use the starting Super Dreadnought’s two capacity with the carrier to move the opening 2C4I force.",
+      "conditions": "Account for distance and ground-force needs.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Opening fleet called adequate; expansion depends on slice.",
+      "components": [
+        "unit:l1z1x_dreadnought",
+        "unit:carrier",
+        "unit:infantry"
+      ],
+      "segment_ids": [
+        "s000458",
+        "s000463"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1821.86,
+          "end": 1848.46
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "The L1 flagship rewards joining it with dreadnoughts: its hits force assignment to non-fighter ships when possible, pressuring fighter-based fleets.",
+      "conditions": "Useful for a major battle or to deter attacks in its system.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Fighters still provide hit points and some matchups resist this pressure.",
+      "components": [
+        "unit:l1z1x_flagship",
+        "unit:l1z1x_dreadnought"
+      ],
+      "segment_ids": [
+        "s000470",
+        "s000477"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1864.68,
+          "end": 1904.4
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Do not leave mechs in space just to preserve bombardment; once committed to a planet they cannot bombard, and ground-combat sustain is usually more valuable.",
+      "conditions": "Choose based on whether bombardment or ground presence changes the invasion.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Transcript discusses edge cases; strategic point is clearer than rules details.",
+      "components": [
+        "unit:l1z1x_mech",
+        "ability:harrow"
+      ],
+      "segment_ids": [
+        "s000488",
+        "s000503"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1946.6,
+          "end": 2003.4
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "The Helmsman can reposition the flagship and dreadnoughts into an empty system, creating a late threat and surprise attack option.",
+      "conditions": "Destination must lack other players’ ships; opponents can occupy key systems to limit options.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Reflects guide text and 2024 discussion; current rules unchecked.",
+      "components": [
+        "leader:l1z1xhero",
+        "unit:l1z1x_flagship",
+        "unit:l1z1x_dreadnought"
+      ],
+      "segment_ids": [
+        "s000716",
+        "s000735"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 2861.54,
+          "end": 2937.82
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Project credible force to improve bargaining, but avoid extortion that earns little while damaging future relations.",
+      "conditions": "Seek equitable point-enabling trades; explain the peaceful deal and preserve mobility for scoring.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Table-dependent political advice.",
+      "components": [
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s001406",
+        "s001441"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5459.96,
+          "end": 5602.48
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Avoid a major invasion that only removes a rival if it leaves L1 with an exposed fleet, weak mobility, and no path to score.",
+      "conditions": "War can be worthwhile for a point, objective, or meaningful leverage.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Common failure pattern, not absolute rule.",
+      "components": [
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s001442",
+        "s001458"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5603.36,
+          "end": 5675.92
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Use combat to threaten or execute a decisive late-game winslay while remaining in the scoring pack; the ideal is a strong third- or fourth-place position before that window.",
+      "conditions": "Needs command tokens, mobility, technology, and fleet to reach relevant systems; do not spend the game stopping others without a scoring plan.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Hosts’ strategic framing; no victory guarantee.",
+      "components": [
+        "faction:l1z1x",
+        "leader:l1z1xhero"
+      ],
+      "segment_ids": [
+        "s001464",
+        "s001481"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5698.3,
+          "end": 5758.32
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Prepare to pivot into structure objectives by taking opposing structures with Assimilate instead of routinely buying them through Construction.",
+      "conditions": "May appeal late, even after an opponent scores, when taking a structure advances or blocks an objective.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Control is not guaranteed and aggressive point blocking has political cost.",
+      "components": [
+        "ability:assimilate",
+        "public-objective:build_defenses",
+        "public-objective:massive_cities"
+      ],
+      "segment_ids": [
+        "s001514",
+        "s001530"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5867.86,
+          "end": 5919.26
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Combat strength does not itself satisfy control objectives: plan to hold planets, retain command tokens, and meet each objective’s prerequisites.",
+      "conditions": "Especially important for stage-two or multi-system control objectives.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "High-level advice; every objective requirement is not enumerated.",
+      "components": [
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s001531",
+        "s001542"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5919.68,
+          "end": 5941.38
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Treat Mecatol Rex plus Imperial as a possible catch-up line, but do not assume taking Mecatol scores a stage one or enables a second status-phase score.",
+      "conditions": "Requires revealed objectives, qualification, and sufficient tempo; prerequisites and secrets can make it poor.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Not a scoring-rules verification.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "faction:l1z1x"
+      ],
+      "segment_ids": [
+        "s001549",
+        "s001582"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5957.42,
+          "end": 6092.7
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Starting Plasma Scoring and bombardment can help with combat secrets such as Turn Their Fleets to Dust or Make an Example of Their World.",
+      "conditions": "Select only when board state and exact objective timing/conditions align.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Guide notes wording change; do not infer Harrow counts as the bombardment step.",
+      "components": [
+        "technology:ps",
+        "secret-objective:ttfd",
+        "secret-objective:mew",
+        "ability:harrow"
+      ],
+      "segment_ids": [
+        "s001583",
+        "s001598"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 6093.88,
+          "end": 6136.54
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "If the game trends toward stage-two tempo, use movement and combat to pursue suitable late control or structure objectives; some single-target objectives may fit L1’s reach.",
+      "conditions": "Only when mobility, tokens, and actual requirements align; outside-home structure objectives are an exception.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Tendency, not guaranteed scoring.",
+      "components": [
+        "leader:l1z1xhero",
+        "public-objective:distant_lands",
+        "public-objective:massive_cities"
+      ],
+      "segment_ids": [
+        "s001616",
+        "s001642"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 6168.82,
+          "end": 6250.04
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "In Milty-style draft, the guide proposes taking L1 around third or fourth to pursue a high-influence slice, then accepting a later speaker pick that can take Diplomacy.",
+      "conditions": "Depends on L1 not being an early faction pick and draft availability.",
+      "compatibility": "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+      "uncertainty": "Specific draft advice, not universal map-making advice.",
+      "components": [
+        "faction:l1z1x",
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s001696",
+        "s001708"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 6448.92,
+          "end": 6501.36
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "unit:l1z1x_dreadnought",
+      "to": "ability:harrow",
+      "relation": "synergizes-with",
+      "conditions": "Harrow applies bombardment after each ground-combat round when the dreadnought is in the active system.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1748.08,
+          "end": 1829.52
+        }
+      ]
+    },
+    {
+      "from": "ability:assimilate",
+      "to": "unit:spacedock",
+      "relation": "enables",
+      "conditions": "Taking a planet with an enemy space dock can replace it with L1’s dock before tactical-action production.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1704.5,
+          "end": 1730.54
+        }
+      ]
+    },
+    {
+      "from": "unit:l1z1x_flagship",
+      "to": "unit:l1z1x_dreadnought",
+      "relation": "synergizes-with",
+      "conditions": "Flagship and dreadnought hits in its system are assigned to non-fighter ships when able.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1866.74,
+          "end": 1904.4
+        }
+      ]
+    },
+    {
+      "from": "leader:l1z1xhero",
+      "to": "unit:l1z1x_flagship",
+      "relation": "enables",
+      "conditions": "Helmsman can move the flagship and dreadnoughts to a system without other players’ ships.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 2863.54,
+          "end": 2937.82
+        }
+      ]
+    },
+    {
+      "from": "technology:gd",
+      "to": "leader:l1z1xhero",
+      "relation": "synergizes-with",
+      "conditions": "Gravity Drive is prioritized partly for flagship movement and late-game mobility.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4700.26,
+          "end": 4740.66
+        }
+      ]
+    },
+    {
+      "from": "technology:sdn2",
+      "to": "unit:l1z1x_dreadnought2",
+      "relation": "enables",
+      "conditions": "The guide treats Super Dreadnought II as a core upgrade for dreadnought reach and combat.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 4700.26,
+          "end": 4740.66
+        }
+      ]
+    }
+  ]
+}

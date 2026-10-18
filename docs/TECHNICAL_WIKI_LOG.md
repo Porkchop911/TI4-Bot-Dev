@@ -1,6 +1,5 @@
 # Technical wiki maintenance log
 
-Append dated entries with changed pages, source scope, checks and review state. This log covers the technical wiki in this checkout; the strategy vault has its own log.
 
 ## [2026-10-18] navigation | Create a checkout-specific technical wiki
 
@@ -19,3 +18,11 @@ Append dated entries with changed pages, source scope, checks and review state. 
 - Pages: expanded [index](TECHNICAL_WIKI.md), [engine](TECHNICAL_WIKI_ENGINE.md), [bots](TECHNICAL_WIKI_BOTS.md), and [interfaces](TECHNICAL_WIKI_INTERFACES.md); added [invariants](TECHNICAL_WIKI_INVARIANTS.md) and [tests](TECHNICAL_WIKI_TESTS.md). Applied the upstream `/karpathy:wiki` source-first, concept-page, frontmatter and citation approach within the existing `docs/` folder.
 - Source scope: `wp/base-factions` at `1f3556d1`. Read engine choice/game/snapshot code, content loader/validator, bot and MLP paths, simulation/training entry points, host protocol/projection, server tests, Wasm and both web manifests. Corrected an initial overstatement: the MLP API boundary tests cover inference refusal, not opponent-hand privacy.
 - Validation: seven pages and 320 local links, including heading fragments, resolve; all 22 workspace members are mapped, concept pages have required frontmatter and cited paths, no pages are orphaned, and no trailing whitespace was found. No runtime or training test was run for documentation-only edits.
+
+## [2026-10-18] depth | Explain bot designs and benchmark limits
+
+- Expanded [bot guide](TECHNICAL_WIKI_BOTS.md) with ScoredBot, linear policy, MLP and rule-bot philosophies, mechanics and failure traces; added [benchmark guide](TECHNICAL_WIKI_BENCHMARKS.md). The [index](TECHNICAL_WIKI.md) now distinguishes the `wp/base-factions` architecture snapshot from `main`/`DEVniko` inference and self-play paths.
+- Source scope: `wp/base-factions` `1f3556d1` for authored bot implementation; `main` `a7975206` for self-play and native inference; `rule-bot` `592e5716` for the server smart-bot code baseline. The October 13 holdout and mechanism reports were untracked in that checkout and enter Git with this publication; the measurements are reproduced from those files, not rerun. A public TI4 autonomous-player benchmark search found no comparable leaderboard; no best-in-class claim is made.
+- Publication validation: 157 Markdown pages, 14,238 local links and 46 unique pinned repository source references checked in the prepared Git tree; no missing targets or fragments. Changed manual pages pass whitespace check. Independent Tier A review corrected branch provenance, historical manifest scope, Diplomacy-off conditioning and source-link targets. Documentation evidence was checked; no new benchmark or engine test was run.
+
+Append dated entries with changed pages, source scope, checks and review state. This log covers the technical wiki in this checkout; the strategy vault has its own log.

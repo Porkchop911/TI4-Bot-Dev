@@ -1,0 +1,1355 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "nekro",
+  "claims": [
+    {
+      "id": "C01",
+      "segment_ids": [
+        "s000304",
+        "s000305",
+        "s000308",
+        "s000309",
+        "s000310",
+        "s001644",
+        "s001645"
+      ],
+      "statement": "Treat the opening as a recovery phase: the starting Dreadnought gives fleet presence, but only two infantry and one Carrier leave limited capacity and weak early ground reach; prioritize plastic and expansion before chasing a technology engine.",
+      "conditions": "Especially relevant in round one and when the slice does not compensate with extra infantry, capacity, or a suitable objective.",
+      "compatibility": "Episode 323, published 2023-11-01; guide says Nekro had no direct post-POK change at recording, but current compatibility is unreviewed.",
+      "uncertainty": "The speakers agree the infantry opening is weak; their tournament win-rate explanations are explicitly speculative.",
+      "components": [
+        "faction:nekro",
+        "unit:nekro_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1160.62,
+          "end": 1199.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6166.1,
+          "end": 6177.72
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "segment_ids": [
+        "s000966",
+        "s000967",
+        "s000968",
+        "s000969",
+        "s000972",
+        "s000975",
+        "s000977",
+        "s001292",
+        "s001294",
+        "s001298",
+        "s001303"
+      ],
+      "statement": "In round one, prefer another player taking Warfare; if no one will and the secondary is needed to repair the opening, take Warfare yourself, even when Trade is also attractive. Opponents can pressure Nekro by making it spend its own pick on Warfare.",
+      "conditions": "Opening pick depends on other factions’ Warfare needs, pick order, and whether Warfare primary/secondary unlocks the required expansion.",
+      "compatibility": "Episode 323 advice; no current rules or meta verification.",
+      "uncertainty": "The presenters strongly prioritize Warfare over Trade for Nekro’s opening, while acknowledging this is situational and may not generalize to every Warfare-reliant faction.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "strategy-card:pok5trade",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 3747.18,
+          "end": 3797.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4976.02,
+          "end": 5016.68
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "segment_ids": [
+        "s001163",
+        "s001164",
+        "s001167",
+        "s001168",
+        "s001169",
+        "s001170",
+        "s001171",
+        "s001172",
+        "s000426",
+        "s000431",
+        "s000432",
+        "s000433",
+        "s000434",
+        "s000435",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439"
+      ],
+      "statement": "Do not spend the round-one economy primarily on Leadership tokens or Technology-secondary research when the opening still needs ships and infantry. Nekro cannot research; a Technology primary/secondary converts the research step into three command tokens, so buying plastic can address the more immediate bottleneck.",
+      "conditions": "Applies when early expansion or an objective is constrained by plastic; taking Leadership or following a strategy secondary can still be right when token demand or another objective requires it.",
+      "compatibility": "Episode 323 guide; distinction reflects the speakers’ interpretation and is not an independent rules ruling.",
+      "uncertainty": "The submitted pre-errata recommendation is endorsed by the host, but its wording ‘unless you spend 3 tokens’ is unclear in ASR; the narrower plastic-first advice is clear.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok7technology",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4538.86,
+          "end": 4575.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1657.36,
+          "end": 1752.1
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "segment_ids": [
+        "s001285",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001292",
+        "s001297"
+      ],
+      "statement": "Trade is an excellent opening when it can fund plastic and payments that keep a target ship from retreating, but it is secondary to securing needed Warfare in the speakers’ recommended priority. Evaluate both cards against the opening bottleneck instead of treating Trade as automatic.",
+      "conditions": "Most useful when Trade is available without leaving Nekro unable to expand; if no one else takes essential Warfare, Warfare takes precedence in this guide.",
+      "compatibility": "Episode 323 strategy-card discussion; compatibility unreviewed.",
+      "uncertainty": "This is a ranking in the episode rather than a universal pick order.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4957.46,
+          "end": 5000.36
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "segment_ids": [
+        "s001019",
+        "s001020",
+        "s001021",
+        "s001022",
+        "s001023",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001034"
+      ],
+      "statement": "Track opponents’ technology acquisitions and plan small, controlled combats around them. The guide recommends a ‘tortoise’ approach: negotiate a modest target ship, pay its owner not to retreat, then destroy it to gain the technology while avoiding an unnecessarily costly early invasion.",
+      "conditions": "Requires an opponent with a technology worth acquiring, a combat that can destroy one of their units, and a deal that is cheaper than forcing the fight; adapt to each opponent and board state.",
+      "compatibility": "Episode 323 cites an older base-game essay; speakers say its slow-roll philosophy remains useful, while its component-specific advice may be outdated.",
+      "uncertainty": "The referenced essay is not among assigned documents; claim is limited to the episode’s description of it and the hosts’ endorsement.",
+      "components": [
+        "ability:technological_singularity",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 3971.42,
+          "end": 4038.4
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "segment_ids": [
+        "s001600",
+        "s001601",
+        "s001602",
+        "s001604",
+        "s001605",
+        "s001606",
+        "s001607"
+      ],
+      "statement": "Make the no-retreat arrangement reciprocal: explain which ship Nekro wants to destroy, agree where the combat occurs, and compensate the opponent for losing the ship. The hosts reject the idea that opponents should donate technology access for free.",
+      "conditions": "For negotiated technology gains early, when the opponent can allow a small loss without undermining their own position.",
+      "compatibility": "Episode 323 podcast advice; no rules or etiquette standard is asserted.",
+      "uncertainty": "Deal terms and payment amount are left to negotiation.",
+      "components": [
+        "ability:technological_singularity"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6000.08,
+          "end": 6047.64
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "segment_ids": [
+        "s000386",
+        "s000387",
+        "s000397",
+        "s000398",
+        "s000405",
+        "s000406",
+        "s000407"
+      ],
+      "statement": "Use the timing of Technological Singularity to gain technologies from units destroyed during combat, including Anti-Fighter Barrage and separate space and ground combats in the same activation. Look for multi-combat activations when several opponents’ units can be destroyed, rather than expecting non-combat destruction to qualify.",
+      "conditions": "The episode describes the ability as once per combat and only when an opponent’s unit is destroyed in combat; each separate combat may offer another opportunity.",
+      "compatibility": "Episode 323 rules discussion; independent current-rules verification remains outstanding.",
+      "uncertainty": "The hosts suggest as many as four gains in one activation as an illustrative possibility, not a routine outcome.",
+      "components": [
+        "ability:technological_singularity"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1463.74,
+          "end": 1509.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1510.1,
+          "end": 1573.48
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "segment_ids": [
+        "s000413",
+        "s000414",
+        "s000415",
+        "s000416",
+        "s000418",
+        "s000420",
+        "s000421",
+        "s000422",
+        "s000423"
+      ],
+      "statement": "Destroyer II is an attractive combat target because improved Anti-Fighter Barrage can destroy enemy units before later combat rounds and still trigger the technology ability; ordinary Destroyer II is useful even if Argent’s Strike Wing Alpha II is unavailable.",
+      "conditions": "Best when opponents field fighters and Nekro can afford the destroyers; the guide calls Argent’s upgrade an ideal but exceptional version.",
+      "compatibility": "Episode 323; the discussion’s interaction and value are not independently rules-checked.",
+      "uncertainty": "A community submission proposes bargaining for Argent’s upgrade; the hosts endorse destroyers generally and describe the special upgrade as best case.",
+      "components": [
+        "technology:dd2",
+        "unit:destroyer2",
+        "unit:argent_destroyer2",
+        "ability:technological_singularity"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1590.86,
+          "end": 1648.38
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "segment_ids": [
+        "s000426",
+        "s000431",
+        "s000432",
+        "s000433",
+        "s000434",
+        "s000435",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439",
+        "s000440",
+        "s000441",
+        "s000442"
+      ],
+      "statement": "Distinguish gaining a technology from researching one: the guide says Nekro’s copied technologies do not require prerequisites, while effects that would research instead yield three command tokens. It contrasts this with effects that explicitly gain a technology, which can still grant one.",
+      "conditions": "Use the distinction when resolving strategy-card secondaries, action cards, or other effects; the episode names Maw of Worlds as an example of gaining rather than researching.",
+      "compatibility": "Episode 323 explanation, offered as rules interpretation; not a current-rules ruling.",
+      "uncertainty": "The discussion’s exact edge cases may depend on card wording and edition; check current component text before applying.",
+      "components": [
+        "faction:nekro",
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1657.36,
+          "end": 1752.1
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "segment_ids": [
+        "s000481",
+        "s000482",
+        "s000483",
+        "s000484",
+        "s000485",
+        "s000486",
+        "s000487",
+        "s000488",
+        "s000494",
+        "s000495",
+        "s000496",
+        "s000497",
+        "s000503",
+        "s000504",
+        "s000508",
+        "s000510"
+      ],
+      "statement": "Treat Valefar Assimilator X and Y as two limited faction-text slots: on a qualifying technology gain, Nekro may put a token on an opponent’s faction technology and use its text. Replacing a copied unit-upgrade text can reveal the underlying upgrade again, so changing a token does not necessarily erase Nekro’s original upgrade.",
+      "conditions": "The guide says Nekro can hold only two faction texts and cannot put both tokens on the same technology; consider the tactical value of a new text against the old one before moving a token.",
+      "compatibility": "Episode 323, POK-era explanation; current component/errata status is unreviewed.",
+      "uncertainty": "Speakers describe online card-copy practices as a source of mistakes; check the current Valefar text for exact replacement behavior.",
+      "components": [
+        "technology:vax",
+        "technology:vay",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1867.28,
+          "end": 1936.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1964.18,
+          "end": 2000.2
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "segment_ids": [
+        "s000534",
+        "s000535",
+        "s000536",
+        "s000537",
+        "s000538",
+        "s000539",
+        "s000540",
+        "s000541",
+        "s000542",
+        "s000543",
+        "s000597",
+        "s000598",
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605",
+        "s000606",
+        "s000607",
+        "s000608",
+        "s000609",
+        "s000610",
+        "s000611",
+        "s000612",
+        "s000613",
+        "s000614",
+        "s000615",
+        "s000616",
+        "s000617",
+        "s000618",
+        "s000619"
+      ],
+      "statement": "The Alastor can serve as a hard home defense or as an offensive threat. Its start-of-space-combat ability lets Nekro’s ground forces participate as ships while staying on their planets; its printed capacity is less central to that use. Decide early which role the flagship should serve, then use other production for fleets sent outward.",
+      "conditions": "Offensive use is more attractive with early movement access such as Gravity Drive, suitable forward production, and a target worth contesting; without movement support the guide is less confident. Keeping it at home supports a protected, ahead-from-the-lead plan.",
+      "compatibility": "Episode 323 includes pre-errata community advice and host qualification; episode’s rules interpretation is not independently verified.",
+      "uncertainty": "The podcast corrects itself on how ground forces participate; exact combat timing and unit interactions need current-rules review.",
+      "components": [
+        "unit:nekro_flagship",
+        "technology:gd",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2098.08,
+          "end": 2165.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2401.38,
+          "end": 2521.4
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "segment_ids": [
+        "s000620",
+        "s000621",
+        "s000622",
+        "s000625",
+        "s000626",
+        "s000628",
+        "s000631",
+        "s000632",
+        "s000633",
+        "s000637",
+        "s000640",
+        "s000641"
+      ],
+      "statement": "Mordred’s combat bonus rewards fighting a player whose technology carries one of Nekro’s Valefar tokens. The Alastor’s ability to bring ground forces into space combat also makes carrying several Mordred mechs a substantial fleet option; the guide notes the token can be moved between combats to change which opponent triggers the bonus.",
+      "conditions": "Requires a copied faction technology on that opponent and a combat in which the mechs participate; weigh token movement against losing the prior faction text.",
+      "compatibility": "Episode 323; current unit/Valefar rules not independently reviewed.",
+      "uncertainty": "The speakers call the mech ability situational and emphasize the Alastor/mech combination more than a standalone plan.",
+      "components": [
+        "unit:nekro_mech",
+        "unit:nekro_flagship",
+        "technology:vax",
+        "technology:vay"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2521.9,
+          "end": 2570.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2571.3,
+          "end": 2641.0
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "segment_ids": [
+        "s000650",
+        "s000651",
+        "s000652",
+        "s000653",
+        "s000654",
+        "s000655",
+        "s000656",
+        "s000665",
+        "s000667",
+        "s000668",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000678",
+        "s000680",
+        "s000681",
+        "s000682",
+        "s000693",
+        "s000697"
+      ],
+      "statement": "Use Nekro Malleon’s action-phase agent each round for two trade goods when the chosen player discards an action card or spends a command token, and value Nekro Acidos’s action-card draw after later technology gains. Together, these abilities support both cash and tactical card access.",
+      "conditions": "Agent use depends on the other player accepting the cost; commander unlock and card-draw trigger follow the guide’s count of owned technologies and gains. Do not count moving Valefar tokens as gaining technology.",
+      "compatibility": "Episode 323 leader discussion; current wording should be checked before rules application.",
+      "uncertainty": "The speaker questions why the agent permits either of two costs but does not resolve that design choice. They specify no card is drawn for the third technology that unlocks the commander.",
+      "components": [
+        "leader:nekroagent",
+        "leader:nekrocommander",
+        "technology:vax",
+        "technology:vay"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2673.08,
+          "end": 2753.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2753.68,
+          "end": 2853.76
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "segment_ids": [
+        "s000738",
+        "s000739",
+        "s000743",
+        "s000746",
+        "s000747",
+        "s000748",
+        "s000749",
+        "s000750",
+        "s000751",
+        "s000752",
+        "s000753",
+        "s000754",
+        "s000757",
+        "s000760",
+        "s000761"
+      ],
+      "statement": "The hero offers a late tactical pivot: with Nekro units in a system, choose a planet with a technology specialty, destroy another player’s units there, gain trade goods based on that planet’s resource and influence values, and gain a matching-color technology. The guide recommends looking for a needed color or Integrated Economy through a yellow skip when the board supports it.",
+      "conditions": "Requires units in the system, an opponent’s units on the chosen planet, and a usable specialty; this gain does not provide unit upgrades or a faction technology under the episode’s reading. Consider the objective and available targets before purging the hero.",
+      "compatibility": "Episode 323, POK-era hero explanation; current card wording unreviewed.",
+      "uncertainty": "Some example planet names are garbled; advice is restricted to the described specialty/color and trade-good mechanism.",
+      "components": [
+        "leader:nekrohero",
+        "technology:ie"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2954.5,
+          "end": 3043.34
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "segment_ids": [
+        "s000793",
+        "s000800",
+        "s000807",
+        "s000808",
+        "s000811",
+        "s000812",
+        "s000814",
+        "s000818",
+        "s000821",
+        "s000827",
+        "s000828",
+        "s000833",
+        "s000837",
+        "s000840",
+        "s000845",
+        "s000847",
+        "s000850",
+        "s000855",
+        "s000864",
+        "s000872",
+        "s000896",
+        "s000900",
+        "s000906",
+        "s000912",
+        "s000913",
+        "s000914",
+        "s000915"
+      ],
+      "statement": "Integrated Economy is contested. One contributor argues an early round-three copy can multiply ground combats, technology gains, action cards, and control-objective reach; the hosts argue that saving the hero until a stage-two objective appears gives valuable information and can preserve cash that is not yet held. They favor waiting for the objective, while acknowledging an early Integrated Economy game can work.",
+      "conditions": "Consider an early copy only when the repeated builds and ground combats can repay the cost and the map supports it. Consider a later copy when a revealed control/spend objective makes its value concrete; other hero targets such as movement or combat technologies can be better in some games.",
+      "compatibility": "Episode 323 preserves an explicit contributor/host disagreement; no universal timing is established.",
+      "uncertainty": "The early Integrated Economy success story is anecdotal and the hosts say they lack the underlying games; the host’s preference is also opinion, not measured comparison.",
+      "components": [
+        "leader:nekrohero",
+        "technology:ie"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 3128.92,
+          "end": 3305.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 3314.34,
+          "end": 3585.86
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "segment_ids": [
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000375",
+        "s000376",
+        "s000378",
+        "s000381",
+        "s000383",
+        "s000384"
+      ],
+      "statement": "Use the prediction ability deliberately: it can be used once per agenda phase, so the hosts advise waiting past a low-value first agenda when a second agenda may offer a clearer For/Against prediction. They suggest seeking a roughly even split of votes when feasible and using Politics to influence which agendas appear.",
+      "conditions": "The first agenda can still be worth predicting when the result or copied technology matters; outcomes and voting behavior are uncertain.",
+      "compatibility": "Episode 323 describes the ability and strategic advice; rules not independently verified.",
+      "uncertainty": "The ‘50-50’ tactic and waiting heuristic are speaker opinion, not guarantees.",
+      "components": [
+        "ability:galactic_threat",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1391.94,
+          "end": 1463.32
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "segment_ids": [
+        "s001042",
+        "s001046",
+        "s001047",
+        "s001048",
+        "s001049",
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001056",
+        "s001058",
+        "s001059",
+        "s001243",
+        "s001244",
+        "s001245",
+        "s001246",
+        "s001248",
+        "s001250",
+        "s001253",
+        "s001257"
+      ],
+      "statement": "Because Nekro cannot vote, the hosts recommend Politics as a way to control speaker and see the agenda cards, while using action cards and prediction to manage agenda outcomes. They caution against assuming round-one Custodians: the starting fleet is weak for the race and Gravity Drive is not guaranteed.",
+      "conditions": "Politics is most valuable when the speaker order and agenda visibility can shape later scoring or reduce exposure to harmful outcomes; early Custodians depend on the map, tech access, and opponent choices.",
+      "compatibility": "Episode 323; guide’s advice reflects the discussed agenda set and competitive context.",
+      "uncertainty": "‘Always take Politics’ is rhetorical emphasis later narrowed to a cautious round-one pick and lower overall priority.",
+      "components": [
+        "strategy-card:pok3politics",
+        "technology:gd",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4068.34,
+          "end": 4135.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4798.52,
+          "end": 4873.94
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "segment_ids": [
+        "s001188",
+        "s001195",
+        "s001196",
+        "s001197",
+        "s001200",
+        "s001204",
+        "s001210",
+        "s001215",
+        "s001216",
+        "s001218",
+        "s001219",
+        "s001221",
+        "s001223",
+        "s001226",
+        "s001230"
+      ],
+      "statement": "Nekro skips the Technology secondary, which can leave more strategy tokens for other secondaries; Leadership is therefore a lower-priority pick than for factions that need it to follow Technology. Diplomacy is situational, especially when readying a valuable planet helps meet a visible round-one objective.",
+      "conditions": "Choose Leadership or Diplomacy when the available secondary, pick order, resources, and revealed objective justify them; the source does not recommend never taking either.",
+      "compatibility": "Episode 323 strategic opinion; objective examples depend on the map and revealed objective.",
+      "uncertainty": "The source’s ‘ideal world’ token comparison is a simplification and admits many exceptions.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok2diplomacy",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4601.04,
+          "end": 4685.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4687.74,
+          "end": 4783.44
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "segment_ids": [
+        "s001259",
+        "s001260",
+        "s001261",
+        "s001262",
+        "s001263",
+        "s001264",
+        "s001265",
+        "s001266",
+        "s001267",
+        "s001268",
+        "s001269",
+        "s001270",
+        "s001271",
+        "s001272",
+        "s001273",
+        "s001274",
+        "s001281"
+      ],
+      "statement": "Construction is usually a low-priority pick, but Nekro can spend its extra command-token flexibility on structure objectives and follow Construction when it is offered. The hosts frame Politics-secondary action cards and trade goods as a partial substitute for the Technology secondary, not an equally essential replacement.",
+      "conditions": "Invest in structures when the board/objectives make the gamble reasonable, and take Construction when its timing or an objective pays for it; do not spend tokens only because Nekro may have spare tokens later.",
+      "compatibility": "Episode 323 advice; exact strategy depends on objective timing.",
+      "uncertainty": "The host describes construction-objective investment as personal preference and says it is rarely necessary to take the card.",
+      "components": [
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4875.38,
+          "end": 4956.64
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "segment_ids": [
+        "s001341",
+        "s001342",
+        "s001344",
+        "s001347",
+        "s001348",
+        "s001349",
+        "s001354",
+        "s001359",
+        "s001360",
+        "s001361",
+        "s001365",
+        "s001366",
+        "s001367",
+        "s001376",
+        "s001377",
+        "s001380",
+        "s001381"
+      ],
+      "statement": "For technology priorities, the guide places Gravity Drive first among blue technologies, sees Bio-Stims and Neural Motivator as useful green options, and highlights Scanlink Drone Network and Predictive Intelligence as attractive yellow picks. Nekro’s command-token abundance can make Scanlink uses easier to afford, though Predictive Intelligence still offers late flexibility.",
+      "conditions": "These are acquisition priorities after opponents expose the technologies; select based on movement needs, objectives, available specialties, and token load. Psychoarchaeology is described as low value because Nekro does not rely on normal research paths.",
+      "compatibility": "Episode 323 technology discussion; local current tech pool and edition not checked.",
+      "uncertainty": "The guide compresses other tech colors to broad opinions and repeatedly says that nearly any technology may be useful to Nekro.",
+      "components": [
+        "technology:gd",
+        "technology:bs",
+        "technology:nm",
+        "technology:sdn",
+        "technology:pi",
+        "technology:pa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5141.98,
+          "end": 5184.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5184.86,
+          "end": 5277.64
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "segment_ids": [
+        "s001402",
+        "s001405",
+        "s001406",
+        "s001408",
+        "s001412",
+        "s001414",
+        "s001421",
+        "s001426",
+        "s001428",
+        "s001429",
+        "s001430",
+        "s001431",
+        "s001440",
+        "s001444",
+        "s001449"
+      ],
+      "statement": "Acquire useful unit upgrades whenever opponents make them available; the guide especially calls out Dreadnought II, Carrier II, and sometimes Fighter II for movement and board coverage. Duranium Armor and Assault Cannon are situationally attractive, particularly when a hero gain or combat timing can make them useful immediately.",
+      "conditions": "Prioritize an upgrade that solves a current movement, capacity, combat, or objective problem; broad access does not mean every upgrade should precede early plastic or essential movement.",
+      "compatibility": "Episode 323 recommendations; rules and technology timing not independently checked.",
+      "uncertainty": "The host says nearly all upgrades are ‘on the menu’ but also emphasizes useful order and calls some upgrades weak or merely amusing.",
+      "components": [
+        "technology:dn2",
+        "technology:cv2",
+        "technology:ff2",
+        "technology:da",
+        "technology:asc"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5314.04,
+          "end": 5444.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5421.22,
+          "end": 5486.5
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "segment_ids": [
+        "s001454",
+        "s001455",
+        "s001457",
+        "s001458",
+        "s001459",
+        "s001460",
+        "s001468",
+        "s001471",
+        "s001473",
+        "s001475",
+        "s001477",
+        "s001479",
+        "s001485",
+        "s001489"
+      ],
+      "statement": "Treat faction unit-upgrade technologies as high-value Valefar targets because they add useful unit capabilities to a flexible fleet; the episode specifically praises Super Dreadnought II, Advanced Carrier II, Saturn Engine II, Strike Wing Alpha II, and Hybrid Crystal Fighter II. Other faction texts can be powerful but may create table-specific minigames or bargaining risks.",
+      "conditions": "Prefer upgrades that fit Nekro’s existing fleet and objectives; assess opponents’ willingness to research them and the consequences of copying economy or combat texts.",
+      "compatibility": "Episode 323 POK-era advice; the guide lists these as examples, not an exhaustive or current ranking.",
+      "uncertainty": "Several component names are corrupted in ASR; normalized names here were checked against the assigned component reference. Avoid treating the show’s ‘game breaking’ label as rules status.",
+      "components": [
+        "technology:vax",
+        "technology:vay",
+        "technology:sdn2",
+        "technology:ac2",
+        "technology:se2",
+        "technology:swa2",
+        "technology:hcf2",
+        "technology:nes",
+        "technology:mc",
+        "technology:ers"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5490.2,
+          "end": 5583.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5583.64,
+          "end": 5663.3
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "segment_ids": [
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505",
+        "s001507",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001518",
+        "s001519",
+        "s001520"
+      ],
+      "statement": "Look for utility faction texts that address a specific endgame need: the hosts cite Salvage Operations for late trade goods, Wormhole Generator for final-round access, and Aerie Hololattice for production. They also flag Nullification Field as a possible home-system wind-slay defense, while warning that value depends on the matchup and timing.",
+      "conditions": "Acquire these only when the corresponding objective, route, production, or defense problem exists; the guide presents them as situational utility rather than a fixed build path.",
+      "compatibility": "Episode 323; several names are ASR-rendered and need component-reference normalization.",
+      "uncertainty": "Discussion of some other utility texts is joking or unclear, so only the explicit examples are retained.",
+      "components": [
+        "technology:so",
+        "technology:wg",
+        "technology:ah",
+        "technology:nf"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 5708.4,
+          "end": 5774.0
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "segment_ids": [
+        "s001665",
+        "s001666",
+        "s001669",
+        "s001672",
+        "s001676",
+        "s001682",
+        "s001683",
+        "s001684",
+        "s001685",
+        "s001690",
+        "s001691"
+      ],
+      "statement": "Expect difficulty with Custodians and early points because the opening is slow and Nekro cannot dictate early technology access. Use the saved economy and command tokens to diversify into fragments, attachments, structures, and Politics when the board offers a credible scoring or denial opportunity.",
+      "conditions": "Prioritize actual public/secret objective requirements; the guide advises exploring bonus points but notes that Custodians and agenda-phase points are not assured.",
+      "compatibility": "Episode 323 describes the POK-era economy and objectives; no current objective-pool verification.",
+      "uncertainty": "The suggestion to invest in fragments and structures is a personal risk tolerance, not a guaranteed return.",
+      "components": [
+        "faction:nekro",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6230.46,
+          "end": 6299.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6281.14,
+          "end": 6313.86
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "segment_ids": [
+        "s001702",
+        "s001703",
+        "s001704",
+        "s001705",
+        "s001706",
+        "s001707",
+        "s001708",
+        "s001709",
+        "s001710",
+        "s001711",
+        "s001712",
+        "s001716",
+        "s001722",
+        "s001724",
+        "s001727",
+        "s001728",
+        "s001729",
+        "s001733",
+        "s001734"
+      ],
+      "statement": "Take accessible bonus points and build toward objectives rather than sandbagging out of caution, but do not divert so much plastic that the main position collapses. Technology stage-one objectives are easier later than in rounds one or two; control objectives become attractive after Nekro repairs its ship and infantry base.",
+      "conditions": "Score only when every objective prerequisite is met. Round-one control and technology points remain constrained by starting plastic and copied technologies.",
+      "compatibility": "Episode 323 point-planning advice; objective names and schedule vary by game.",
+      "uncertainty": "The hosts make a broad claim about late technology ease but warn about two difficult early technology objectives appearing in the opening flips.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "unit:nekro_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6331.44,
+          "end": 6415.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6418.44,
+          "end": 6455.72
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "segment_ids": [
+        "s001798",
+        "s001799",
+        "s001802",
+        "s001805",
+        "s001806",
+        "s001807",
+        "s001812",
+        "s001817",
+        "s001820",
+        "s001821",
+        "s001830",
+        "s001832",
+        "s001833"
+      ],
+      "statement": "Nekro can threaten stage-two technology and economic objectives late: the guide favors two and four technology colors when available and notes that the hero can fill a missing color; for spend objectives, reserve the hero’s unclaimed trade goods and action-card value as a surprise resource source.",
+      "conditions": "A hero gain must match the needed technology color, and trade goods not yet gained do not count as already-held resources. Keep enough plastic and timing to meet the objective itself.",
+      "compatibility": "Episode 323; hero timing and objective requirements not independently verified.",
+      "uncertainty": "The anecdote about concealing the hero’s trade goods is one player’s successful game, not a repeatable guarantee.",
+      "components": [
+        "leader:nekrohero",
+        "technology:ie"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6592.54,
+          "end": 6639.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6653.4,
+          "end": 6713.38
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "segment_ids": [
+        "s001836",
+        "s001838",
+        "s001843",
+        "s001845",
+        "s001846",
+        "s001847",
+        "s001850",
+        "s001852",
+        "s001855",
+        "s001858",
+        "s001859",
+        "s001860",
+        "s001861"
+      ],
+      "statement": "After acquiring movement and combat upgrades, Nekro can contest control objectives with a broad mix such as Carrier II, Light/Wave Deflector, Cruiser II, mechs, and Dreadnought II. The guide sees this breadth as a late-game strength and recommends pursuing structure objectives when the investment is affordable.",
+      "conditions": "The stated mobility requires access to the named technologies and sufficient ships/tokens; public-objective scoring still requires the exact control/structure criteria.",
+      "compatibility": "Episode 323 strategic assessment, not a verified rules claim.",
+      "uncertainty": "The source lists a possible technology combination, not proof Nekro will acquire every piece in a particular game.",
+      "components": [
+        "technology:cv2",
+        "technology:lwd",
+        "technology:cr2",
+        "technology:dn2",
+        "unit:nekro_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6714.0,
+          "end": 6798.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6798.52,
+          "end": 6817.56
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "segment_ids": [
+        "s001872",
+        "s001877",
+        "s001878",
+        "s001879",
+        "s001880",
+        "s001881",
+        "s001882",
+        "s001884",
+        "s001885",
+        "s001886"
+      ],
+      "statement": "Keep action-phase secret objectives that match Nekro’s evolving technology access; the guide recommends pivoting at the end when a newly copied technology completes a requirement. A faction-technology secret is treated differently: the hosts say Nekro must actually have Valefar copying faction text to satisfy it.",
+      "conditions": "Retain cards only when their prerequisites remain plausibly reachable; agenda-election secrets are described as difficult because Nekro cannot vote, though not impossible.",
+      "compatibility": "Episode 323 secret-objective advice; current card pool and interpretation unreviewed.",
+      "uncertainty": "The example’s action-secret wording is partly ASR-corrupted; the general pivot recommendation is clear.",
+      "components": [
+        "technology:vax",
+        "technology:vay",
+        "faction:nekro"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6847.68,
+          "end": 6901.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6903.02,
+          "end": 6921.4
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "segment_ids": [
+        "s001890",
+        "s001891",
+        "s001892",
+        "s001893",
+        "s001894",
+        "s001895",
+        "s001896",
+        "s001897",
+        "s001898",
+        "s001900",
+        "s001901",
+        "s001902"
+      ],
+      "statement": "If Nekro has established a lead in tempo by rounds two or three, protect speaker control and consider a forward space dock with Sling Relay: the guide proposes using the Alastor offensively early, then returning it to home defense later. This combines flexible production with a hard-to-attack home system.",
+      "conditions": "Requires a forward dock, Sling Relay, enough tempo to secure Politics/speaker, and a board where early offense is worthwhile; otherwise keep the flagship’s defensive role.",
+      "compatibility": "Episode 323 conditional endgame plan; no current rules verification.",
+      "uncertainty": "The speakers call this an ideal situation, not a routine line.",
+      "components": [
+        "technology:sr",
+        "unit:nekro_flagship",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6927.14,
+          "end": 6992.86
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "segment_ids": [
+        "s001912",
+        "s001913",
+        "s001914",
+        "s001915",
+        "s001916",
+        "s001917",
+        "s001918",
+        "s001919",
+        "s001920",
+        "s001921",
+        "s001922",
+        "s001923",
+        "s001924"
+      ],
+      "statement": "The guide’s preferred finish is to stay on public-objective tempo, collect a bonus point when safely available, retain speaker for the late game, and protect home from a wind-slay. In the final round, a well-positioned Nekro may have multiple scoring routes, including a stage-two objective or relinquishing Support for the Throne if the remaining points still win.",
+      "conditions": "Count points actually scored and verify remaining objective prerequisites before treating a route as lethal; sacrificing Support is only viable when the remaining score reaches the win condition.",
+      "compatibility": "Episode 323 describes a round-five finish under the discussed scoring structure; not rules-checked.",
+      "uncertainty": "The source uses round-five and 10-point examples; game length and objective availability vary.",
+      "components": [
+        "unit:nekro_flagship",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 7032.26,
+          "end": 7112.14
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ability:technological_singularity",
+      "to": "technology:vax",
+      "relation": "enables",
+      "conditions": "A qualifying combat technology gain can instead place Valefar X on the opponent’s faction technology under the episode’s reading.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1867.28,
+          "end": 1886.3
+        }
+      ]
+    },
+    {
+      "from": "ability:technological_singularity",
+      "to": "technology:vay",
+      "relation": "enables",
+      "conditions": "A qualifying combat technology gain can instead place Valefar Y on the opponent’s faction technology under the episode’s reading.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1867.28,
+          "end": 1886.3
+        }
+      ]
+    },
+    {
+      "from": "unit:nekro_flagship",
+      "to": "unit:nekro_mech",
+      "relation": "synergizes-with",
+      "conditions": "The Alastor can bring ground forces into a space combat and Mordred’s combat value then contributes to that combat; the connection is most relevant to an offensive flagship plan.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2098.08,
+          "end": 2165.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2571.3,
+          "end": 2641.0
+        }
+      ]
+    },
+    {
+      "from": "leader:nekrohero",
+      "to": "technology:ie",
+      "relation": "enables",
+      "conditions": "When a yellow specialty is available and the objective/map justify it, the hero can gain a matching-color technology; the speakers discuss Integrated Economy as one conditional target.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2954.5,
+          "end": 3043.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 3314.34,
+          "end": 3565.1
+        }
+      ]
+    },
+    {
+      "from": "leader:nekroagent",
+      "to": "leader:nekrocommander",
+      "relation": "synergizes-with",
+      "conditions": "The agent can create two trade goods when another player accepts its cost; the commander can draw an action card after a later qualifying technology gain, and its draw can support another agent payment only if the card is expendable.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2673.08,
+          "end": 2753.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 2753.68,
+          "end": 2792.28
+        }
+      ]
+    },
+    {
+      "from": "technology:sr",
+      "to": "unit:nekro_flagship",
+      "relation": "enables",
+      "conditions": "Sling Relay is proposed as a route to a forward dock from which the flagship can act offensively before returning to defend home; this requires the card, timing, and board position.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6970.78,
+          "end": 6992.86
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok6warfare",
+      "to": "strategy-card:pok5trade",
+      "relation": "conflicts-with",
+      "conditions": "In the guide’s round-one priority, taking needed Warfare can mean forgoing the otherwise attractive Trade pick.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 4976.02,
+          "end": 5000.36
+        }
+      ]
+    },
+    {
+      "from": "technology:dd2",
+      "to": "ability:technological_singularity",
+      "relation": "enables",
+      "conditions": "Destroyer II’s Anti-Fighter Barrage can destroy an opponent’s unit during combat, creating a stated opportunity for the combat technology gain.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 1590.86,
+          "end": 1648.38
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok8imperial",
+      "to": "faction:nekro",
+      "relation": "scores",
+      "conditions": "The guide recommends an Imperial pick when it can secure a bonus point such as Mecatol Rex, unless doing so diverts too much plastic or creates unacceptable risk.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-323-59a99c194ebc",
+          "start": 6331.44,
+          "end": 6367.08
+        }
+      ]
+    }
+  ]
+}

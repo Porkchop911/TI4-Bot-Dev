@@ -25,3 +25,8 @@ not the legacy six-player curve, before making learning or performance claims.
 The optimized Stage-1 and Stage-2 policy-gradient pipeline, production commands, checkpoint rules,
 determinism guarantees, and measured throughput are documented in
 [`docs/TRAINING_PIPELINE.md`](docs/TRAINING_PIPELINE.md).
+
+## Project wikis
+
+- [Technical wiki](docs/TECHNICAL_WIKI.md): architecture, bots, interfaces, tests and benchmarks.
+- [Strategy wiki](docs/strategy-wiki/README.md): sourced rules and strategy research, faction pages and experiments.

@@ -1,0 +1,1019 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "ghost",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat Ghosts as a movement faction with weaker midgame development but unusually strong late-game closing options.",
+      "conditions": "The guide’s comparison is specifically to Cabal; the advantage depends on surviving the middle rounds and building enough plastic.",
+      "compatibility": "SCPT 326, published 2023-11-22; ruleset compatibility not reviewed.",
+      "uncertainty": "Evaluative comparison by the hosts, not a measured faction ranking.",
+      "components": [
+        "faction:ghost"
+      ],
+      "segment_ids": [
+        "s000095",
+        "s000098",
+        "s000100"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 407.49,
+          "end": 450.81
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Use Quantum Entanglement to treat alpha and beta wormhole systems as mutually adjacent, while remembering that this ability does not include gamma or delta wormholes.",
+      "conditions": "This is the hosts’ reading of the faction ability; they flag expansion-specific exceptions and an unresolved edge case about Aetherstream.",
+      "compatibility": "SCPT 326 (2023-11-22); ruleset and later errata compatibility not reviewed.",
+      "uncertainty": "The podcast recounts a designer response that was expressly uncertain about Aetherstream; do not generalize that ruling beyond its described case.",
+      "components": [
+        "ability:quantum_entanglement"
+      ],
+      "segment_ids": [
+        "s000243",
+        "s000249",
+        "s000251",
+        "s000267",
+        "s000271"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 932.66,
+          "end": 976.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1038.88,
+          "end": 1085.36
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Exploit Slipstream’s extra movement from home or alpha/beta wormhole systems, but do not count on it from the Creuss Gate or gamma wormholes.",
+      "conditions": "The guide treats this restriction as strategically important; moving the flagship’s delta system does not make it a Slipstream start point.",
+      "compatibility": "SCPT 326 (2023-11-22); exact current wording not independently checked.",
+      "uncertainty": "The speakers criticize the restrictions, but their strategic recommendation assumes the printed ability as they describe it.",
+      "components": [
+        "ability:slipstream",
+        "ability:creuss_gate"
+      ],
+      "segment_ids": [
+        "s000313",
+        "s000315",
+        "s000292",
+        "s000293",
+        "s000294"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1142.22,
+          "end": 1242.16
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Compensate for the narrow starting fleet by prioritizing production and reinforcing the systems you can reach through the wormhole network.",
+      "conditions": "Ghosts begin with one carrier, two destroyers, two fighters and a space dock; spreading out without support can leave forces stranded.",
+      "compatibility": "SCPT 326 (2023-11-22); starting-unit description and strategic claims are not current-rules verified.",
+      "uncertainty": "Build priorities depend on slice resources, command-counter preference and table aggression.",
+      "components": [
+        "faction:ghost"
+      ],
+      "segment_ids": [
+        "s000173",
+        "s000175",
+        "s000827",
+        "s000835",
+        "s000846"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 699.28,
+          "end": 742.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3398.0,
+          "end": 3497.47
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Consider an early Malice take using the agent: the hosts describe sending the starting carrier there, flipping Malice for two trade goods, and gaining access to an extra early income source.",
+      "conditions": "This is a common opening option, not an obligation; sometimes waiting or choosing other reachable systems is better, and the extra trade good needed for another carrier still matters.",
+      "compatibility": "SCPT 326 (2023-11-22); agent timing, Malice values and costs not independently checked.",
+      "uncertainty": "The ASR varies proper nouns; the component reference confirms Emissary Taivra and Malice-related source discussion but does not make this rules verification.",
+      "components": [
+        "leader:ghostagent",
+        "faction:ghost"
+      ],
+      "segment_ids": [
+        "s000511",
+        "s000519",
+        "s000523",
+        "s000526",
+        "s000529",
+        "s000531"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2076.22,
+          "end": 2196.84
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "In round one, look for a third dollar or trade good beyond home and Malice if you want to afford a second carrier while also taking Sling Relay.",
+      "conditions": "Industrial or hazardous planets, favorable Trade timing, or a neighbor’s exchange can close the gap; if resources are scarce, change the opening rather than assume the purchase works.",
+      "compatibility": "SCPT 326 (2023-11-22); costs and opening arithmetic reflect the hosts’ described game assumptions.",
+      "uncertainty": "The episode offers multiple possible ways to find the resource and does not promise any one will be available.",
+      "components": [
+        "technology:sr",
+        "unit:carrier2"
+      ],
+      "segment_ids": [
+        "s000969",
+        "s000977",
+        "s000979",
+        "s000981",
+        "s000984"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4023.06,
+          "end": 4094.9
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Take Leadership as a safe opening when you need to secure the two-system expansion, command tokens, and flexibility to follow Technology, Diplomacy or Warfare.",
+      "conditions": "It protects a baseline round more than it guarantees an exceptional one; its ceiling rises if other cards and trade timing line up.",
+      "compatibility": "SCPT 326 (2023-11-22); strategy-card timing assumptions not independently checked.",
+      "uncertainty": "The speakers agree on reliability but distinguish this from the higher upside of Trade or unusually favorable openings.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s000988",
+        "s001000",
+        "s001006",
+        "s001008",
+        "s001014"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4100.88,
+          "end": 4199.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4236.8,
+          "end": 4254.2
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Prefer Trade when an early pick is available: it can fund Malice, the second carrier, technology and additional production in one round.",
+      "conditions": "The hosts describe the biggest upside when Ghosts pick first or second and receive favorable commodity exchanges; availability and table terms determine the actual return.",
+      "compatibility": "SCPT 326 (2023-11-22); card text and commodity arithmetic not independently checked.",
+      "uncertainty": "The very high round-one income described is a best-case estimate, not a baseline expectation.",
+      "components": [
+        "strategy-card:pok5trade",
+        "unit:carrier2",
+        "technology:sr"
+      ],
+      "segment_ids": [
+        "s001149",
+        "s001151",
+        "s001153",
+        "s001157",
+        "s001161",
+        "s001177"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4785.62,
+          "end": 4898.42
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Technology is a comfortable opening when timing matters: take Sling Relay, use it to build a dreadnought that can reach Malice, and keep the carrier available for another system.",
+      "conditions": "This line is presented as stable rather than spectacular; it is useful when Trade is unavailable and the action sequence fits.",
+      "compatibility": "SCPT 326 (2023-11-22); Sling Relay interaction and costs not independently checked.",
+      "uncertainty": "The hosts say this opening is comfortable, not the strongest possible outcome.",
+      "components": [
+        "strategy-card:pok7technology",
+        "technology:sr"
+      ],
+      "segment_ids": [
+        "s001213",
+        "s001216",
+        "s001218",
+        "s001220",
+        "s001224"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5046.82,
+          "end": 5080.86
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Take Warfare when a hostile or unreliable table makes expansion and production timing too risky; Ghosts can rebuild at home and still send the new plastic toward useful systems.",
+      "conditions": "This may mean delaying first-round technology, but the hosts consider early plastic more important than preserving theoretical card value when expansion would otherwise fail.",
+      "compatibility": "SCPT 326 (2023-11-22); secondary and timing rules not independently checked.",
+      "uncertainty": "The speakers call Warfare non-ideal but explicitly support it when needed.",
+      "components": [
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s001201",
+        "s001204",
+        "s001207",
+        "s001252"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5005.4,
+          "end": 5038.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5166.42,
+          "end": 5176.74
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Treat Diplomacy as timing-sensitive: take a valuable system before refreshing it when possible, and coordinate with Technology and Warfare players before selecting the card.",
+      "conditions": "If Malice is the only system available to refresh alongside home, Diplomacy can be poor; a different early planet may make the card worthwhile.",
+      "compatibility": "SCPT 326 (2023-11-22); card timing and refresh assumptions not independently checked.",
+      "uncertainty": "The hosts openly report that they often mis-sequence Diplomacy and disagree only in emphasis, not that it is always bad.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok7technology",
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s001019",
+        "s001021",
+        "s001028",
+        "s001031",
+        "s001047",
+        "s001050"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4263.64,
+          "end": 4355.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4384.4,
+          "end": 4409.9
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Use Politics selectively: selling speaker to the Trade holder can finance the opening, but may concede the first round-two pick and Custodians. Retaining speaker has value only if the round-two plan remains realistic.",
+      "conditions": "The hosts favor it when Trade and table timing can support the opening, not as the default fix for limited plastic or a narrow first expansion. Income requires an agreed speaker sale or another deal; Politics does not directly grant trade goods.",
+      "compatibility": "SCPT 326 (2023-11-22); round-one Custodians race depends on map and ruleset.",
+      "uncertainty": "This is a caution, not a universal ban; the guide also recognizes cases where Politics feeds Trade or an Imperial follow-up.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial"
+      ],
+      "segment_ids": [
+        "s001063",
+        "s001066",
+        "s001070",
+        "s001075",
+        "s001083",
+        "s001089"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4448.12,
+          "end": 4514.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4538.0,
+          "end": 4574.78
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Choose Construction when a forward dock is genuinely needed and Diplomacy would mainly benefit other players; otherwise favor immediate plastic or another opening goal.",
+      "conditions": "The hosts like a forward system with negotiated wormhole access and a dock but warn that round-one Sling Relay plus a dock can overconcentrate resources in infrastructure.",
+      "compatibility": "SCPT 326 (2023-11-22); strategy-card and dock costs not independently checked.",
+      "uncertainty": "The hosts disagree in tone and call Construction situational rather than a preferred default.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:sr"
+      ],
+      "segment_ids": [
+        "s001119",
+        "s001122",
+        "s001126",
+        "s001134",
+        "s001139",
+        "s001147"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 4702.84,
+          "end": 4785.62
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Adopt a friendly, flexible IFF posture because other players’ use of your wormholes can create access and bargaining opportunities for Ghosts.",
+      "conditions": "Early and midgame openness can encourage trades and divert opponents toward each other; late game may call for a specific placement, and wormhole access also exposes Ghosts to attack.",
+      "compatibility": "SCPT 326 (2023-11-22); table politics and binding-deal rules not independently checked.",
+      "uncertainty": "The speakers describe a table-dependent political strategy, not guaranteed cooperation or income.",
+      "components": [
+        "promissory:iff"
+      ],
+      "segment_ids": [
+        "s000491",
+        "s000500",
+        "s000504",
+        "s000506",
+        "s000509",
+        "s000910",
+        "s000916"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1994.36,
+          "end": 2072.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3744.28,
+          "end": 3791.96
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Use Creuss Iff when the recipient can place or move a wormhole to a planet they control or a non-home system without another player’s ship; it is most useful for seeding future Ghost routes before ships occupy the intended systems.",
+      "conditions": "The hosts emphasize that a player cannot use the note in a system containing another player’s ship unless the planet-control option applies; explain the restrictions before trading it.",
+      "compatibility": "SCPT 326 (2023-11-22); note wording should be checked against the current rules reference.",
+      "uncertainty": "The episode contains ASR misspellings of the faction note; the reference file identifies it as Creuss Iff.",
+      "components": [
+        "promissory:iff"
+      ],
+      "segment_ids": [
+        "s000457",
+        "s000458",
+        "s000464",
+        "s000469",
+        "s001507",
+        "s001509"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1825.36,
+          "end": 1903.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 6061.6,
+          "end": 6088.9
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Unlock Sai Seravus by establishing units in three alpha/beta wormhole systems, and use its ability to add fighters when capacity ships move through wormholes into the active system.",
+      "conditions": "The fighter appears per eligible ship, not per wormhole; the destination must be the active system and unused capacity must remain. The hosts describe Carrier II and adequate fleet supply as helpful for making the ability pay off.",
+      "compatibility": "SCPT 326 (2023-11-22); commander and timing details not independently rules-checked.",
+      "uncertainty": "The guide’s speech-recognized name is garbled, but the component reference identifies Sai Seravus; conditional ability details follow the speakers’ reading.",
+      "components": [
+        "leader:ghostcommander",
+        "technology:cv2"
+      ],
+      "segment_ids": [
+        "s000548",
+        "s000550",
+        "s000554",
+        "s000556",
+        "s000560",
+        "s000575",
+        "s000581"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2262.92,
+          "end": 2319.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2324.36,
+          "end": 2442.6
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Place mechs to protect planets and preserve ground-force coverage; treat the Icarus Drive’s wormhole-token move as an occasional late-game option rather than its main job.",
+      "conditions": "Removing the mech sacrifices a ground unit and can weaken defense; the hosts estimate they use the effect only a small number of times and suggest it is less attractive when IFF or Wormhole Generator suffices.",
+      "compatibility": "SCPT 326 (2023-11-22); mech ability and timing not independently checked.",
+      "uncertainty": "The speakers frame the ability as useful but secondary, with frequency dependent on the board and deals.",
+      "components": [
+        "unit:ghost_mech",
+        "promissory:iff",
+        "technology:wg"
+      ],
+      "segment_ids": [
+        "s000417",
+        "s000428",
+        "s000433",
+        "s000438",
+        "s000888",
+        "s000890"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1645.68,
+          "end": 1757.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3670.18,
+          "end": 3688.22
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Make Carrier II an early technology priority because capacity and movement support wormhole jumps and the commander’s fighter generation.",
+      "conditions": "The hosts usually place it after round-one Sling Relay, and regard its value as greatest when Ghosts can regularly move through wormholes; exact path depends on skips and available Technology picks.",
+      "compatibility": "SCPT 326 (2023-11-22); upgrade prerequisites and costs not independently checked.",
+      "uncertainty": "The hosts call Carrier II a need within their preferred plan, while acknowledging variation in how technology is acquired.",
+      "components": [
+        "technology:cv2",
+        "leader:ghostcommander"
+      ],
+      "segment_ids": [
+        "s001321",
+        "s001322",
+        "s001351",
+        "s001352",
+        "s001354"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5395.78,
+          "end": 5552.06
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Keep the technology plan shallow: prioritize Sling Relay or Dark Energy Tap for the opening, Carrier II, then Light/Wave Deflector; additional blue tech is optional rather than a reason to delay ships.",
+      "conditions": "The hosts say DET is attractive when Ghosts can survive without opening Sling Relay, and Light/Wave’s value is strongest because Ghosts need to concentrate limited combat power where it matters.",
+      "compatibility": "SCPT 326 (2023-11-22); technology strategy and prerequisites not independently checked.",
+      "uncertainty": "They call several technologies wants and adapt to map skips, resources and objectives; this is a priority order, not a fixed sequence.",
+      "components": [
+        "technology:sr",
+        "technology:det",
+        "technology:cv2",
+        "technology:lwd"
+      ],
+      "segment_ids": [
+        "s001303",
+        "s001305",
+        "s001321",
+        "s001350",
+        "s001355",
+        "s001364",
+        "s001387"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5339.38,
+          "end": 5575.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5622.1,
+          "end": 5638.06
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Consider Fighter II as a useful supplement: fighters generated during wormhole movement can remain behind as a defensive screen, reducing the need to build fighters directly.",
+      "conditions": "The ability requires eligible capacity movement and unused capacity; fighter upgrades are optional if Ghosts have more urgent plastic or tech needs.",
+      "compatibility": "SCPT 326 (2023-11-22); commander and unit-upgrade interactions not independently checked.",
+      "uncertainty": "The guide makes the trail-of-fighters image conditional on unlocking the commander and using the network often.",
+      "components": [
+        "technology:ff2",
+        "leader:ghostcommander"
+      ],
+      "segment_ids": [
+        "s000562",
+        "s000566",
+        "s001410",
+        "s001414",
+        "s001426"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2331.96,
+          "end": 2377.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5710.44,
+          "end": 5770.84
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Treat Dimensional Splicer as a situational defensive bonus rather than a required red-tech detour; the speakers differ on how much its start-of-combat hit changes outcomes.",
+      "conditions": "Research it when a cheap red skip or free agenda-phase opportunity makes the cost small and wormhole systems need extra defense; prioritize ships and core movement first.",
+      "compatibility": "SCPT 326 (2023-11-22); tech wording and hit timing not independently checked.",
+      "uncertainty": "The speakers explicitly contest its value: one values assigned hits and deterrence, the other doubts a single start-of-combat hit swings enough fights.",
+      "components": [
+        "technology:ds"
+      ],
+      "segment_ids": [
+        "s000689",
+        "s000692",
+        "s000700",
+        "s000717",
+        "s000720",
+        "s000722",
+        "s000738",
+        "s001430",
+        "s001441"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2895.84,
+          "end": 3022.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3022.08,
+          "end": 3124.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5779.26,
+          "end": 5827.36
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Research Wormhole Generator when table cooperation is drying up or Ghosts need independent late-game wormhole placement; it can also create a stall and set up the hero.",
+      "conditions": "The hosts call it optional, often a round-four or round-five purchase if extra resources remain; weigh its cost against a mech’s cheaper one-off relocation and the opening technology priorities.",
+      "compatibility": "SCPT 326 (2023-11-22); Omega tech details not independently checked.",
+      "uncertainty": "The hosts agree it is useful insurance but debate whether repeated use justifies its price in a friendly game.",
+      "components": [
+        "technology:wg",
+        "leader:ghosthero",
+        "unit:ghost_mech"
+      ],
+      "segment_ids": [
+        "s000744",
+        "s000750",
+        "s000754",
+        "s000760",
+        "s000768",
+        "s000779",
+        "s000786",
+        "s000795",
+        "s000801",
+        "s000812",
+        "s000821"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3124.0,
+          "end": 3394.98
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Save Riftwalker Meian for a high-impact system swap: the hero can create access for control objectives, move units into reach, or expose a target to attack.",
+      "conditions": "The hero unlocks after three scored objectives; the swapped systems must contain wormholes or units and cannot be the Creuss home system or Wormhole Nexus. Plan around the actual board and objective requirements.",
+      "compatibility": "SCPT 326 (2023-11-22); hero wording and objective interactions not independently rules-checked.",
+      "uncertainty": "The speakers give examples and call out boundaries, but each proposed play still depends on exact objective and map state.",
+      "components": [
+        "leader:ghosthero"
+      ],
+      "segment_ids": [
+        "s000607",
+        "s000610",
+        "s000615",
+        "s000617",
+        "s000624",
+        "s000628",
+        "s000632",
+        "s000634",
+        "s000668",
+        "s000671"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2541.2,
+          "end": 2610.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2614.86,
+          "end": 2818.28
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Use the hero’s late-game reliability to prepare difficult control objectives instead of spreading forces thin to qualify for every possible objective early.",
+      "conditions": "The guide cites Rule Distant Lands and Achieved Supremacy as examples; partial setup is not scoring, and the necessary final control and objective conditions must still be met.",
+      "compatibility": "SCPT 326 (2023-11-22); objective wording and hero eligibility not independently checked.",
+      "uncertainty": "The speakers call the swap a strong option, not a guarantee; opponents may disrupt the position or the exact requirement may differ.",
+      "components": [
+        "leader:ghosthero",
+        "public-objective:distant_lands",
+        "public-objective:supremacy"
+      ],
+      "segment_ids": [
+        "s001670",
+        "s001674",
+        "s001677",
+        "s001680",
+        "s001685",
+        "s001689",
+        "s001714",
+        "s001722"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 6776.22,
+          "end": 6852.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 6922.12,
+          "end": 6960.66
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Stay friendly while sharing routes, but avoid making your own territory an easy target: seed a compact, mutually reinforcing wormhole network and defend valuable systems.",
+      "conditions": "The hosts recommend choosing one objective to secure rather than thinly contesting every point of the board; expect that some attacks are the cost of offering wormhole access.",
+      "compatibility": "SCPT 326 (2023-11-22); opponent incentives vary by table.",
+      "uncertainty": "The defensive posture is strategic advice, not a promise that deterrence prevents attacks.",
+      "components": [
+        "promissory:iff",
+        "ability:slipstream"
+      ],
+      "segment_ids": [
+        "s001936",
+        "s001943",
+        "s001951",
+        "s001955",
+        "s001968",
+        "s001982",
+        "s001989",
+        "s001993"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 7741.64,
+          "end": 7980.6
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Value Malice as an early economic foothold, but plan for retreat or eventual loss rather than over-defending it at the expense of stronger wormhole-linked bases.",
+      "conditions": "The hosts expect its early trade goods and access to help, while later preferring high-value systems that reinforce Ghosts’ economy and defensive network.",
+      "compatibility": "SCPT 326 (2023-11-22); planet yields and token effects not independently checked.",
+      "uncertainty": "Whether to keep Malice depends on opponents, retreat routes, and the relative value of other controlled planets.",
+      "components": [
+        "faction:ghost",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s000920",
+        "s000923",
+        "s000927",
+        "s001649",
+        "s001653",
+        "s001660",
+        "s001663"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3800.6,
+          "end": 3849.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 6682.02,
+          "end": 6762.74
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Treat wormhole-related agendas as major survival risks: the hosts favor opposing or burying Wormhole Research and Wormhole Reconstruction because their against outcomes can destroy ships or lock systems with command tokens.",
+      "conditions": "The risk is greatest when valuable fleets or home positions depend on alpha/beta wormholes; the guide acknowledges that another player’s assets in wormhole systems can make opposition easier.",
+      "compatibility": "SCPT 326 (2023-11-22); agenda names and outcomes not independently verified.",
+      "uncertainty": "This advice reflects the hosts’ reading of the printed outcomes; edition, agenda deck and table context can change the decision.",
+      "components": [],
+      "segment_ids": [
+        "s001754",
+        "s001760",
+        "s001763",
+        "s001767",
+        "s001781",
+        "s001785",
+        "s001789",
+        "s001793"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 7061.02,
+          "end": 7176.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 7173.9,
+          "end": 7232.76
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Enforced Travel Ban can favor Ghosts if passed because Quantum Entanglement still preserves Ghosts’ alpha/beta adjacency while other players lose movement through those wormholes.",
+      "conditions": "Its against outcome can destroy PDS, so consider objectives and structures before prioritizing it; the hosts generally advise a Politics player to bury the three dangerous wormhole agendas.",
+      "compatibility": "SCPT 326 (2023-11-22); rules interpretation is source-era opinion, not current-rules verification.",
+      "uncertainty": "The guide’s assessment depends on the stated interaction between the law and faction ability; current official interpretation was not checked.",
+      "components": [
+        "ability:quantum_entanglement"
+      ],
+      "segment_ids": [
+        "s001805",
+        "s001807",
+        "s001815",
+        "s001818",
+        "s001820",
+        "s001828",
+        "s001832",
+        "s001838"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 7254.16,
+          "end": 7419.46
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Nexus Sovereignty is favorable in either outcome as the hosts describe it: it limits movement through Wormhole Nexus alpha/beta holes or places a gamma wormhole at Mecatol Rex, creating a route for the agent.",
+      "conditions": "This is especially welcome if Ghosts hold Malice; a gamma link to Mecatol can make Fleet Logistics more attractive for a hero-and-action finish.",
+      "compatibility": "SCPT 326 (2023-11-22); agenda and ability interaction not independently checked.",
+      "uncertainty": "The positive evaluation is tied to the particular outcomes read aloud in the episode.",
+      "components": [
+        "leader:ghostagent",
+        "technology:fl"
+      ],
+      "segment_ids": [
+        "s001839",
+        "s001844",
+        "s001845",
+        "s001849",
+        "s001860",
+        "s001862",
+        "s001864"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 7419.46,
+          "end": 7507.58
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Do not assume Ghosts will win the Custodians race; the hosts see early access as possible but less reliable than using movement, Imperial timing, or a strong late-game objective push.",
+      "conditions": "Starting influence and table timing still matter despite Malice and wormhole mobility; this is a long-run tendency, not a prediction for every map or game.",
+      "compatibility": "SCPT 326 (2023-11-22); Custodians timing and current rules not independently reviewed.",
+      "uncertainty": "The hosts explicitly note Ghosts can take Mecatol early or pursue it later, but describe early access as a relative weakness.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "faction:ghost"
+      ],
+      "segment_ids": [
+        "s002051",
+        "s002055",
+        "s002061",
+        "s002063",
+        "s002065",
+        "s002068"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 8183.9,
+          "end": 8268.82
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "leader:ghostagent",
+      "to": "faction:ghost",
+      "relation": "enables",
+      "conditions": "At the start of round one, the hosts use the agent to make home and Malice adjacent for a tactical action, enabling the commonly described Malice opening.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2076.22,
+          "end": 2189.66
+        }
+      ]
+    },
+    {
+      "from": "technology:cv2",
+      "to": "leader:ghostcommander",
+      "relation": "synergizes-with",
+      "conditions": "Carrier II capacity and movement help eligible ships move through wormholes and retain unused capacity for the commander’s fighter placement.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2324.36,
+          "end": 2449.74
+        }
+      ]
+    },
+    {
+      "from": "technology:wg",
+      "to": "ability:slipstream",
+      "relation": "enables",
+      "conditions": "Moving a Creuss wormhole token to a useful origin can provide a system from which Ghost ships gain Slipstream movement; this is one optional late-game use discussed by the hosts.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 3155.44,
+          "end": 3169.36
+        }
+      ]
+    },
+    {
+      "from": "technology:fl",
+      "to": "leader:ghosthero",
+      "relation": "synergizes-with",
+      "conditions": "The speakers describe Fleet Logistics as useful for acting immediately after the hero’s system swap, allowing a follow-up action before opponents respond.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 5833.44,
+          "end": 5895.94
+        }
+      ]
+    },
+    {
+      "from": "promissory:iff",
+      "to": "leader:ghostcommander",
+      "relation": "enables",
+      "conditions": "Placing alpha/beta wormholes with a cooperative partner can help reach the commander’s three-system unlock condition; the guide proposes a reciprocal Alliance arrangement.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 2472.1,
+          "end": 2535.22
+        }
+      ]
+    },
+    {
+      "from": "promissory:iff",
+      "to": "unit:ghost_mech",
+      "relation": "conflicts-with",
+      "conditions": "A buyer may distrust the IFF if Ghosts retain mechs that can later remove wormhole tokens; the hosts recommend building trust and treating mech relocation as occasional.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-326-b2a588bf2c9a",
+          "start": 1763.52,
+          "end": 1807.62
+        }
+      ]
+    }
+  ]
+}

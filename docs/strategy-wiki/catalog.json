@@ -1,0 +1,528 @@
+{
+  "schema": 1,
+  "discovered_at": "2026-10-13T22:43:44.923500+00:00",
+  "feed": "https://spacecatspeaceturtles.podbean.com/feed/",
+  "feed_sha256": "96e2c1b7eed9f739a4f057a537a52bf76a2d21a9086f46ae7197a46c8bf2f879",
+  "choices": {
+    "arborec": "scpt-454-c37523a40ece",
+    "ghost": "scpt-326-b2a588bf2c9a",
+    "hacan": "scpt-360-5e107b23a516",
+    "jolnar": "scpt-340-22ea1026a491",
+    "l1z1x": "scpt-347-35ba8438f8db",
+    "letnev": "scpt-463-83eb5a3140f5",
+    "mentak": "scpt-344-46a8ac4fa9b6",
+    "muaat": "scpt-355-f37100b5127b",
+    "naalu": "scpt-270-e95e0606677c",
+    "nekro": "scpt-323-59a99c194ebc",
+    "saar": "scpt-336-bc6947c9dc9c",
+    "sardakk": "scpt-379-8077e0ed04b0",
+    "sol": "scpt-328-db4a3e239705",
+    "winnu": "scpt-352-5d6464a1fef9",
+    "xxcha": "scpt-264-4e5271acc518",
+    "yin": "scpt-257-52a03a15f116",
+    "yssaril": "scpt-358-8b6c1a7c1b89",
+    "keleresm": "scpt-472-362b6046521f",
+    "keleresx": "scpt-472-362b6046521f",
+    "keleresa": "scpt-472-362b6046521f",
+    "argent": "scpt-289-04e0c639051b",
+    "cabal": "scpt-302-c05a11081f20",
+    "empyrean": "scpt-476-b263b43f307a",
+    "mahact": "scpt-467-aee4429069d3",
+    "nomad": "scpt-309-f9709eb1b5f0",
+    "naaz": "scpt-287-59caeca38446",
+    "titans": "scpt-458-6d7cd4dbbab7",
+    "bastion": "scpt-441-384e9a2e4016",
+    "deepwrought": "scpt-445-df4ef137cb74",
+    "firmament": "scpt-449-ac48e2cb5757",
+    "obsidian": "scpt-449-ac48e2cb5757",
+    "crimson": "scpt-430-bd1050a6dee9",
+    "ralnel": "scpt-434-dbc72aa2b0cc"
+  },
+  "episodes": [
+    {
+      "id": "scpt-476-b263b43f307a",
+      "guid": "spacecatspeaceturtles.podbean.com/8a3532b0-5cc1-3338-b55e-558c7aaff160",
+      "number": 476,
+      "title": "476: The Ultimate Guide to THE EMPYREAN",
+      "published": "2026-09-30T20:26:26+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/476-the-ultimate-guide-to-the-empyrean/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/3qwfa4b9i4it9wxe/476.mp3",
+      "rss_audio_bytes": 159094830,
+      "duration_seconds": 9943,
+      "factions": [
+        "empyrean"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-472-362b6046521f",
+      "guid": "spacecatspeaceturtles.podbean.com/676141ca-ddca-3aa8-942d-c2300abc0b5d",
+      "number": 472,
+      "title": "472: The Ultimate Guide to THE COUNCIL KELERES",
+      "published": "2026-09-02T07:30:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/472-the-ultimate-guide-to-the-council-keleres/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/wk5m5piwyw2giz7x/472.mp3",
+      "rss_audio_bytes": 175831096,
+      "duration_seconds": 10989,
+      "factions": [
+        "keleresm",
+        "keleresx",
+        "keleresa"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-467-aee4429069d3",
+      "guid": "spacecatspeaceturtles.podbean.com/67133510-a461-3404-a5b3-6defcd830f45",
+      "number": 467,
+      "title": "467: The Ultimate Guide to THE MAHACT GENE-SORCERERS",
+      "published": "2026-07-29T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/467-the-ultimate-guide-to-the-mahact-gene-sorcerers/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/gpnabj9pw4276skc/467.mp3",
+      "rss_audio_bytes": 107384581,
+      "duration_seconds": 8948,
+      "factions": [
+        "mahact"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-463-83eb5a3140f5",
+      "guid": "spacecatspeaceturtles.podbean.com/ff44a69b-4061-3424-bf4a-350d70219412",
+      "number": 463,
+      "title": "463: The Ultimate Guide to THE BARONY OF LETNEV",
+      "published": "2026-07-01T18:00:44+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/463-the-ultimate-guide-to-the-barony-of-letnev/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/xidr9292rmc595h2/463.mp3",
+      "rss_audio_bytes": 167233273,
+      "duration_seconds": 10451,
+      "factions": [
+        "letnev"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-458-6d7cd4dbbab7",
+      "guid": "spacecatspeaceturtles.podbean.com/3e731894-20c5-33f5-b41d-fe00fe343a6b",
+      "number": 458,
+      "title": "458: The Ultimate Guide to THE TITANS OF UL",
+      "published": "2026-05-27T06:53:31+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/458-the-ultimate-guide-to-the-titans-of-ul/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/7sh7rteasyb436i2/458.mp3",
+      "rss_audio_bytes": 186666348,
+      "duration_seconds": 11666,
+      "factions": [
+        "titans"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-454-c37523a40ece",
+      "guid": "spacecatspeaceturtles.podbean.com/e39062dd-4bcc-3f3d-8e8b-f76dbd4a8006",
+      "number": 454,
+      "title": "454: The Ultimate Guide to THE ARBOREC",
+      "published": "2026-04-29T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/454-the-ultimate-guide-to-the-arborec/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/dg5tsmnpebu6rpcm/454.mp3",
+      "rss_audio_bytes": 128660651,
+      "duration_seconds": 8041,
+      "factions": [
+        "arborec"
+      ],
+      "guide_kind": "ultimate",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-449-ac48e2cb5757",
+      "guid": "spacecatspeaceturtles.podbean.com/efad60b9-3323-311c-896c-44f483708c29",
+      "number": 449,
+      "title": "449: The Firmament/Obsidian Beginner's Guide",
+      "published": "2026-03-25T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/449-the-firmamentobsidian-beginners-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/jrtdcj88ddd22xbt/449.mp3",
+      "rss_audio_bytes": 120691980,
+      "duration_seconds": 7543,
+      "factions": [
+        "firmament",
+        "obsidian"
+      ],
+      "guide_kind": "beginner",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-445-df4ef137cb74",
+      "guid": "spacecatspeaceturtles.podbean.com/4467c80a-a336-30df-9073-14cddd0890b4",
+      "number": 445,
+      "title": "445: Deepwrought Scholarate Beginner's Guide",
+      "published": "2026-02-25T06:56:17+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/445-deepwrought-scholarate-beginners-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/bff5ikcz2igqe9w7/445.mp3",
+      "rss_audio_bytes": 121186964,
+      "duration_seconds": 7574,
+      "factions": [
+        "deepwrought"
+      ],
+      "guide_kind": "beginner",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-441-384e9a2e4016",
+      "guid": "spacecatspeaceturtles.podbean.com/667b96b8-5896-307a-99f8-bcdb4d403341",
+      "number": 441,
+      "title": "441: Last Bastion Beginner's Guide",
+      "published": "2026-01-28T06:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/441-last-bastion-beginners-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/478fr4irtbhwcxy8/441.mp3",
+      "rss_audio_bytes": 96312529,
+      "duration_seconds": 8026,
+      "factions": [
+        "bastion"
+      ],
+      "guide_kind": "beginner",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-434-dbc72aa2b0cc",
+      "guid": "spacecatspeaceturtles.podbean.com/fa23f102-bb9c-3d4b-ac20-92dbddd07217",
+      "number": 434,
+      "title": "434: Ral Nel Consortium Beginner's Guide",
+      "published": "2025-12-10T07:18:07+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/434-ral-nel-consortium-beginners-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/m85gaghkv2i3bkk3/434.mp3",
+      "rss_audio_bytes": 126727021,
+      "duration_seconds": 7920,
+      "factions": [
+        "ralnel"
+      ],
+      "guide_kind": "beginner",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-430-bd1050a6dee9",
+      "guid": "spacecatspeaceturtles.podbean.com/ee2e6be7-f48d-30ba-a074-22b2e3f49841",
+      "number": 430,
+      "title": "430: Crimson Rebellion Beginner's Guide",
+      "published": "2025-11-12T06:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/430-crimson-rebellion-beginners-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/3qnteidskk7cupvp/430.mp3",
+      "rss_audio_bytes": 108155715,
+      "duration_seconds": 9012,
+      "factions": [
+        "crimson"
+      ],
+      "guide_kind": "beginner",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-379-8077e0ed04b0",
+      "guid": "spacecatspeaceturtles.podbean.com/3526ad24-7ca0-3adc-8540-b48c1da0bc6f",
+      "number": 379,
+      "title": "379: Super Sardakk N'orr Guide (THE FINAL SUPER GUIDE)",
+      "published": "2024-11-27T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/379-super-sardakk-norr-guide-the-final-super-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/9gtppgchdm8arn43/SCPT_379_Super_Sardakk_Guide_mixdown.mp3",
+      "rss_audio_bytes": 151370748,
+      "duration_seconds": 6306,
+      "factions": [
+        "sardakk"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-360-5e107b23a516",
+      "guid": "spacecatspeaceturtles.podbean.com/df67a5d5-f814-3c69-ad34-cb9a0cb80603",
+      "number": 360,
+      "title": "360: Super Emirates of Hacan Guide",
+      "published": "2024-07-17T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/360-super-emirates-of-hacan-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/zed72iddv53aqfr8/360_mixdown.mp3",
+      "rss_audio_bytes": 146034106,
+      "duration_seconds": 6084,
+      "factions": [
+        "hacan"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-358-8b6c1a7c1b89",
+      "guid": "spacecatspeaceturtles.podbean.com/660b5279-756a-3b76-aca3-db1ccbbd6574",
+      "number": 358,
+      "title": "358: Super Yssaril Tribes Guide",
+      "published": "2024-07-03T13:15:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/358-super-yssaril-tribes-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/pcww53pkvaa426qt/358_mixdown.mp3",
+      "rss_audio_bytes": 155210835,
+      "duration_seconds": 6466,
+      "factions": [
+        "yssaril"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-355-f37100b5127b",
+      "guid": "spacecatspeaceturtles.podbean.com/0a6784c9-48e8-34a7-8351-5d23f03141ed",
+      "number": 355,
+      "title": "355: Super Embers of Muaat Guide",
+      "published": "2024-06-12T12:34:41+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/355-super-embers-of-muaat-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/eg9hsfc9gdfjxj66/SCPT_355_sUPER_Muaat_Guide.mp3",
+      "rss_audio_bytes": 139472347,
+      "duration_seconds": 5810,
+      "factions": [
+        "muaat"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-352-5d6464a1fef9",
+      "guid": "spacecatspeaceturtles.podbean.com/3f771d41-04a8-3247-b982-720dad021d1e",
+      "number": 352,
+      "title": "352: Super The Winnu Guide",
+      "published": "2024-05-22T11:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/352-super-the-winnu-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/upkuu2ayhma2idp9/352_Super_The_Winnuu_mixdown.mp3",
+      "rss_audio_bytes": 110191010,
+      "duration_seconds": 4590,
+      "factions": [
+        "winnu"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-347-35ba8438f8db",
+      "guid": "spacecatspeaceturtles.podbean.com/116278bc-82a5-3320-9597-540fd87dc325",
+      "number": 347,
+      "title": "347: Super L1Z1X Mindnet Guide",
+      "published": "2024-04-17T22:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/347-super-l1z1x-mindnet-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/gjpqyattvuia6zhz/347_Super_L1z1x_Mindnet_mixdown.mp3",
+      "rss_audio_bytes": 172778053,
+      "duration_seconds": 7198,
+      "factions": [
+        "l1z1x"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-344-46a8ac4fa9b6",
+      "guid": "spacecatspeaceturtles.podbean.com/8ab8eb5e-7933-3a2b-b7b7-d4a57ab6c9b8",
+      "number": 344,
+      "title": "344: Super Mentak Coalition Guide",
+      "published": "2024-03-27T21:39:33+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/344-super-mentak-coalition-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/yhyjcn/SCPT_344_Super_Mentak_Guide.mp3",
+      "rss_audio_bytes": 229649852,
+      "duration_seconds": 9568,
+      "factions": [
+        "mentak"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-340-22ea1026a491",
+      "guid": "spacecatspeaceturtles.podbean.com/4a6c4d38-a338-30ad-a56d-5c8bec3b452d",
+      "number": 340,
+      "title": "340: Super Universities of Jol-Nar Strategy Guide",
+      "published": "2024-02-29T14:48:39+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/340-super-universities-of-jol-nar-strategy-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/i48ivq/SCPT_340_Super_JolNar_Guide.mp3",
+      "rss_audio_bytes": 196658119,
+      "duration_seconds": 8193,
+      "factions": [
+        "jolnar"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-336-bc6947c9dc9c",
+      "guid": "spacecatspeaceturtles.podbean.com/98fb5b6d-12f2-3779-94a5-dcf47759a6a1",
+      "number": 336,
+      "title": "336: Super Clan of Saar Guide",
+      "published": "2024-01-31T15:03:18+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/336-super-clan-of-saar-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/wrce4w/SCPT_336_Super_Saar_Guide.mp3",
+      "rss_audio_bytes": 159669647,
+      "duration_seconds": 6652,
+      "factions": [
+        "saar"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-328-db4a3e239705",
+      "guid": "spacecatspeaceturtles.podbean.com/76171937-a30b-3e39-a942-099f5abd59b1",
+      "number": 328,
+      "title": "328: Super Federation of Sol Guide",
+      "published": "2023-12-06T06:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/328-super-federation-of-sol-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/n4j663/SCPT_328_Super_Sol_Guide.mp3",
+      "rss_audio_bytes": 174247414,
+      "duration_seconds": 7259,
+      "factions": [
+        "sol"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-326-b2a588bf2c9a",
+      "guid": "spacecatspeaceturtles.podbean.com/8b18e766-9009-3532-9028-778b743b3e01",
+      "number": 326,
+      "title": "326: Super Ghosts of Creuss Guide",
+      "published": "2023-11-22T06:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/326-super-ghosts-of-creuss-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/emwa55/SCPT_326_Super_Ghosts_Guide.mp3",
+      "rss_audio_bytes": 211259401,
+      "duration_seconds": 8802,
+      "factions": [
+        "ghost"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-323-59a99c194ebc",
+      "guid": "spacecatspeaceturtles.podbean.com/d546f04c-32f0-3246-a50d-81c351681876",
+      "number": 323,
+      "title": "323: Super Nekro Virus Guide",
+      "published": "2023-11-01T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/323-super-nekro-virus-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/2dw79d/SCPT_323_Super_Nekro_Guide.mp3",
+      "rss_audio_bytes": 191085883,
+      "duration_seconds": 7961,
+      "factions": [
+        "nekro"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-309-f9709eb1b5f0",
+      "guid": "spacecatspeaceturtles.podbean.com/284a5e36-a46e-36fc-bebd-1decde333dcc",
+      "number": 309,
+      "title": "309: Super Nomad Guide",
+      "published": "2023-07-26T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/309-super-nomad-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/c35btf/SCPT_309_Super_Nomad_Guide.mp3",
+      "rss_audio_bytes": 173409161,
+      "duration_seconds": 7224,
+      "factions": [
+        "nomad"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-302-c05a11081f20",
+      "guid": "spacecatspeaceturtles.podbean.com/c9a9cc17-e94d-3faf-a583-6bcb887f5a42",
+      "number": 302,
+      "title": "302: Super Vuil’raith Cabal Guide",
+      "published": "2023-06-07T15:04:22+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/302-super-vuil-raith-cabal-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/uw7w4a/SCPT_302_Super_Cabal_Guide.mp3",
+      "rss_audio_bytes": 203582334,
+      "duration_seconds": 8482,
+      "factions": [
+        "cabal"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-289-04e0c639051b",
+      "guid": "spacecatspeaceturtles.podbean.com/b3f5daef-02df-3ed1-92c0-3a1f79798099",
+      "number": 289,
+      "title": "289: Super Argent Flight Guide",
+      "published": "2023-03-08T06:01:36+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/289-super-argent-flight-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/j5zib8/SCPT_289_Argent_Flight_Guide.mp3",
+      "rss_audio_bytes": 205044971,
+      "duration_seconds": 8543,
+      "factions": [
+        "argent"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-287-59caeca38446",
+      "guid": "spacecatspeaceturtles.podbean.com/210bbf08-d605-3df4-8778-330b1684faae",
+      "number": 287,
+      "title": "287: Super Naaz-Rokha Alliance Guide",
+      "published": "2023-02-22T15:14:06+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/287-super-naaz-rokha-alliance-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/wdqayg/SCPT_287_Super_Naaz_Rokha_Guide.mp3",
+      "rss_audio_bytes": 183990603,
+      "duration_seconds": 7665,
+      "factions": [
+        "naaz"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-270-e95e0606677c",
+      "guid": "spacecatspeaceturtles.podbean.com/3b56e66b-0e51-3f85-96bc-1fe764a6ffe9",
+      "number": 270,
+      "title": "270: Super Naalu Collective Guide",
+      "published": "2022-10-26T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/270-super-naalu-collective-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/237spi/SCPT_270_Super_Naalu_Guide.mp3",
+      "rss_audio_bytes": 101989916,
+      "duration_seconds": 6373,
+      "factions": [
+        "naalu"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-264-4e5271acc518",
+      "guid": "spacecatspeaceturtles.podbean.com/09b13f58-68ee-3601-9e5e-38c4770c0aa6",
+      "number": 264,
+      "title": "264: Super Xxcha Kingdom Guide",
+      "published": "2022-09-14T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/264-super-xxcha-kingdom-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/vyd3z2/SCPT_264_Super_Xxcha_Guide.mp3",
+      "rss_audio_bytes": 103223600,
+      "duration_seconds": 6450,
+      "factions": [
+        "xxcha"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    },
+    {
+      "id": "scpt-257-52a03a15f116",
+      "guid": "spacecatspeaceturtles.podbean.com/28c95ba3-07cc-378d-a6a0-b7d1292a3a14",
+      "number": 257,
+      "title": "257: Super Yin Brotherhood Strategy Guide",
+      "published": "2022-07-27T05:00:00+00:00",
+      "url": "https://spacecatspeaceturtles.podbean.com/e/257-super-yin-brotherhood-strategy-guide/",
+      "audio_url": "https://pscrb.fm/rss/p/mcdn.podbean.com/mf/web/vkhbay/SCPT_257_Super_Yin_Brotherhood_Guide.mp3",
+      "rss_audio_bytes": 115301876,
+      "duration_seconds": 7205,
+      "factions": [
+        "yin"
+      ],
+      "guide_kind": "super",
+      "compatibility": "not reviewed; publication date is not a ruleset guarantee"
+    }
+  ],
+  "missing": [],
+  "ambiguities": {}
+}

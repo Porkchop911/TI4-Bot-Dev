@@ -1,0 +1,1713 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "nomad",
+  "claims": [
+    {
+      "id": "C01",
+      "segment_ids": [
+        "s000203",
+        "s000204",
+        "s000205",
+        "s000206",
+        "s000207",
+        "s000208",
+        "s000209",
+        "s000210",
+        "s000211",
+        "s000212",
+        "s000213",
+        "s000214",
+        "s000215",
+        "s000216",
+        "s000217",
+        "s000218",
+        "s000219",
+        "s000220",
+        "s000221",
+        "s000222",
+        "s000223",
+        "s000224",
+        "s000225",
+        "s000226",
+        "s000227"
+      ],
+      "statement": "Use Nomad's strong, flexible start to avoid a forced round-one line: the guide highlights its blue starting technology, four-resource/four-influence home, carrier and ground forces, Sling Relay, and starting flagship.",
+      "conditions": "A baseline observation; actual expansion, slice, objectives, and speaker order may change the best opening.",
+      "compatibility": "SCPT 309, published 2023-07-26; ruleset compatibility unreviewed.",
+      "uncertainty": "This is the speakers' evaluation of the discussed setup, not a verified ranking.",
+      "components": [
+        "faction:nomad",
+        "technology:sr",
+        "unit:nomad_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 833.26,
+          "end": 909.14
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "segment_ids": [
+        "s000625",
+        "s000626",
+        "s000627",
+        "s000628",
+        "s000629",
+        "s000630",
+        "s000631",
+        "s000632"
+      ],
+      "statement": "Prefer Trade when speaker order makes it available: four commodities, Cavalry, the commander, and Artuno's interaction with supply trade goods make it a high-value Nomad pick in round one and later rounds.",
+      "conditions": "Repeated Trade is an ideal dependent on turn order and competition for the card.",
+      "compatibility": "Episode 309 advice; later rules compatibility unreviewed.",
+      "uncertainty": "The speakers acknowledge that access depends on the table's speaker order.",
+      "components": [
+        "strategy-card:pok5trade",
+        "promissory:cavalry",
+        "leader:nomadcommander",
+        "leader:nomadagentartuno"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2719.58,
+          "end": 2771.42
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "segment_ids": [
+        "s000594",
+        "s000595",
+        "s000596",
+        "s000597",
+        "s000598",
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605",
+        "s000606",
+        "s000607",
+        "s000608",
+        "s000609",
+        "s000610",
+        "s000611",
+        "s000612",
+        "s000613",
+        "s000614",
+        "s000615",
+        "s000616",
+        "s000617",
+        "s000618",
+        "s000619",
+        "s000620"
+      ],
+      "statement": "Politics is a top-tier opening because it can seek Custodians or retain an early pick; selling speaker position to a neighbor can add value, especially when Trade is nearby.",
+      "conditions": "The speakers' ideal is selling speaker position while retaining first pick; value depends on table order, willingness to deal, and whether the buyer values the card or Cavalry.",
+      "compatibility": "Episode 309 advice; no current-rules review.",
+      "uncertainty": "The speakers cannot quantify how consistently other players will buy the note or speaker position.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok5trade",
+        "promissory:cavalry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2636.22,
+          "end": 2700.34
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "segment_ids": [
+        "s000570",
+        "s000571",
+        "s000572",
+        "s000573",
+        "s000574",
+        "s000575",
+        "s000576",
+        "s000577",
+        "s000578",
+        "s000579",
+        "s000580",
+        "s000581",
+        "s000582",
+        "s000583",
+        "s000584",
+        "s000585",
+        "s000586",
+        "s000587",
+        "s000588",
+        "s000589",
+        "s000590",
+        "s000591",
+        "s000592"
+      ],
+      "statement": "Diplo can fund plastic when a valuable planet is available. The speakers prefer refreshing a resource-rich planet after spending home resources on Technology, and often value extra money for ships over Leadership's command tokens.",
+      "conditions": "A poor slice, objective flip, need for command tokens, or access to another resource can change this comparison.",
+      "compatibility": "Episode 309 advice; rules compatibility unreviewed.",
+      "uncertainty": "The value judgment is conditional and based on the speakers' typical games.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok1leadership",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2542.62,
+          "end": 2633.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2515.18,
+          "end": 2560.58
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "segment_ids": [
+        "s000621",
+        "s000622",
+        "s000623",
+        "s000624"
+      ],
+      "statement": "Treat Construction as a low-priority opening; the speakers say that if Diplo is attractive, Construction is generally not.",
+      "conditions": "An objective flip, a useful forward dock, or unusual map needs may change the pick.",
+      "compatibility": "Episode 309 advice; no current-rules review.",
+      "uncertainty": "The speakers explicitly allow the objective flip to change this assessment.",
+      "components": [
+        "strategy-card:pok4construction",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2700.82,
+          "end": 2718.5
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "segment_ids": [
+        "s000663",
+        "s000664",
+        "s000665",
+        "s000666",
+        "s000667",
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679",
+        "s000680",
+        "s000681",
+        "s000682",
+        "s000683"
+      ],
+      "statement": "Usually pass on Warfare in round one: Nomad's starting carrier/ground forces and Sling Relay reduce the need for the primary. The secondary can still help replace ground forces when Nomad is already producing extra ships.",
+      "conditions": "Consider Warfare when a concrete Custodians line or another specific tempo need makes it valuable; the speakers distinguish Nomad from factions that need the card.",
+      "compatibility": "Episode 309 advice; no current-rules review.",
+      "uncertainty": "This is a strong but conditional pick preference.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "technology:sr",
+        "unit:carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2890.58,
+          "end": 2993.42
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "segment_ids": [
+        "s000684",
+        "s000685",
+        "s000686",
+        "s000687",
+        "s000688",
+        "s000689",
+        "s000690",
+        "s000691",
+        "s000692",
+        "s000693",
+        "s000694",
+        "s000695",
+        "s000696",
+        "s000697",
+        "s000698",
+        "s000699",
+        "s000700",
+        "s000701",
+        "s000702",
+        "s000703",
+        "s000704",
+        "s000705",
+        "s000706",
+        "s000707"
+      ],
+      "statement": "Technology is useful but not an automatic first pick. Gravity Drive is a sensible early target, but the guide ranks Trade and Politics higher and sometimes prefers Diplo's resources; earlier Technology is justified when immediate movement or a useful double-tech line matters.",
+      "conditions": "Sling Relay gives Nomad a stall; a long or awkward slice, timing pressure, or a specific tech unlock can change the priority.",
+      "compatibility": "Episode 309 advice; technology and timing legality not independently checked.",
+      "uncertainty": "The speakers describe technology as mid-tier, not bad.",
+      "components": [
+        "strategy-card:pok7technology",
+        "technology:gd",
+        "technology:sr",
+        "strategy-card:pok5trade",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2993.42,
+          "end": 3104.18
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "segment_ids": [
+        "s000633",
+        "s000634",
+        "s000635",
+        "s000636",
+        "s000637",
+        "s000638",
+        "s000639",
+        "s000640",
+        "s000641",
+        "s000642",
+        "s000643",
+        "s000644",
+        "s000645",
+        "s000646",
+        "s000647",
+        "s000648",
+        "s000649"
+      ],
+      "statement": "The guide's demanding round-one Mecatol example takes Hope's End with the starting carrier, places a mech at home, builds a second carrier with Sling Relay, researches Gravity Drive, moves that carrier with the mech next to Mecatol, then uses the flagship's mech adjacency and Gravity Drive to take Mecatol.",
+      "conditions": "Requires the right money, planets, tech, movement order, and successful access; the guide gives it as an illustrative tournament maneuver, not a routine line.",
+      "compatibility": "Episode 309; map and current rules compatibility unreviewed.",
+      "uncertainty": "The transcript attributes the example to tournament play and notes that several things must go right.",
+      "components": [
+        "technology:sr",
+        "technology:gd",
+        "unit:nomad_mech",
+        "unit:nomad_flagship",
+        "unit:carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2771.62,
+          "end": 2843.62
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "segment_ids": [
+        "s000240",
+        "s000241",
+        "s000242",
+        "s000243",
+        "s000244",
+        "s000245",
+        "s000246",
+        "s000247",
+        "s000248",
+        "s000249",
+        "s000250",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361"
+      ],
+      "statement": "After an outcome Nomad voted for or predicted resolves, Future Sight gains one trade good from the supply. The guide says this is easy to forget; an agenda-phase gain arrives after status and cannot fund the action phase just completed.",
+      "conditions": "The discussed income depends on voting or predicting a resolved outcome and on timing relative to the next status phase.",
+      "compatibility": "Episode 309 phrasing; current timing rules unreviewed.",
+      "uncertainty": "The guide discusses ordinary agenda timing and does not review later rules changes.",
+      "components": [
+        "ability:future_sight",
+        "leader:nomadagentartuno"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 940.52,
+          "end": 1009.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1448.36,
+          "end": 1503.78
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "segment_ids": [
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371"
+      ],
+      "statement": "Artuno may bank an equal amount when Nomad gains trade goods from the supply, then pays them when the agent readies. Trade's primary and Future Sight are cited supply sources; trade goods already on another strategy card do not qualify.",
+      "conditions": "Bank only when delayed funds remain useful; the source emphasizes that timing can defer income until the next status phase.",
+      "compatibility": "Episode 309 advice; rule text not independently checked.",
+      "uncertainty": "The transcript contains a few garbled words, but the supply distinction and delay are explicit.",
+      "components": [
+        "leader:nomadagentartuno",
+        "ability:future_sight",
+        "strategy-card:pok5trade"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1413.18,
+          "end": 1539.94
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "segment_ids": [
+        "s000372",
+        "s000373",
+        "s000374",
+        "s000375",
+        "s000376",
+        "s000377",
+        "s000378"
+      ],
+      "statement": "Scuttle on Memoria plus a Dreadnought is cited as a 24-trade-good ceiling with Artuno.",
+      "conditions": "This requires the action card, flagship and Dreadnought being available, and Artuno's ability; the guide presents an extreme ceiling rather than a plan to pursue routinely.",
+      "compatibility": "Episode 309 example; current card text unreviewed.",
+      "uncertainty": "The speakers describe the interaction as an obnoxious high ceiling, not an expected payout.",
+      "components": [
+        "action-card:scuttle",
+        "unit:nomad_flagship",
+        "unit:dreadnought",
+        "leader:nomadagentartuno"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1540.66,
+          "end": 1565.98
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "segment_ids": [
+        "s000379",
+        "s000380",
+        "s000381",
+        "s000382",
+        "s000383",
+        "s000384",
+        "s000385",
+        "s000386",
+        "s000387",
+        "s000388",
+        "s000389",
+        "s000390",
+        "s000391",
+        "s000392",
+        "s000393",
+        "s000394",
+        "s000395",
+        "s000396",
+        "s000397",
+        "s000398",
+        "s000399",
+        "s000400",
+        "s000401",
+        "s000402",
+        "s000403"
+      ],
+      "statement": "If one of the first two secrets can be scored in round one or two, the speaker prefers it even when it is an action-phase secret, to unlock Nomad's commander early and sell access to the alliance ability.",
+      "conditions": "The choice is framed around an available early secret and table interest in the commander; do not confuse preparation with a scored objective.",
+      "compatibility": "Episode 309 opinion under its discussed objective set; current secret-objective rules unreviewed.",
+      "uncertainty": "The speaker describes a personal preference, not a universally optimal secret choice.",
+      "components": [
+        "leader:nomadcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1566.28,
+          "end": 1695.08
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "segment_ids": [
+        "s000404",
+        "s000405",
+        "s000406",
+        "s000407",
+        "s000408",
+        "s000409",
+        "s000410",
+        "s000411"
+      ],
+      "statement": "Commander-enabled flagship production spends no resources, but the flagship remains an eight-resource unit for effects checking its value, including the guide's Cabal-capture and Scuttle examples.",
+      "conditions": "Applies to the production cost distinction discussed by the speakers; it does not imply the unit's printed value changes.",
+      "compatibility": "Episode 309 interpretation; current interaction rulings unreviewed.",
+      "uncertainty": "The speakers call the examples infrequent and raise them to prevent confusion.",
+      "components": [
+        "leader:nomadcommander",
+        "unit:nomad_flagship",
+        "action-card:scuttle"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1695.08,
+          "end": 1742.92
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "segment_ids": [
+        "s000542",
+        "s000543",
+        "s000544",
+        "s000545",
+        "s000546",
+        "s000547",
+        "s000548",
+        "s000549",
+        "s000550",
+        "s000551",
+        "s000552",
+        "s000553",
+        "s000554",
+        "s000555",
+        "s000556",
+        "s000557",
+        "s000558",
+        "s000559",
+        "s000560",
+        "s000561",
+        "s000562"
+      ],
+      "statement": "Offer Cavalry for value, expecting it to help make a likely win safer and less costly rather than rescue a losing fight; if the buyer uses it in combat, the note returns and may be sold again.",
+      "conditions": "The note applies to a space combat against a player other than Nomad; other players may refuse to buy, and the guide discourages treating it as leverage that guarantees a victory.",
+      "compatibility": "Episode 309; note interpretation not independently rules-checked.",
+      "uncertainty": "The authors contrast their research-game refusal experience with what they expect at ordinary tables.",
+      "components": [
+        "promissory:cavalry",
+        "unit:nomad_flagship",
+        "unit:nomad_flagship2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2360.96,
+          "end": 2458.82
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "segment_ids": [
+        "s000290",
+        "s000291",
+        "s000292",
+        "s000293",
+        "s000294",
+        "s000295",
+        "s000296",
+        "s000297",
+        "s000298",
+        "s000299",
+        "s000300",
+        "s000301",
+        "s000302",
+        "s000303",
+        "s000304",
+        "s000305",
+        "s000306",
+        "s000307",
+        "s000308",
+        "s000309",
+        "s000310",
+        "s000311",
+        "s000312",
+        "s000313",
+        "s000314",
+        "s000315",
+        "s000316",
+        "s000317",
+        "s000319",
+        "s000320",
+        "s000321",
+        "s000322",
+        "s000323",
+        "s000324",
+        "s000325",
+        "s000326",
+        "s000327",
+        "s000328",
+        "s000329",
+        "s000330",
+        "s000331",
+        "s000332",
+        "s000333",
+        "s000334",
+        "s000335",
+        "s000336",
+        "s000337",
+        "s000338",
+        "s000339",
+        "s000340",
+        "s000341",
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347"
+      ],
+      "statement": "Thundarian can reroll the standard combat roll-dice step once, but not Anti-Fighter Barrage, bombardment, or space cannon. The guide says to watch for a critical-combat opportunity to sell it, while noting that the reroll can help either side.",
+      "conditions": "The timing window is specifically after the standard combat roll-dice step, in space or ground combat as described by the speakers.",
+      "compatibility": "Episode 309 rules description; not independently checked against later errata.",
+      "uncertainty": "The transcript includes the ASR form 'thunder in this'; context indicates the Thundarian agent, but exact name recognition is uncertain.",
+      "components": [
+        "leader:nomadagentthundarian"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1181.62,
+          "end": 1317.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1322.14,
+          "end": 1439.82
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "segment_ids": [
+        "s000319",
+        "s000320",
+        "s000321",
+        "s000322",
+        "s000323",
+        "s000324",
+        "s000325",
+        "s000326",
+        "s000327",
+        "s000328",
+        "s000329",
+        "s000330",
+        "s000331",
+        "s000332",
+        "s000333",
+        "s000334",
+        "s000335",
+        "s000336",
+        "s000337",
+        "s000338",
+        "s000339"
+      ],
+      "statement": "Use Field Marshal Mercer to reinforce a forward planet or place a newly built mech where it can extend future flagship routes; the guide does not present Nomad as a faction that routinely takes and holds Mecatol through this agent.",
+      "conditions": "The ability moves up to two of the player's ground forces from the board to planets they control in the active system at end of turn; a useful destination must already be controlled.",
+      "compatibility": "Episode 309 rules description and strategy opinion; unreviewed.",
+      "uncertainty": "The speakers say a legendary planet or Mecatol use can occur, but is not their common expectation.",
+      "components": [
+        "leader:nomadagentmercer",
+        "unit:nomad_mech",
+        "unit:nomad_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1322.14,
+          "end": 1408.3
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "segment_ids": [
+        "s000253",
+        "s000254",
+        "s000255",
+        "s000256",
+        "s000257",
+        "s000258",
+        "s000259",
+        "s000260",
+        "s000261",
+        "s000262",
+        "s000263",
+        "s000264",
+        "s000319",
+        "s000320",
+        "s000321",
+        "s000322",
+        "s000323",
+        "s000324",
+        "s000325",
+        "s000326",
+        "s000327",
+        "s000328",
+        "s000329",
+        "s000330",
+        "s000331",
+        "s000332",
+        "s000333",
+        "s000334",
+        "s000335",
+        "s000336",
+        "s000337",
+        "s000338",
+        "s000339"
+      ],
+      "statement": "Mechs make Memoria's routes less predictable because it may treat itself as adjacent to systems containing Nomad mechs; Mercer can help position a new forward mech. The mech is not an independent flying unit, and the flagship still needs legal movement and capacity for carried forces.",
+      "conditions": "The guide emphasizes reach and early deterrence; the flagship is not described as a reason to throw it away early.",
+      "compatibility": "Episode 309 component discussion; current movement rules unreviewed.",
+      "uncertainty": "Some flagship route details are abbreviated in the ASR; the source plainly describes mech-linked adjacency.",
+      "components": [
+        "unit:nomad_mech",
+        "unit:nomad_flagship",
+        "leader:nomadagentmercer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1020.72,
+          "end": 1077.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1322.14,
+          "end": 1408.3
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "segment_ids": [
+        "s000266",
+        "s000267",
+        "s000268",
+        "s000269",
+        "s000270",
+        "s000271",
+        "s000272",
+        "s000273",
+        "s000274",
+        "s000275",
+        "s000276",
+        "s000277",
+        "s000278",
+        "s000279",
+        "s000280",
+        "s000281",
+        "s000282",
+        "s000283",
+        "s000284",
+        "s000285",
+        "s000286",
+        "s000287"
+      ],
+      "statement": "A Nomad mech in the space area can use sustain to cancel a hit against Nomad ships, but that damage remains when the mech later fights on the ground. The guide usually weighs this offensive soak against saving the mech for an invasion, though it sometimes uses the ability early.",
+      "conditions": "Use only when the ship hit matters more than keeping the mech undamaged for ground combat.",
+      "compatibility": "Episode 309 interpretation; ability timing and later errata unreviewed.",
+      "uncertainty": "Speakers present the choice as situational and describe their own play tendency.",
+      "components": [
+        "unit:nomad_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1080.74,
+          "end": 1172.54
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "segment_ids": [
+        "s000505",
+        "s000506",
+        "s000507",
+        "s000508",
+        "s000509",
+        "s000510",
+        "s000511",
+        "s000512",
+        "s000513",
+        "s000514",
+        "s000515",
+        "s000516",
+        "s000517",
+        "s000518",
+        "s000519",
+        "s000520",
+        "s000521",
+        "s000522",
+        "s000523",
+        "s000524",
+        "s000525",
+        "s000526",
+        "s000527",
+        "s000528"
+      ],
+      "statement": "Do not assume Memoria II is the best early technology use. The upgrade improves combat, movement, anti-fighter barrage, and capacity, but its prerequisites and opportunity cost may be worse than Carrier II, Dreadnought II, or other technologies; the speakers say earlier guides overstated the hero parade.",
+      "conditions": "Its value rises when a later objective or map makes the flagship utility important, and when the prerequisite path is efficient.",
+      "compatibility": "Episode 309 comparison; technologies and rules compatibility unreviewed.",
+      "uncertainty": "The speakers disagree about whether Memoria is among the very best flagships but agree its utility is high.",
+      "components": [
+        "technology:m2",
+        "unit:nomad_flagship2",
+        "unit:carrier2",
+        "unit:dreadnought2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2197.26,
+          "end": 2296.32
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "segment_ids": [
+        "s000869",
+        "s000870",
+        "s000871",
+        "s000872",
+        "s000873",
+        "s000874",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881"
+      ],
+      "statement": "A proposed no-skip path starts with Gravity Drive, then considers Carrier II to carry enough ground forces; Scanlink and Dreadnought II are later options, with deeper blue technologies adding flexibility.",
+      "conditions": "The guide presents this as a baseline tech path; map distance, objectives, available skips, and game length may change the order.",
+      "compatibility": "Episode 309 proposal; no technology legality review.",
+      "uncertainty": "The transcript garbles a few technology names in this passage; component identity for the named upgrades is clear from context but not independently verified.",
+      "components": [
+        "technology:gd",
+        "unit:carrier2",
+        "technology:sdn",
+        "unit:dreadnought2",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3886.1,
+          "end": 3952.06
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "segment_ids": [
+        "s000834",
+        "s000835",
+        "s000836",
+        "s000837",
+        "s000838",
+        "s000839",
+        "s000840",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000886",
+        "s000887",
+        "s000888",
+        "s000889",
+        "s000890",
+        "s000891",
+        "s000892",
+        "s000893",
+        "s000894",
+        "s000895",
+        "s000896",
+        "s000897",
+        "s000898",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000943",
+        "s000944",
+        "s000945"
+      ],
+      "statement": "Let green or yellow skips and the objectives decide whether to pursue Memoria II. Without a skip, the speakers prefer a standard path over taking another technology just to force the flagship upgrade; if possible, keep the choice open until the stage-two objective clarifies the parade's relevance.",
+      "conditions": "A skip can reduce opportunity cost; the guide suggests choosing the accessible prerequisite color and later options rather than a fixed one-size-fits-all route.",
+      "compatibility": "Episode 309 technology-path advice; current rules unreviewed.",
+      "uncertainty": "The source calls Memoria II useful in a skip path but not essential; timing of objective flips varies.",
+      "components": [
+        "technology:m2",
+        "technology:gd",
+        "unit:carrier2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3939.28,
+          "end": 4017.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4164.06,
+          "end": 4196.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3729.98,
+          "end": 3773.52
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "segment_ids": [
+        "s000904",
+        "s000905",
+        "s000906",
+        "s000907",
+        "s000908",
+        "s000909",
+        "s000910",
+        "s000911",
+        "s000912",
+        "s000913",
+        "s000914",
+        "s000915",
+        "s000916",
+        "s000917",
+        "s000918",
+        "s000919",
+        "s000920"
+      ],
+      "statement": "Neural Motivator can add useful action-card flexibility, including cards that gain supply trade goods for Artuno; Bio-Stims can ready Sling Relay for another use or refresh a valuable planet.",
+      "conditions": "Choose according to the card flow, planet quality, and whether an extra Sling Relay use has value in the round.",
+      "compatibility": "Episode 309 opinion; card and technology interactions not rules-checked.",
+      "uncertainty": "The speakers describe Neural Motivator as an enjoyable option, not a universal first technology.",
+      "components": [
+        "technology:nm",
+        "technology:bs",
+        "technology:sr",
+        "leader:nomadagentartuno"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4031.2,
+          "end": 4107.6
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "segment_ids": [
+        "s000916",
+        "s000917",
+        "s000918"
+      ],
+      "statement": "Sarween is a poor fit for the particular Sling Relay production plan discussed because it does not interact with Sling Relay as the speakers expect from cost reduction.",
+      "conditions": "This is a narrow technology-path assessment, not a complete ranking of Sarween Tools.",
+      "compatibility": "Episode 309 opinion; current technology rules unreviewed.",
+      "uncertainty": "The speakers qualify the view as specific to this interaction.",
+      "components": [
+        "technology:st",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4088.14,
+          "end": 4100.7
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "segment_ids": [
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000886",
+        "s000887",
+        "s000888",
+        "s000889",
+        "s000890",
+        "s000926",
+        "s000927",
+        "s000928",
+        "s000968",
+        "s000969",
+        "s000970",
+        "s000971",
+        "s000972",
+        "s000973",
+        "s000974"
+      ],
+      "statement": "Fleet Logistics can recover tempo by letting Nomad take Imperial and use it promptly, or chain activations during a hero-parade round.",
+      "conditions": "Most useful when Nomad missed early Custodians or needs two moves in sequence; the speakers prefer to wait until the stage-two objective when feasible.",
+      "compatibility": "Episode 309 advice; technology and timing rules unreviewed.",
+      "uncertainty": "This is an option, not a required technology path.",
+      "components": [
+        "technology:fl",
+        "strategy-card:pok8imperial",
+        "leader:nomadhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3955.72,
+          "end": 3987.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4275.46,
+          "end": 4301.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4124.18,
+          "end": 4132.56
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "segment_ids": [
+        "s000413",
+        "s000414",
+        "s000415",
+        "s000416",
+        "s000417",
+        "s000418",
+        "s000419",
+        "s000420",
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000817",
+        "s000818",
+        "s001120",
+        "s001121",
+        "s001122",
+        "s001123",
+        "s001124",
+        "s001125",
+        "s001126",
+        "s001127",
+        "s001128",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135"
+      ],
+      "statement": "Treat Oxil Siven's hero parade as a conditional scoring tool rather than a universal win button. The guide's clearest target is a spread-out Stage II space-control objective; a flagship on Mecatol can support a supremacy objective only if the ground defense can be cracked. Fighter II and Bio-Stims may help populate distant space and create stalls.",
+      "conditions": "The hero allows the flagship and carried units to leave systems containing Nomad tokens for that game round, but does not allow a second activation of the same system. Verify each objective's exact requirements before claiming a point.",
+      "compatibility": "Episode 309 discussion; objective and hero rules not independently reviewed.",
+      "uncertainty": "The speakers explicitly revise earlier overemphasis and say parade opportunities occur less often than they once believed.",
+      "components": [
+        "leader:nomadhero",
+        "unit:fighter2",
+        "technology:bs",
+        "unit:nomad_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1751.62,
+          "end": 1795.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3663.12,
+          "end": 3681.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4777.2,
+          "end": 4854.84
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "segment_ids": [
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001147",
+        "s001148",
+        "s001149",
+        "s001150"
+      ],
+      "statement": "A parade can begin before every opponent has passed when the routes are still hard to read; save decisive moves for when opponents cannot disrupt them. With the commander unlocked, the guide also describes sacrificing the flagship for one objective, rebuilding at home, then continuing elsewhere.",
+      "conditions": "Requires useful spread-out mechs or units, an objective that rewards the movement, commander access for the free rebuild described, and enough actions to complete the route.",
+      "compatibility": "Episode 309 strategic proposal; current rules unreviewed.",
+      "uncertainty": "The source gives examples from tournament play without claiming they are routine.",
+      "components": [
+        "leader:nomadhero",
+        "leader:nomadcommander",
+        "unit:nomad_flagship",
+        "unit:nomad_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4855.22,
+          "end": 4917.52
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "segment_ids": [
+        "s001034",
+        "s001035",
+        "s001036",
+        "s001037",
+        "s001038",
+        "s001091",
+        "s001092",
+        "s001093",
+        "s001094",
+        "s001095",
+        "s001096",
+        "s001097",
+        "s001098",
+        "s001099",
+        "s001100",
+        "s001101",
+        "s001102",
+        "s001103"
+      ],
+      "statement": "Solve tempo first—ideally Custodians in round one or two when the line is realistic—then use speaker control, deals, action cards, and swingy opportunities to keep the game directed toward Nomad.",
+      "conditions": "If early Custodians are unavailable, the speakers mention finding another tempo advantage; the late-game plan depends on building momentum rather than expecting a bottom-position comeback.",
+      "compatibility": "Episode 309 advice under its assumed scoring horizon; game length varies.",
+      "uncertainty": "The transcript's 'shard or obsidian' wording is ASR-uncertain, so no component ID is asserted for those alternatives.",
+      "components": [
+        "strategy-card:pok3politics",
+        "leader:nomadhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4523.3,
+          "end": 4554.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4678.28,
+          "end": 4732.84
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "segment_ids": [
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000625",
+        "s000626",
+        "s000627",
+        "s000628",
+        "s000629",
+        "s000630",
+        "s000631",
+        "s000632",
+        "s000715",
+        "s000716",
+        "s000717",
+        "s000718",
+        "s000719",
+        "s000720",
+        "s000721",
+        "s000722",
+        "s000723",
+        "s000724",
+        "s000725",
+        "s000726",
+        "s000727",
+        "s000728",
+        "s000729",
+        "s000730",
+        "s000731",
+        "s000732",
+        "s000733",
+        "s000734",
+        "s000735",
+        "s000736",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111",
+        "s001112",
+        "s001113",
+        "s001114",
+        "s001115",
+        "s001116"
+      ],
+      "statement": "Convert Nomad's economy into pieces spread across the map. Trade goods, Future Sight, Artuno, and repeated Trade can create a strong income floor, but a cash stack at home alone does not prepare the faction for later objectives or defense.",
+      "conditions": "Build and position plastic early enough for expected scoring routes; balance reserve funds against the need to have units already where they may matter.",
+      "compatibility": "Episode 309 describes a particular game economy; no current rules review.",
+      "uncertainty": "Income examples depend on taking Trade, successful Future Sight triggers, and Artuno timing.",
+      "components": [
+        "strategy-card:pok5trade",
+        "ability:future_sight",
+        "leader:nomadagentartuno",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3135.84,
+          "end": 3254.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4732.88,
+          "end": 4772.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1413.18,
+          "end": 1539.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2719.58,
+          "end": 2771.42
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "segment_ids": [
+        "s000737",
+        "s000738",
+        "s000739",
+        "s000740",
+        "s000741",
+        "s000742",
+        "s000743",
+        "s000744",
+        "s000745",
+        "s000746",
+        "s000747",
+        "s000748",
+        "s000749",
+        "s000750",
+        "s000751",
+        "s000752",
+        "s000753",
+        "s001098",
+        "s001099",
+        "s001100",
+        "s001101",
+        "s001102",
+        "s001103"
+      ],
+      "statement": "Lean into point-blocking more than direct win-slaying: unusual mech-linked routes and token placement can block a rival's win, but the guide says Nomad is not reliably built to force a comeback from behind by eliminating a leader.",
+      "conditions": "The block matters only when board position, available tokens, and the rival's exact scoring route make it consequential.",
+      "compatibility": "Episode 309 strategic opinion; no current-rules review.",
+      "uncertainty": "The speakers note that the hero can sometimes enable a wind-slay, so this is a tendency rather than a prohibition.",
+      "components": [
+        "unit:nomad_mech",
+        "unit:nomad_flagship",
+        "leader:nomadhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3262.94,
+          "end": 3347.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4703.94,
+          "end": 4732.84
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "segment_ids": [
+        "s000798",
+        "s000799",
+        "s000800",
+        "s000801",
+        "s000802",
+        "s000803",
+        "s000804",
+        "s000805",
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000817",
+        "s000818",
+        "s000819",
+        "s000820",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881"
+      ],
+      "statement": "Plan around weak ground-combat tools: the guide says Nomad's special combat kit mostly affects space, its mech sustain is not a ground-combat bonus, and the hero does not grant another activation. Carrier capacity, numbers, and sometimes bombardment must do the work; a faction entrenched on Mecatol can be hard to dislodge.",
+      "conditions": "This weakness matters most when Nomad missed early tempo and must take a defended planet; the speakers suggest overwhelming defenders with ground forces.",
+      "compatibility": "Episode 309 tactical opinion; current combat rules unreviewed.",
+      "uncertainty": "The transcript renders Dreadnought II as 'thread two'; that component identification is inferred from the bombardment context. The ground-combat comparison is personal.",
+      "components": [
+        "unit:nomad_mech",
+        "unit:carrier2",
+        "unit:dreadnought2",
+        "leader:nomadhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3561.26,
+          "end": 3614.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3663.12,
+          "end": 3684.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3914.38,
+          "end": 3952.06
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "segment_ids": [
+        "s001120",
+        "s001121",
+        "s001122",
+        "s001123",
+        "s001124",
+        "s001125",
+        "s001126",
+        "s001127",
+        "s001128",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135"
+      ],
+      "statement": "Reserve dramatic movement for objectives that reward it. Spread-out Stage II space-control objectives are the guide's clearest parade target; Fighter II may populate distant space late, while Bio-Stims may supply stalls. A move or partial setup is preparation, not a scored point: verify every objective requirement.",
+      "conditions": "The Mecatol supremacy example is harder because Nomad must first overcome the ground defense; timing and available stalls matter.",
+      "compatibility": "Episode 309 objective examples; not current rules verification.",
+      "uncertainty": "The transcript names multiple versions of space-control objectives but their exact card titles are not clear, so no objective component ID is asserted.",
+      "components": [
+        "leader:nomadhero",
+        "unit:fighter2",
+        "technology:bs",
+        "unit:nomad_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4777.2,
+          "end": 4854.84
+        }
+      ]
+    },
+    {
+      "id": "C32",
+      "segment_ids": [
+        "s000543",
+        "s000544",
+        "s000545",
+        "s000546",
+        "s000547",
+        "s000548",
+        "s000549",
+        "s000550",
+        "s000551",
+        "s000552",
+        "s000553",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000",
+        "s001001",
+        "s001002",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111",
+        "s001112",
+        "s001113",
+        "s001114",
+        "s001115",
+        "s001116"
+      ],
+      "statement": "Build a useful midgame setup for the finish: spend early wealth on plastic, make useful deals, and use speaker control and flexible movement to close. The speakers caution that a late comeback from the bottom is less reliable than early momentum; commander access and Cavalry may support paid cooperation.",
+      "conditions": "The right deal and price depend on opponents; the commander and note are valuable only when the buyer wants their specific benefit.",
+      "compatibility": "Episode 309 plan; scoring horizon and rules compatibility unreviewed.",
+      "uncertainty": "The guide repeatedly qualifies deals by whether opponents are willing to pay.",
+      "components": [
+        "leader:nomadcommander",
+        "promissory:cavalry",
+        "strategy-card:pok3politics",
+        "unit:nomad_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4732.88,
+          "end": 4772.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4381.42,
+          "end": 4411.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2362.68,
+          "end": 2416.8
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "unit:nomad_mech",
+      "to": "unit:nomad_flagship",
+      "relation": "enables",
+      "conditions": "Nomad's flagship treats systems containing its mechs as adjacent under the guide's description; this creates additional routes when the board and movement allow.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1020.72,
+          "end": 1077.34
+        }
+      ]
+    },
+    {
+      "from": "leader:nomadagentmercer",
+      "to": "unit:nomad_mech",
+      "relation": "enables",
+      "conditions": "Mercer can move a mech already on the board to a controlled planet in the active system at turn end, establishing a forward position for later routes.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1322.14,
+          "end": 1408.3
+        }
+      ]
+    },
+    {
+      "from": "ability:future_sight",
+      "to": "leader:nomadagentartuno",
+      "relation": "synergizes-with",
+      "conditions": "A Future Sight trade good gained from the supply can be banked on Artuno, but it is delayed until the agent readies.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1413.18,
+          "end": 1503.78
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok5trade",
+      "to": "leader:nomadagentartuno",
+      "relation": "synergizes-with",
+      "conditions": "Trade's primary supply trade goods can be banked by Artuno; this does not apply to trade goods already on another strategy card.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1483.28,
+          "end": 1539.94
+        }
+      ]
+    },
+    {
+      "from": "action-card:scuttle",
+      "to": "leader:nomadagentartuno",
+      "relation": "synergizes-with",
+      "conditions": "The speakers cite Scuttle on the flagship and a Dreadnought as an extreme 24-trade-good Artuno interaction when the components are available.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1540.66,
+          "end": 1565.98
+        }
+      ]
+    },
+    {
+      "from": "leader:nomadcommander",
+      "to": "unit:nomad_flagship",
+      "relation": "enables",
+      "conditions": "After the commander unlocks, Nomad can produce its flagship without spending resources; the unit retains its printed value for effects that check unit cost/value.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1572.96,
+          "end": 1609.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 1695.08,
+          "end": 1742.92
+        }
+      ]
+    },
+    {
+      "from": "technology:sr",
+      "to": "technology:bs",
+      "relation": "synergizes-with",
+      "conditions": "Bio-Stims can ready Sling Relay for another use in a round when its extra production is useful.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4077.38,
+          "end": 4086.62
+        }
+      ]
+    },
+    {
+      "from": "technology:fl",
+      "to": "leader:nomadhero",
+      "relation": "enables",
+      "conditions": "Fleet Logistics can support two activations in sequence during a parade plan, provided the objective and action economy make the sequence useful.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 4275.46,
+          "end": 4301.74
+        }
+      ]
+    },
+    {
+      "from": "promissory:cavalry",
+      "to": "unit:nomad_flagship",
+      "relation": "enables",
+      "conditions": "Cavalry temporarily gives one non-fighter ship the Nomad flagship's combat, sustain, and anti-fighter-barrage values in a space combat against a player other than Nomad.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 2298.66,
+          "end": 2330.78
+        }
+      ]
+    },
+    {
+      "from": "unit:carrier2",
+      "to": "unit:nomad_mech",
+      "relation": "enables",
+      "conditions": "The guide recommends Carrier II to carry enough ground forces to overwhelm planets because Nomad has few ground-combat bonuses.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-309-f9709eb1b5f0",
+          "start": 3914.38,
+          "end": 3952.06
+        }
+      ]
+    }
+  ]
+}

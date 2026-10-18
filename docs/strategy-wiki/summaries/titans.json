@@ -1,0 +1,1335 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "titans",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Prioritize influence in the slice because command tokens fund the faction's many activations, deployments, and fleet capacity; a low-influence/high-resource slice is a more serious constraint than the converse.",
+      "conditions": "Draft/map dependent; the speakers prefer influence but say a 0/8 resources/influence slice is workable because Elysium can fund spending.",
+      "compatibility": "SCPT 458, published 2026-05-27; guide mixes Prophecy of Kings-era advice and Thunders Edge-era discussion; not independently rules-verified.",
+      "uncertainty": "Transcript misrecognizes several game terms; preference is strategic opinion, not a universal map rule.",
+      "components": [],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5726.62,
+          "end": 5749.68
+        }
+      ],
+      "segment_ids": [
+        "s001247",
+        "s001248",
+        "s001249",
+        "s001250",
+        "s001251"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Sell Terraform early when cash or an alliance changes the opening: the speakers set about three trade goods as a starting ask, adjust for the buyer, and value immediate money for technology, a Warfare build, or scoring above speculative later value.",
+      "conditions": "Raise the price when an attachment objective or four-of-a-kind objective is visible; waiting can increase value, so price it against the table and the round-one need.",
+      "compatibility": "SCPT 458 (2026-05-27); strategy discussion spans POK and Thunders Edge context; rules and current objective set not checked.",
+      "uncertainty": "The three-trade-good baseline is one speaker's negotiating heuristic; quotes vary with table wealth and buyer.",
+      "components": [
+        "promissory:terraform"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3431.38,
+          "end": 3478.42
+        }
+      ],
+      "segment_ids": [
+        "s000736",
+        "s000737",
+        "s000738",
+        "s000739",
+        "s000740",
+        "s000741",
+        "s000742",
+        "s000743",
+        "s000744",
+        "s000745",
+        "s000746",
+        "s000747"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Consider trading Terraform for Research Agreement with Jol-Nar when the exchange gives Titans useful technology and Jol-Nar values the planet upgrade; Hyper Metabolism is singled out as attractive to Titans.",
+      "conditions": "Only when the tech choice, timing, and mutual value are clear; the speakers call this one of the few swaps that can beat an early cash sale.",
+      "compatibility": "SCPT 458 (2026-05-27), mixed-era strategic opinion; no current rules validation.",
+      "uncertainty": "ASR renders some faction/tech names inconsistently; component ID for the named tech is unresolved in the assigned evidence, so no ID is asserted.",
+      "components": [
+        "promissory:terraform",
+        "technology:hm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3485.54,
+          "end": 3510.9
+        }
+      ],
+      "segment_ids": [
+        "s000749",
+        "s000750"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use scan-link to explore only a planet where a Titans unit is already present when the system is activated; it yields one planet per activation, not every planet in a multi-planet system.",
+      "conditions": "Pre-position a ship, Hel-Titan, or other qualifying unit on the planet before activating; do not count on a newly moved unit or sleeper placement to meet the prerequisite.",
+      "compatibility": "SCPT 458 (2026-05-27), guide explanation; game-rule legality was not independently checked.",
+      "uncertainty": "The audio/ASR calls it Scan Link / scan-link; source passage is clear about the existing-unit and one-planet constraints.",
+      "components": [
+        "technology:sdn"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 1688.06,
+          "end": 1727.76
+        }
+      ],
+      "segment_ids": [
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Treat the activation sequence as separate timing windows: scan-link exploration happens on activation, Terragenesis can then place or move a sleeper after exploring, and Awaken can redeem only a sleeper already in the activated system before that activation.",
+      "conditions": "Plan to explore/place now and Awaken on a later activation; a sleeper placed during the current activation cannot be redeemed by Awaken in that same action.",
+      "compatibility": "SCPT 458 (2026-05-27); rules explanation in the guide is not an independent rules audit.",
+      "uncertainty": "The speakers emphasize that wording is confusing; follow-up rules confirmation remains needed before treating as authoritative.",
+      "components": [
+        "ability:terragenesis",
+        "ability:awaken"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2022.1,
+          "end": 2095.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2302.9,
+          "end": 2309.88
+        }
+      ],
+      "segment_ids": [
+        "s000426",
+        "s000427",
+        "s000428",
+        "s000429",
+        "s000430",
+        "s000431",
+        "s000432",
+        "s000433",
+        "s000434",
+        "s000435",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439",
+        "s000440",
+        "s000441",
+        "s000442",
+        "s000484",
+        "s000485"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Leave sleepers unredeemed when the threat of later Awaken/coalescence is more useful than an immediate Hel-Titan: opponents can see the token and must account for the possibility of Titans entering later.",
+      "conditions": "Useful when preserving command tokens and creating deterrence or projection; limited by the five-token supply and opponents' willingness to avoid or challenge the location.",
+      "compatibility": "SCPT 458 (2026-05-27); advice draws on a reported 2023 tournament game and POK-era faction play.",
+      "uncertainty": "The discussion calls an unredeemed token nearly as useful, not strictly equivalent to a PDS; outcome depends on opponent behavior.",
+      "components": [
+        "ability:coalescence",
+        "ability:awaken"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2221.8,
+          "end": 2265.64
+        }
+      ],
+      "segment_ids": [
+        "s000467",
+        "s000468",
+        "s000469",
+        "s000470",
+        "s000471",
+        "s000472",
+        "s000473",
+        "s000474"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Use coalescence as a projection and negotiation tool: when another player enters a sleeper location, Titans can awaken into the contested area and their units participate in the ensuing combat; the speakers now regard this as a central Titans skill.",
+      "conditions": "Position sleepers where future access matters and budget for combat; do not treat dormant tokens as secret or as guaranteed ownership.",
+      "compatibility": "SCPT 458 (2026-05-27), POK-era mechanic discussion; independent legality not checked.",
+      "uncertainty": "The speakers revise an older dismissive view and report the tactic's use becoming more common; their assessment is experience-based.",
+      "components": [
+        "ability:coalescence",
+        "ability:awaken"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2144.92,
+          "end": 2196.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2400.0,
+          "end": 2404.5
+        }
+      ],
+      "segment_ids": [
+        "s000455",
+        "s000456",
+        "s000457",
+        "s000458",
+        "s000459",
+        "s000460",
+        "s000461",
+        "s000462",
+        "s000507"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Upgrade Saturn Engines early: Saturn Engine II is described as cost two, combat six, movement three, capacity two, and sustained damage, making it the core force-projection and combat upgrade.",
+      "conditions": "Prioritize reaching the upgrade by round two when possible; choose a route that fits available skips, breakthrough, and strategy-card timing.",
+      "compatibility": "SCPT 458 (2026-05-27), strategic evaluation; printed unit values and game legality not independently checked.",
+      "uncertainty": "Speakers use strong superlatives, but note its fleet-pool footprint and that it is not superior in every niche (for example, it lacks bombardment).",
+      "components": [
+        "unit:titans_cruiser",
+        "unit:titans_cruiser2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2565.02,
+          "end": 2630.0
+        }
+      ],
+      "segment_ids": [
+        "s000537",
+        "s000538",
+        "s000539",
+        "s000540",
+        "s000541",
+        "s000542",
+        "s000543",
+        "s000544",
+        "s000545",
+        "s000546",
+        "s000547",
+        "s000548"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Treat Saturn Engine II's cheap movement and capacity as an all-purpose tool for objectives, raids, and fracture access, but account for each cruiser taking fleet capacity and for the limited number of command tokens.",
+      "conditions": "Best when Titans can support several fleets and enough ground forces; opponents with much greater carrier capacity or ground-force volume can exploit the all-rounder's limits.",
+      "compatibility": "SCPT 458 (2026-05-27), strategic synthesis across the guide; no current-rules verification.",
+      "uncertainty": "The speakers describe the ship as versatile rather than best-in-class at every task.",
+      "components": [
+        "unit:titans_cruiser2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6089.64,
+          "end": 6110.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6308.5,
+          "end": 6333.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8243.65,
+          "end": 8305.87
+        }
+      ],
+      "segment_ids": [
+        "s001325",
+        "s001326",
+        "s001327",
+        "s001368",
+        "s001369",
+        "s001370",
+        "s001371",
+        "s001372",
+        "s001373",
+        "s001794",
+        "s001795",
+        "s001796",
+        "s001797",
+        "s001798",
+        "s001799",
+        "s001800",
+        "s001801",
+        "s001802",
+        "s001803",
+        "s001804"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Spread Hel-Titans across planets to project durable ground defense and production instead of concentrating several on one planet; one per planet usually covers more ground and keeps structure objectives accessible.",
+      "conditions": "Multiple Hel-Titans in one system can still be useful for production; concentrate only when the objective or defense position justifies it.",
+      "compatibility": "SCPT 458 (2026-05-27), guide strategy opinion; current unit rules not checked.",
+      "uncertainty": "The source gives a general preference, not a strict threshold or universal optimum.",
+      "components": [
+        "unit:titans_pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2482.32,
+          "end": 2495.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3122.84,
+          "end": 3182.02
+        }
+      ],
+      "segment_ids": [
+        "s000523",
+        "s000524",
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Keep at least one Hecatoncheires in reinforcements when possible, because its deploy ability converts a PDS placement into a mech plus infantry; using Transit Diodes to remove and replace a PDS can create this deployment opportunity elsewhere.",
+      "conditions": "Check that a mech remains in reinforcements and that the placement effect qualifies; do not fill all mech slots early if a later deployment is valuable.",
+      "compatibility": "SCPT 458 (2026-05-27), guide discussion of POK components and interaction; not independently rules-verified.",
+      "uncertainty": "The speakers call this a rules-nerdy interaction and caution that other effects that merely move ground forces do not move Hel-Titans.",
+      "components": [
+        "unit:titans_mech",
+        "technology:td",
+        "unit:titans_pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3024.24,
+          "end": 3042.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3075.54,
+          "end": 3085.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3160.64,
+          "end": 3186.28
+        }
+      ],
+      "segment_ids": [
+        "s000652",
+        "s000653",
+        "s000654",
+        "s000661",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "The speakers favor spending Elysium for influence more often than its seven resources after the hero refresh, because Titans' binding shortage is command tokens rather than unit cost.",
+      "conditions": "Choose resources when a specific spend objective or double-tech plan warrants it; the preference assumes Saturn Engine II remains the efficient fleet backbone.",
+      "compatibility": "SCPT 458 (2026-05-27); hero text and economic evaluation not independently checked.",
+      "uncertainty": "The speakers disagree in emphasis and one calls the seven-resource use a trap; treat this as situational advice.",
+      "components": [
+        "leader:titanshero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5452.74,
+          "end": 5527.5
+        }
+      ],
+      "segment_ids": [
+        "s001179",
+        "s001180",
+        "s001181",
+        "s001182",
+        "s001183",
+        "s001184",
+        "s001185",
+        "s001186",
+        "s001187",
+        "s001188",
+        "s001189",
+        "s001190",
+        "s001191",
+        "s001192",
+        "s001193",
+        "s001194",
+        "s001195",
+        "s001196",
+        "s001197"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Use Tungstantus's production-triggered trade good during the same production window when it makes the build possible; Hel-Titans can generate production even when Titans otherwise lack resources.",
+      "conditions": "Ability requires actual production, not merely an effect that places units; spending the gained trade good immediately can also deny Mentak a later pillage opportunity per the speakers.",
+      "compatibility": "SCPT 458 (2026-05-27); ability/rules explanation not independently verified.",
+      "uncertainty": "ASR varies the commander's spelling; ID is taken from component-reference.json. The pillage timing explanation needs separate rules review.",
+      "components": [
+        "leader:titanscommander",
+        "unit:titans_pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5130.02,
+          "end": 5144.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5199.08,
+          "end": 5255.68
+        }
+      ],
+      "segment_ids": [
+        "s001112",
+        "s001113",
+        "s001114",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135",
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Treat Terraformed Elysium as a flexible spend planet; the hero's Geoform refresh and value increase can support either influence for tokens or a large resource spend, depending on the immediate bottleneck.",
+      "conditions": "The discussion says Titans commonly need influence and often spend the refreshed home system for tokens, while acknowledging a seven-resource spend can enable technology or other economic goals.",
+      "compatibility": "SCPT 458 (2026-05-27); the recorded hero mechanic is not independently rules-checked.",
+      "uncertainty": "The speakers differ on which value is usually more important; do not assume one mode is always correct.",
+      "components": [
+        "leader:titanshero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5385.48,
+          "end": 5399.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5452.74,
+          "end": 5513.16
+        }
+      ],
+      "segment_ids": [
+        "s001167",
+        "s001168",
+        "s001179",
+        "s001180",
+        "s001181",
+        "s001182",
+        "s001183",
+        "s001184",
+        "s001185",
+        "s001186",
+        "s001187",
+        "s001188",
+        "s001189",
+        "s001190",
+        "s001191",
+        "s001192",
+        "s001193",
+        "s001194",
+        "s001195"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Use Slumber State Computing to support control-objective scoring through coexistence, including Push Boundaries; coexistence can count the planet for Titans' relevant scoring while the owner retains control, which can make the arrangement attractive to both players.",
+      "conditions": "Requires the breakthrough, an eligible coexistence/combat situation, and a cooperative opponent; if Titans commit no other units, the speakers say the breakthrough allows coexistence instead of ground combat.",
+      "compatibility": "SCPT 458 (2026-05-27), early discussion of Thunders Edge breakthrough; rules and later errata not reviewed.",
+      "uncertainty": "Speakers describe playtest/research games and flag uncertainty around exact interactions; preserve this as conditional advice, not settled rules.",
+      "components": [
+        "ability:coalescence",
+        "public-objective:push_boundaries"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 3782.56,
+          "end": 3816.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 4016.44,
+          "end": 4090.88
+        }
+      ],
+      "segment_ids": [
+        "s000808",
+        "s000809",
+        "s000810",
+        "s000811",
+        "s000812",
+        "s000853",
+        "s000854",
+        "s000855",
+        "s000856",
+        "s000857",
+        "s000858",
+        "s000859",
+        "s000860",
+        "s000861",
+        "s000862",
+        "s000863",
+        "s000864"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Negotiate coexistence deals around concrete value: shared defense, action-card draws, a trade refresh, alliance access, objective progress, or a place to deploy structures; price benefits case by case rather than assuming the other player will agree.",
+      "conditions": "The speaker reports nine different deals but warns that some may have been poor value; the other player must consent to sleeper placement and may not value the exchange similarly.",
+      "compatibility": "SCPT 458 (2026-05-27), early playtest examples for Slumber State Computing and coalescence; not a guaranteed standard interaction.",
+      "uncertainty": "Anecdotes are player- and table-specific; the audio does not establish an optimal price or reliable acceptance rate.",
+      "components": [
+        "ability:coalescence",
+        "leader:titanscommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 4138.28,
+          "end": 4216.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 4721.7,
+          "end": 4749.28
+        }
+      ],
+      "segment_ids": [
+        "s000874",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000886",
+        "s001011",
+        "s001012",
+        "s001013",
+        "s001014",
+        "s001015"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Be highly cautious about enabling Yssaril to coexist for repeated action-card value; the speakers estimate the action-card flow can become very large and say a simple payment may not compensate Titans.",
+      "conditions": "Especially relevant early enough for multiple status phases and when the opponent can exploit or steal the extra cards; consider only with substantial trust and compensation.",
+      "compatibility": "SCPT 458 (2026-05-27), strategic opinion about the newly discussed breakthrough; current text not verified.",
+      "uncertainty": "The estimated number of cards is hypothetical; the speakers disagree only implicitly about whether any deal could justify it.",
+      "components": [
+        "faction:yssaril"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 4877.66,
+          "end": 4949.86
+        }
+      ],
+      "segment_ids": [
+        "s001055",
+        "s001056",
+        "s001057",
+        "s001058",
+        "s001059",
+        "s001060",
+        "s001061",
+        "s001062",
+        "s001063",
+        "s001064",
+        "s001065",
+        "s001066",
+        "s001067",
+        "s001068",
+        "s001069",
+        "s001070",
+        "s001071",
+        "s001072",
+        "s001073"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Value Tellurian as a flexible hit cancel: it can protect an important unit in a crucial fight, then later be used to interfere with an opponent's winning position when preserving it no longer helps Titans.",
+      "conditions": "Time its use around the round-two push or an endgame contest; do not assume it is the same effect as a normal sustained-damage ability.",
+      "compatibility": "SCPT 458 (2026-05-27), guide strategy interpretation; exact rules not independently confirmed.",
+      "uncertainty": "The speaker explicitly distinguishes the agent from sustained damage; situational use against an opponent is anecdotal.",
+      "components": [
+        "leader:titansagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 4970.06,
+          "end": 5045.94
+        }
+      ],
+      "segment_ids": [
+        "s001081",
+        "s001082",
+        "s001083",
+        "s001084",
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001088",
+        "s001089",
+        "s001090",
+        "s001091",
+        "s001092",
+        "s001093",
+        "s001094",
+        "s001095"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Build toward five structures to unlock Tungstantus; sleeper placement and later Awaken can make this arrive around round two, but the speaker notes starting infantry and reachable planets may leave Titans one structure short.",
+      "conditions": "Count actual structures and planets reachable in the specific slice; a cooperative coexistence deal can accelerate the unlock.",
+      "compatibility": "SCPT 458 (2026-05-27); unlock conditions from the guide, not separately verified.",
+      "uncertainty": "The guide's expected timing depends on the map, infantry distribution, and deals.",
+      "components": [
+        "leader:titanscommander",
+        "unit:titans_pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5089.0,
+          "end": 5135.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7631.08,
+          "end": 7649.9
+        }
+      ],
+      "segment_ids": [
+        "s001103",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111",
+        "s001112",
+        "s001653",
+        "s001654",
+        "s001655"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Use the common opening plan to score a round-one public objective, then pursue Custodians if the board permits; if Titans cannot take Custodians first, the speakers prefer preserving scoring tempo and taking Imperial in round two for the bonus point.",
+      "conditions": "The ideal can be score plus Politics/Custodians; choose based on objective feasibility, speaker order, and whether another faction can beat Titans to Mecatol. Saar is named as a possible contest.",
+      "compatibility": "SCPT 458 (2026-05-27), strategic timing advice that spans POK and Thunders Edge-era game discussion; no engine verification.",
+      "uncertainty": "One speaker emphasizes a repeatable plan while both endorse round-one scoring over a risky Custodians-first detour; not every table position supports this.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial",
+        "leader:titansagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6510.08,
+          "end": 6562.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6671.48,
+          "end": 6765.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6882.4,
+          "end": 6894.32
+        }
+      ],
+      "segment_ids": [
+        "s001411",
+        "s001412",
+        "s001413",
+        "s001414",
+        "s001415",
+        "s001416",
+        "s001417",
+        "s001418",
+        "s001419",
+        "s001420",
+        "s001445",
+        "s001446",
+        "s001447",
+        "s001448",
+        "s001449",
+        "s001450",
+        "s001451",
+        "s001452",
+        "s001453",
+        "s001454",
+        "s001455",
+        "s001456",
+        "s001457",
+        "s001458",
+        "s001459",
+        "s001460",
+        "s001461",
+        "s001462",
+        "s001463",
+        "s001464",
+        "s001490",
+        "s001491"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Prioritize Leadership, Trade, and Politics early for tokens, money, speaker, and the round-two Imperial line; treat Technology as useful to accelerate Saturn Engine II but a middle-tier pick rather than an automatic round-one choice.",
+      "conditions": "Shift priorities with objectives and card order; Trade or Diplomacy can become urgent for a spend objective, and an early Warfare pop may prevent a useful Tech secondary follow.",
+      "compatibility": "SCPT 458 (2026-05-27), strategy-card evaluations in the guide's round-one game context; not rules-verified.",
+      "uncertainty": "Rankings are speaker preferences and vary with board timing; the speakers disagree on Tech urgency.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok5trade",
+        "strategy-card:pok3politics",
+        "strategy-card:pok7technology",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6918.28,
+          "end": 6962.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7000.12,
+          "end": 7034.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7066.94,
+          "end": 7072.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7130.46,
+          "end": 7138.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7210.88,
+          "end": 7215.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7694.12,
+          "end": 7726.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7759.1,
+          "end": 7772.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7814.14,
+          "end": 7827.12
+        }
+      ],
+      "segment_ids": [
+        "s001498",
+        "s001499",
+        "s001500",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505",
+        "s001506",
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001525",
+        "s001526",
+        "s001527",
+        "s001528",
+        "s001529",
+        "s001530",
+        "s001539",
+        "s001551",
+        "s001567",
+        "s001664",
+        "s001665",
+        "s001666",
+        "s001667",
+        "s001675",
+        "s001676",
+        "s001677",
+        "s001687"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Use Construction only when extra opening ground forces or a specific structure/commander timing matters; Titans can often place sleepers and later turn them into multiple PDS, so they rarely need the Construction secondary.",
+      "conditions": "The primary may still help when the slice is ground-force constrained; the speakers give an example combining a home build with the Hecatoncheires deploy to reach more planets.",
+      "compatibility": "SCPT 458 (2026-05-27), guide advice; current ability timing not verified.",
+      "uncertainty": "Low priority is a generalization; its value rises in the described opening and objective situations.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:titans_mech",
+        "ability:terragenesis"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6166.4,
+          "end": 6198.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7287.14,
+          "end": 7340.16
+        }
+      ],
+      "segment_ids": [
+        "s001340",
+        "s001341",
+        "s001342",
+        "s001343",
+        "s001344",
+        "s001345",
+        "s001346",
+        "s001582",
+        "s001583",
+        "s001584",
+        "s001585",
+        "s001586",
+        "s001587",
+        "s001588"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "A round-one Warfare primary can turn a three-planet system into rapid sleeper placement and structure progress, while creating a staging point for later expansion; Titans do not spend a command token to activate the Warfare system under the described interaction.",
+      "conditions": "Use when the target system and objective pattern support it; Awakening those sleepers still requires a later activation, and the guide explicitly clarifies not during that Warfare action.",
+      "compatibility": "SCPT 458 (2026-05-27), discussion mixes strategy-card version and faction timing; not independently rules checked.",
+      "uncertainty": "The value depends on the map and objective; the source says old and current Warfare both require later redemption, with perceived tempo changed by card wording.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "ability:terragenesis",
+        "ability:awaken"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 7551.9,
+          "end": 7653.96
+        }
+      ],
+      "segment_ids": [
+        "s001638",
+        "s001639",
+        "s001640",
+        "s001641",
+        "s001642",
+        "s001643",
+        "s001644",
+        "s001645",
+        "s001646",
+        "s001647",
+        "s001648",
+        "s001649",
+        "s001650",
+        "s001651",
+        "s001652",
+        "s001653",
+        "s001654",
+        "s001655",
+        "s001656"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Aim for Saturn Engine II by round two, using Technology primary or secondary as needed; AI Development Algorithm and an available red skip can speed the path, while green/yellow routes can support the later X-89 plan.",
+      "conditions": "Select based on starting skips, breakthrough availability, and strategy-card order; do not delay the unit upgrade for low-impact supplemental tech.",
+      "compatibility": "SCPT 458 (2026-05-27), technology recommendations; guide publication does not establish current tech legality or errata.",
+      "uncertainty": "The discussion leaves the exact path variable; one route through Psychoarchaeology is explicitly slice-dependent and transcript spellings vary.",
+      "components": [
+        "unit:titans_cruiser2",
+        "technology:aida",
+        "technology:pa",
+        "technology:x89"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8145.93,
+          "end": 8186.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8550.26,
+          "end": 8600.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8695.32,
+          "end": 8702.0
+        }
+      ],
+      "segment_ids": [
+        "s001768",
+        "s001769",
+        "s001770",
+        "s001771",
+        "s001772",
+        "s001773",
+        "s001774",
+        "s001775",
+        "s001776",
+        "s001777",
+        "s001778",
+        "s001853",
+        "s001854",
+        "s001855",
+        "s001856",
+        "s001857",
+        "s001858",
+        "s001859",
+        "s001860",
+        "s001861",
+        "s001862",
+        "s001892",
+        "s001893"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Keep X-89 plausible as a late-game closer when Titans face opponents who can outnumber their limited-capacity cruiser fleets or overwhelm their ground defense; the speakers prefer it to Fleet Logistics in many games, while treating Fleet Logistics as still useful for an action-phase win.",
+      "conditions": "Make this pivot when the table's ground-force volume or scoring window justifies it; do not assume both technologies fit in the same game.",
+      "compatibility": "SCPT 458 (2026-05-27), strategic opinion; named technology variant and availability are not independently checked.",
+      "uncertainty": "The preference comes from the speaker's tournament/research games; matchup and objective dependent.",
+      "components": [
+        "technology:x89",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8192.31,
+          "end": 8210.37
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8266.05,
+          "end": 8305.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8431.6,
+          "end": 8447.6
+        }
+      ],
+      "segment_ids": [
+        "s001780",
+        "s001781",
+        "s001782",
+        "s001798",
+        "s001799",
+        "s001800",
+        "s001801",
+        "s001802",
+        "s001803",
+        "s001804",
+        "s001832",
+        "s001833",
+        "s001834"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Treat Magen and Gravity Drive as useful supplements, and use Transit Diodes for redeployment or Hecatoncheires interactions when those effects fit; Hell-Titans cannot be moved by effects that only move ground forces according to the speakers.",
+      "conditions": "Magen is most valuable for holding scattered planets or control objectives; Gravity Drive helps reach the Fracture; Transit's value depends on board placement and its removal/replacement wording.",
+      "compatibility": "SCPT 458 (2026-05-27), strategy discussion with POK-era mechanics; not independently rules-verified.",
+      "uncertainty": "The transcript's 'Gamma Mama'/'Ghost Squad' names are noisy; no component IDs are assigned for those alleged counters.",
+      "components": [
+        "technology:md_base",
+        "technology:gd",
+        "technology:td",
+        "unit:titans_pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2773.3,
+          "end": 2817.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8360.01,
+          "end": 8365.13
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8413.22,
+          "end": 8426.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8460.24,
+          "end": 8465.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8498.8,
+          "end": 8513.76
+        }
+      ],
+      "segment_ids": [
+        "s000582",
+        "s000583",
+        "s000584",
+        "s000585",
+        "s000586",
+        "s000587",
+        "s000588",
+        "s000589",
+        "s000590",
+        "s000591",
+        "s000592",
+        "s000593",
+        "s000594",
+        "s001818",
+        "s001829",
+        "s001830",
+        "s001837",
+        "s001844",
+        "s001845",
+        "s001846"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Use the Saturn Engine II's three movement to reach the Fracture early and take relic opportunities, especially when a slice includes an ingress system that can serve as a staging or production base.",
+      "conditions": "The guide ranks Imperial's bonus point and public scoring ahead of fracture relics in round two; fracture access is a follow-up priority and depends on the map.",
+      "compatibility": "SCPT 458 (2026-05-27); Fracture advice is era-specific to the episode's Thunders Edge setting and not independently validated.",
+      "uncertainty": "The speakers' references to egress/ingress and relic contents are transcript-sensitive; route examples are illustrative rather than universal.",
+      "components": [
+        "unit:titans_cruiser2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 9393.72,
+          "end": 9494.14
+        }
+      ],
+      "segment_ids": [
+        "s002059",
+        "s002060",
+        "s002061",
+        "s002062",
+        "s002063",
+        "s002064",
+        "s002065",
+        "s002066",
+        "s002067",
+        "s002068",
+        "s002069",
+        "s002070",
+        "s002071",
+        "s002072",
+        "s002073",
+        "s002074",
+        "s002075",
+        "s002076",
+        "s002077",
+        "s002078",
+        "s002079",
+        "s002080",
+        "s002081",
+        "s002082",
+        "s002083",
+        "s002084",
+        "s002085",
+        "s002086",
+        "s002087"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Exploit Titans' structure and control flexibility for stage-two objectives, including a potential Rule Distant Lands line; sleepers, Hel-Titans, and a negotiated coexistence can create positions other factions may not assemble quickly.",
+      "conditions": "Evaluate the revealed objective and actual control conditions; setting up a planet or a structure is preparation and does not itself score an objective.",
+      "compatibility": "SCPT 458 (2026-05-27), guide opinion across expansion context; no objective rules review.",
+      "uncertainty": "Examples are described as a dream line and option set, not guaranteed scoring; ASR and table deals affect feasibility.",
+      "components": [
+        "ability:coalescence",
+        "ability:awaken",
+        "unit:titans_pds",
+        "public-objective:distant_lands"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6228.06,
+          "end": 6272.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 9294.66,
+          "end": 9341.02
+        }
+      ],
+      "segment_ids": [
+        "s001352",
+        "s001353",
+        "s001354",
+        "s001355",
+        "s001356",
+        "s001357",
+        "s001358",
+        "s001359",
+        "s002033",
+        "s002034",
+        "s002035",
+        "s002036",
+        "s002037",
+        "s002038",
+        "s002039",
+        "s002040",
+        "s002041"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ability:terragenesis",
+      "to": "ability:awaken",
+      "relation": "requires",
+      "conditions": "The token placement from Terragenesis must occur on a prior action if Awaken is to redeem that sleeper; it cannot be created and redeemed during the same activation.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2022.1,
+          "end": 2100.32
+        }
+      ]
+    },
+    {
+      "from": "ability:coalescence",
+      "to": "unit:titans_pds",
+      "relation": "enables",
+      "conditions": "A sleeper can remain dormant as a threat and be converted to a Hel-Titan when later awakened into a contested location, subject to combat.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2172.88,
+          "end": 2204.4
+        }
+      ]
+    },
+    {
+      "from": "unit:titans_cruiser2",
+      "to": "public-objective:push_boundaries",
+      "relation": "scores",
+      "conditions": "Cruiser mobility and capacity can help Titans control enough planets; breakthrough coexistence is a separate conditional scoring avenue.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5710.6,
+          "end": 5726.12
+        }
+      ]
+    },
+    {
+      "from": "unit:titans_pds",
+      "to": "unit:titans_mech",
+      "relation": "enables",
+      "conditions": "When placing a PDS on a planet with a mech available in reinforcements, the described deploy ability may substitute a mech and infantry.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 2981.38,
+          "end": 3057.88
+        }
+      ]
+    },
+    {
+      "from": "unit:titans_cruiser2",
+      "to": "technology:x89",
+      "relation": "synergizes-with",
+      "conditions": "Cheap mobile cruiser fleets project force, while X-89 is proposed as a way to overcome opponents' greater ground-unit volume; this is a strategic complement, not a rules dependency.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 8231.71,
+          "end": 8315.41
+        }
+      ]
+    },
+    {
+      "from": "leader:titanshero",
+      "to": "unit:titans_cruiser2",
+      "relation": "enables",
+      "conditions": "The speakers recommend using the refreshed Elysium values for influence when tokens are the constraint, preserving resources for economical cruiser builds.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 5452.74,
+          "end": 5527.5
+        }
+      ]
+    },
+    {
+      "from": "unit:titans_pds",
+      "to": "public-objective:build_defenses",
+      "relation": "scores",
+      "conditions": "Scattered Hel-Titans can make structure objectives easier to prepare for and score, subject to the objective's actual requirements.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-458-6d7cd4dbbab7",
+          "start": 6170.16,
+          "end": 6216.96
+        }
+      ]
+    }
+  ]
+}

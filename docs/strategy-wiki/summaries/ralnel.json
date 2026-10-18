@@ -1,0 +1,889 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "ralnel",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat Ral Nel as flexible and opportunistic rather than following a fixed build: structure movement and action cards create unusual openings only when objective, map and tech line up.",
+      "conditions": "The useful line depends on objectives, map, tech and opponent behavior.",
+      "compatibility": "SCPT 434 beginner guide, published 2025-12-10; rules compatibility not reviewed.",
+      "uncertainty": "Hosts called the faction roughly B tier but reserved judgment; another host questioned whether versatility offsets weaknesses.",
+      "components": [
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5142.47,
+          "end": 5189.71
+        }
+      ],
+      "segment_ids": [
+        "s001187",
+        "s001196"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "AI Development Algorithm is the safer starting technology in a vacuum because it opens both faction technologies and flexible upgrades. Choose Psychoarchaeology when useful skips make it attractive; Neural Motivator can fish for Overrule, but extra cards can exceed hand capacity and played cards do not enter Data Skimmer.",
+      "conditions": "Starting choice depends on slice, skips and desired technology path; Neural is a deliberate card-focused alternative.",
+      "compatibility": "Podcast-era technology discussion; not independently rules checked.",
+      "uncertainty": "ASR shorthand normalized to known component names.",
+      "components": [
+        "technology:aida",
+        "technology:nanomachines",
+        "technology:linkship2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2250.02,
+          "end": 2319.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2330.68,
+          "end": 2434.4
+        }
+      ],
+      "segment_ids": [
+        "s000502",
+        "s000514",
+        "s000519",
+        "s000537"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Plan around the weak home economy: the speakers describe three total resources and limited production, alongside a useful three-influence planet that may fund an early command token.",
+      "conditions": "Slice wealth and early spending can change the opening.",
+      "compatibility": "Guide opinion; planet statistics not independently verified.",
+      "uncertainty": "ASR may garble home-planet names.",
+      "components": [
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2450.38,
+          "end": 2511.76
+        }
+      ],
+      "segment_ids": [
+        "s000541",
+        "s000553"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use Survival Instinct as a situational defense or deterrent: after an opponent activates a system containing your ships, it may pull up to two eligible ships from adjacent systems without your command tokens into the active system.",
+      "conditions": "Most useful when ships are positioned nearby or the map creates a valuable reinforcement window.",
+      "compatibility": "Ability as discussed in the guide; current rules not verified.",
+      "uncertainty": "Hosts reported that it rarely affected their research games.",
+      "components": [
+        "ability:survivalinstinct"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2527.98,
+          "end": 2589.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2597.4,
+          "end": 2649.08
+        }
+      ],
+      "segment_ids": [
+        "s000558",
+        "s000567",
+        "s000569",
+        "s000578"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Miniaturization lets ships transport structures without using capacity and place them on planets you control in that system at the end of the tactical action, opening forward placement and structure-objective lines.",
+      "conditions": "Structures in space cannot use unit abilities; speakers said carried space docks cannot produce during that action.",
+      "compatibility": "Guide ruling; structures left in space were described as a provisional interpretation.",
+      "uncertainty": "Rules treatment of unattended structures was expressly tentative.",
+      "components": [
+        "ability:miniaturization",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2661.6,
+          "end": 2728.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2737.82,
+          "end": 2773.56
+        }
+      ],
+      "segment_ids": [
+        "s000581",
+        "s000591",
+        "s000596",
+        "s000604"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Consider moving the home dock toward the slice center if forward production repays the risk; keeping it home is reasonable when early plastic needs make moving it unaffordable.",
+      "conditions": "A forward dock improves reach but can expose home and force ships to be split between defense and front lines.",
+      "compatibility": "Strategic opinion from the guide.",
+      "uncertainty": "Speakers differed in their own experience and emphasized the tradeoff.",
+      "components": [
+        "ability:miniaturization"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2774.26,
+          "end": 2829.28
+        }
+      ],
+      "segment_ids": [
+        "s000605",
+        "s000616"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Use Nanomachines chiefly to place PDS outside normal Construction timing; after useful PDS are out, its action-card exchange is another option. The repair mode was a situational fallback the speaker had not used.",
+      "conditions": "Each action exhausts the technology; the value is off-tempo structure placement.",
+      "compatibility": "Guide opinion, not a verified optimization.",
+      "uncertainty": "Speaker reported mostly using PDS placement.",
+      "components": [
+        "technology:nanomachines",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3240.0,
+          "end": 3311.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3330.98,
+          "end": 3363.08
+        }
+      ],
+      "segment_ids": [
+        "s000719",
+        "s000733",
+        "s000739",
+        "s000748"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Linkship can use a transported structure’s space-cannon ability in its system. The episode’s current interpretation rejects copying PDS II’s adjacent-system reach; bring the PDS into the target system.",
+      "conditions": "The interaction was disputed and the hosts requested later clarification.",
+      "compatibility": "Provisional guide ruling, not current official FAQ verification.",
+      "uncertainty": "A different reading would transform the faction’s space-control reach.",
+      "components": [
+        "unit:ralnel_destroyer",
+        "unit:pds2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2876.14,
+          "end": 2925.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2939.2,
+          "end": 2996.24
+        }
+      ],
+      "segment_ids": [
+        "s000630",
+        "s000640",
+        "s000645",
+        "s000663"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Do not assume Experimental Battlestation activates Linkship: speakers’ current ruling was that a dock that may use space cannon does not gain the referenced ability.",
+      "conditions": "One speaker allowed that later clarification might change this reading.",
+      "compatibility": "Provisional ruling from the podcast.",
+      "uncertainty": "The hosts expressed more uncertainty here than on PDS II reach.",
+      "components": [
+        "unit:ralnel_destroyer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3168.76,
+          "end": 3234.5
+        }
+      ],
+      "segment_ids": [
+        "s000702",
+        "s000717"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Linkship II can improve movement and let each Linkship trigger the same transported structure, creating local space control, but weigh it against movement and capacity technologies.",
+      "conditions": "It remains a space-combat tool and does not solve ground-force delivery; speakers rejected adjacent-system PDS projection as the current reading.",
+      "compatibility": "Podcast-era interpretation.",
+      "uncertainty": "Its reach depends on a disputed interaction; hosts preferred red-blue mobility when tech was scarce.",
+      "components": [
+        "technology:linkship2",
+        "unit:ralnel_destroyer2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3031.6,
+          "end": 3084.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3106.3,
+          "end": 3163.78
+        }
+      ],
+      "segment_ids": [
+        "s000675",
+        "s000684",
+        "s000690",
+        "s000700"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Last Dispatch can retreat and destroy an opposing ship that lacks Sustain Damage; paired with Watchful Ojz, it can create an earlier exit line.",
+      "conditions": "The target restriction excludes ships possessing Sustain Damage even if they have already used it.",
+      "compatibility": "Guide interpretation; combat rules not independently checked.",
+      "uncertainty": "Timing clarification is podcast-era.",
+      "components": [
+        "unit:ralnel_flagship",
+        "leader:ralnelcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3426.96,
+          "end": 3508.42
+        }
+      ],
+      "segment_ids": [
+        "s000767",
+        "s000784"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Position Alarums near controlled adjacent planets so that after a combat round they can pull up to two ground forces onto their planet, potentially reaching a control objective unexpectedly.",
+      "conditions": "Requires nearby planets with forces; does not pull from another planet in the same system and cannot chain another mech pull in that window, per the guide’s current FAQ account.",
+      "compatibility": "Podcast-era interpretation.",
+      "uncertainty": "ASR “alarm” normalized to the component Alarum.",
+      "components": [
+        "unit:ralnel_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3548.4,
+          "end": 3620.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3621.14,
+          "end": 3669.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3701.4,
+          "end": 3769.12
+        }
+      ],
+      "segment_ids": [
+        "s000798",
+        "s000811",
+        "s000812",
+        "s000823",
+        "s000838",
+        "s000863"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Trade for Nano Link Permit as a setup tool: after activation it moves eligible adjacent structures onto controlled planets in the active system, and speakers say the timing lets the buyer build from a moved dock.",
+      "conditions": "Needs an adjacent structure and controlled planet; buy it before the planned use rather than promising immediate play.",
+      "compatibility": "Guide timing explanation, not independently verified.",
+      "uncertainty": "Speakers considered it undervalued and proposed it for Mecatol staging.",
+      "components": [
+        "promissory:nanolink",
+        "ability:miniaturization"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3781.14,
+          "end": 3812.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3863.0,
+          "end": 3909.42
+        }
+      ],
+      "segment_ids": [
+        "s000867",
+        "s000873",
+        "s000885",
+        "s000896"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Data Skimmer rewards opponents who play action cards during the action phase: while Ral Nel has not passed, their discards accumulate there, and passing lets Ral Nel keep one.",
+      "conditions": "Own played cards and non-action-phase discards do not enter the pile; value depends on cards opponents spend and when.",
+      "compatibility": "Guide-era description.",
+      "uncertainty": "Strong cards may be held until late, so the benefit is not guaranteed.",
+      "components": [
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4005.96,
+          "end": 4106.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4109.72,
+          "end": 4161.54
+        }
+      ],
+      "segment_ids": [
+        "s000928",
+        "s000955",
+        "s000957",
+        "s000967"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Account for Data Skimmer’s visibility: taking a known strong card can invite Sabotage or change opponents’ timing. Speakers suggested Last Bastion Alliance as valuable protection.",
+      "conditions": "Public cards make the threat legible to opponents.",
+      "compatibility": "Strategic opinion.",
+      "uncertainty": "Hosts contrasted this weakness with Yssaril’s hidden hand and saw counterplay as a limit on Ral Nel’s ceiling.",
+      "components": [
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5831.96,
+          "end": 5892.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5892.76,
+          "end": 5958.42
+        }
+      ],
+      "segment_ids": [
+        "s001334",
+        "s001345",
+        "s001346",
+        "s001359"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Use Kan Kip Rel’s agent to draw two action cards, keep one and give the other to a player whose cooperation or timing you want; the draw also provides a stall.",
+      "conditions": "Negotiating after seeing the cards may be useful, but the speakers were unsure whether cards can be revealed during resolution and said hand limit is checked after resolution.",
+      "compatibility": "Guide interpretation.",
+      "uncertainty": "Reveal and hand-limit timing were left unresolved.",
+      "components": [
+        "leader:ralnelagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4182.22,
+          "end": 4226.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4240.1,
+          "end": 4327.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4340.02,
+          "end": 4396.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4427.0,
+          "end": 4462.82
+        }
+      ],
+      "segment_ids": [
+        "s000976",
+        "s000984",
+        "s000987",
+        "s001007",
+        "s001011",
+        "s001027",
+        "s001037",
+        "s001042"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Watchful Ojz requires Ral Nel to be last to pass, so do not count on an early or automatic unlock; the agent helps with cards but does not guarantee pass order.",
+      "conditions": "Useful once unlocked, but not an essential engine component.",
+      "compatibility": "Guide statement; rules not independently checked.",
+      "uncertainty": "Speakers described difficulty unlocking it in one game.",
+      "components": [
+        "leader:ralnelcommander",
+        "leader:ralnelagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4554.0,
+          "end": 4628.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4631.4,
+          "end": 4692.36
+        }
+      ],
+      "segment_ids": [
+        "s001064",
+        "s001082",
+        "s001084",
+        "s001096"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Save Director Nel’s Signal Intrusion for a valuable post-pass action if possible: after the last player passes, unpass and gain two command tokens and an action card; it may open an objective window such as Prove Endurance.",
+      "conditions": "Speakers also used it simply for the tokens and card; passing stops ordinary turn actions until the hero unpasses Ral Nel, so consider the timing of enemy attacks.",
+      "compatibility": "Guide interpretation; not independently rules checked.",
+      "uncertainty": "Hosts had not yet seen the spectacular use they expected.",
+      "components": [
+        "leader:ralnelhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4693.36,
+          "end": 4799.98
+        }
+      ],
+      "segment_ids": [
+        "s001097",
+        "s001120"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Treat Ral Nel as a midgame Mecatol or Imperial contender rather than a default custodians faction; build tempo and ground support, and use tradeables to recruit help when useful.",
+      "conditions": "Space cannon can clear space but does not solve ground combat; the table may deny the point.",
+      "compatibility": "Map- and table-dependent podcast advice.",
+      "uncertainty": "Hosts agreed on midgame timing but differed on how much the faction should provide its own punch.",
+      "components": [
+        "faction:ralnel",
+        "promissory:nanolink"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5402.0,
+          "end": 5416.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5655.92,
+          "end": 5717.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5728.08,
+          "end": 5769.34
+        }
+      ],
+      "segment_ids": [
+        "s001230",
+        "s001231",
+        "s001283",
+        "s001297",
+        "s001304",
+        "s001313"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Favor Construction when a second space dock would solve the home production cap and let one dock stay home while another moves forward.",
+      "conditions": "Pick order matters; following Construction is another route, and Nanomachines does not replace ship production.",
+      "compatibility": "Strategic opinion.",
+      "uncertainty": "Hosts considered Construction especially after Trade or Technology, not a universal first pick.",
+      "components": [
+        "ability:miniaturization"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5330.63,
+          "end": 5368.91
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5444.44,
+          "end": 5509.62
+        }
+      ],
+      "segment_ids": [
+        "s001217",
+        "s001223",
+        "s001239",
+        "s001251"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "After round one, consider Warfare for structure and movement tricks, including a Fracture staging plan where Ral Nel lacks a reliable natural setup.",
+      "conditions": "Even with Linkship II movement, capacity and ground forces may prevent claiming distant planets.",
+      "compatibility": "Scenario-dependent strategy advice.",
+      "uncertainty": "Speakers framed this as a conditional later-round option.",
+      "components": [
+        "ability:miniaturization",
+        "technology:linkship2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 5559.34,
+          "end": 5652.64
+        }
+      ],
+      "segment_ids": [
+        "s001263",
+        "s001280"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "When technology is scarce, favor a practical red-blue mobility plan: Dark Energy Tap, Gravity Drive and Carrier II, perhaps followed by Fighter II or Dreadnought II; add faction technology when the board supports it.",
+      "conditions": "Movement and capacity solve common problems; Linkship II focuses on space combat and does not carry ground forces.",
+      "compatibility": "Podcast-era tech advice.",
+      "uncertainty": "Players gave alternative lists; this is not a fixed sequence. Hosts agreed green-yellow Breakthrough synergy conflicts with red-blue needs.",
+      "components": [
+        "technology:det",
+        "technology:gd",
+        "technology:aida",
+        "technology:nanomachines",
+        "technology:linkship2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6000.0,
+          "end": 6092.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6099.42,
+          "end": 6144.52
+        }
+      ],
+      "segment_ids": [
+        "s001369",
+        "s001390",
+        "s001393",
+        "s001402"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Graviton could complement Linkships by removing capacity ships only in the hypothetical where broad PDS II space-cannon reach is accepted.",
+      "conditions": "Current interpretation in the episode rejects that premise; ground combat remains the stated weakness.",
+      "compatibility": "Speculative branch, not current legal strategy verification.",
+      "uncertainty": "High: hosts explicitly tied this tech priority to a disputed interpretation.",
+      "components": [
+        "technology:linkship2",
+        "technology:gls"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6842.6,
+          "end": 6899.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6899.64,
+          "end": 6978.16
+        }
+      ],
+      "segment_ids": [
+        "s001555",
+        "s001568",
+        "s001569",
+        "s001587"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Consider Biostims if Nanomachines has multiple useful exhausted modes and a green path fits, since it may let those options be used again.",
+      "conditions": "Supplemental option only; movement may matter more.",
+      "compatibility": "Strategic possibility, not verified optimization.",
+      "uncertainty": "Speaker called it interesting but did not recommend it automatically.",
+      "components": [
+        "technology:nanomachines"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6263.54,
+          "end": 6332.82
+        }
+      ],
+      "segment_ids": [
+        "s001431",
+        "s001447"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Look for structure objectives as a Ral Nel scoring lane: Nanomachines can place PDS and Miniaturization can reposition structures, making unusual preparations possible.",
+      "conditions": "Preparation is not scoring; meet every objective condition before claiming the point.",
+      "compatibility": "Guide advice; objective-specific legality not reviewed.",
+      "uncertainty": "Some objective names were ASR-corrupted, so this claim remains general.",
+      "components": [
+        "technology:nanomachines",
+        "ability:miniaturization"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2661.6,
+          "end": 2764.52
+        }
+      ],
+      "segment_ids": [
+        "s000581",
+        "s000602"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Do not rely on a guaranteed Fracture win or surprise action-card victory; the hosts found Mecatol easier to stage because Ral Nel often lacks capacity and ground forces.",
+      "conditions": "Flank Speed, In the Silence of Space or a forward dock might create an exceptional line, but those tools are not assured.",
+      "compatibility": "Map- and card-dependent anecdotal advice.",
+      "uncertainty": "The speakers had not executed their hoped-for Fracture plan.",
+      "components": [
+        "ability:miniaturization",
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4830.0,
+          "end": 4913.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4920.62,
+          "end": 4975.49
+        }
+      ],
+      "segment_ids": [
+        "s001121",
+        "s001140",
+        "s001143",
+        "s001155"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Try to stay outside the center of attention and preserve a surprise scoring window, while keeping enough defense to survive after passing.",
+      "conditions": "After passing, Ral Nel cannot answer attacks until Signal Intrusion; public Data Skimmer cards let opponents anticipate a move.",
+      "compatibility": "Table-politics advice from the guide.",
+      "uncertainty": "The hosts called this their preferred posture, not a guaranteed win line.",
+      "components": [
+        "leader:ralnelhero",
+        "faction:ralnel"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 6534.41,
+          "end": 6631.64
+        }
+      ],
+      "segment_ids": [
+        "s001491",
+        "s001509"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:nanomachines",
+      "to": "ability:miniaturization",
+      "relation": "enables",
+      "conditions": "Nanomachines places PDS and Miniaturization can later transport structures to controlled planets; this is a placement line, not a guaranteed score.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3273.88,
+          "end": 3358.8
+        }
+      ]
+    },
+    {
+      "from": "unit:ralnel_destroyer",
+      "to": "unit:pds",
+      "relation": "synergizes-with",
+      "conditions": "A transported PDS can provide its space-cannon ability to a Linkship in the same system under the episode’s current interpretation.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2876.14,
+          "end": 2925.96
+        }
+      ]
+    },
+    {
+      "from": "technology:linkship2",
+      "to": "technology:pds2",
+      "relation": "conflicts-with",
+      "conditions": "The hosts reject transferring PDS II adjacent-system range through Linkship II; this debated interaction would change faction strategy materially.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 2939.2,
+          "end": 2995.28
+        }
+      ]
+    },
+    {
+      "from": "faction:ralnel",
+      "to": "leader:ralnelagent",
+      "relation": "enables",
+      "conditions": "The agent supplies a flexible action card and stall that can support deal-making and action-card plans.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4182.22,
+          "end": 4226.76
+        }
+      ]
+    },
+    {
+      "from": "faction:ralnel",
+      "to": "promissory:nanolink",
+      "relation": "synergizes-with",
+      "conditions": "A buyer can move an adjacent dock into the active system and, under the hosts’ timing explanation, build from it after activation.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3781.14,
+          "end": 3812.08
+        }
+      ]
+    },
+    {
+      "from": "leader:ralnelhero",
+      "to": "faction:ralnel",
+      "relation": "enables",
+      "conditions": "Signal Intrusion conditionally reopens the action phase after passing for tokens and a card, potentially creating a late objective window.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 4693.36,
+          "end": 4795.7
+        }
+      ]
+    },
+    {
+      "from": "unit:ralnel_mech",
+      "to": "faction:ralnel",
+      "relation": "scores",
+      "conditions": "Adjacent-system ground forces may be pulled to an Alarum’s planet after combat, potentially helping a control objective when forces are nearby.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-434-dbc72aa2b0cc",
+          "start": 3560.28,
+          "end": 3665.76
+        }
+      ]
+    }
+  ]
+}

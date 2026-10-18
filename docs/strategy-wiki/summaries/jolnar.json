@@ -1,0 +1,859 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "jolnar",
+  "claims": [
+    {
+      "id": "C01",
+      "claim_id": "C01",
+      "statement": "The guide presents Jol-Nar as an accessible faction for newer players: a player need not master the entire technology deck to compete.",
+      "conditions": "Applies to the guide's introductory framing for a new player.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Beginner-friendly is the hosts' judgment, not a claim that all decisions are simple.",
+      "components": [
+        "faction:jolnar",
+        "ability:brilliant",
+        "ability:analytical"
+      ],
+      "segment_ids": [
+        "s000195",
+        "s000201",
+        "s000671",
+        "s000680"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 606.78,
+          "end": 640.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2286.81,
+          "end": 2326.09
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "claim_id": "C02",
+      "statement": "Jol-Nar starts with only two infantry, which the guide calls its round-one Achilles heel. Following Warfare's secondary can fix the shortage without spending resources when timing permits.",
+      "conditions": "Most acute in round one, when the carrier expands before the home build.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Transcript shorthand is not a precise force count.",
+      "components": [
+        "faction:jolnar",
+        "unit:carrier"
+      ],
+      "segment_ids": [
+        "s000297",
+        "s000298",
+        "s000705",
+        "s000713"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 877.72,
+          "end": 885.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2423.56,
+          "end": 2451.72
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "claim_id": "C03",
+      "statement": "If round-one timing leaves Jol-Nar weak, tell the table the opening will be modest and ask opponents not to turn that timing problem into a disastrous start.",
+      "conditions": "When Warfare timing or the table creates a risk of a weak round one.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Meta-dependent, not guaranteed protection.",
+      "components": [
+        "promissory:ra",
+        "faction:jolnar"
+      ],
+      "segment_ids": [
+        "s000714",
+        "s000724"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2451.72,
+          "end": 2490.62
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "claim_id": "C04",
+      "statement": "Research Agreement is a major bargaining asset. Offer it for payment, timing, protection, or favors; Jol-Nar research outside Technology primary can also trigger it.",
+      "conditions": "Value depends on buyers, trigger timing, and agreement.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Exceptional value is the hosts\u2019 opinion; precise timing not independently checked.",
+      "components": [
+        "promissory:ra"
+      ],
+      "segment_ids": [
+        "s000399",
+        "s000421",
+        "s001128",
+        "s001144",
+        "s001742",
+        "s001750"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1279.9,
+          "end": 1403.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4078.98,
+          "end": 4132.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6365.22,
+          "end": 6407.06
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "claim_id": "C05",
+      "statement": "E-Res Siphons can convert an opponent activation of a system with Jol-Nar ships into trade goods, creating income and deterring casual attacks.",
+      "conditions": "Requires E-Res Siphons and a ship in the activated system; it deters casual attacks but does not stop a committed endgame attacker.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts debate payoff; committed late attackers may still come.",
+      "components": [
+        "technology:ers"
+      ],
+      "segment_ids": [
+        "s000429",
+        "s000438",
+        "s000462",
+        "s000474"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1436.62,
+          "end": 1474.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1534.02,
+          "end": 1570.54
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "claim_id": "C06",
+      "statement": "Layer home defense: the flagship makes attackers weigh a high-variance fight; PDS and defensive technology raise the cost of entry.",
+      "conditions": "Useful for deterrence and buying time.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Not guaranteed endgame defense; flagship outcomes are probabilistic.",
+      "components": [
+        "unit:pds",
+        "technology:ps",
+        "faction:jolnar"
+      ],
+      "segment_ids": [
+        "s000368",
+        "s000397",
+        "s000304",
+        "s000306"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1162.48,
+          "end": 1274.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 914.94,
+          "end": 929.18
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "claim_id": "C07",
+      "statement": "Compensate for Fragile on the ground with numbers and the Jol-Nar mech; spread mechs where protection matters instead of assuming one stack fixes invasions.",
+      "conditions": "When invading or defending several planets.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts question \u201cthis planet\u201d wording on the mech.",
+      "components": [
+        "ability:fragile",
+        "unit:mech"
+      ],
+      "segment_ids": [
+        "s000324",
+        "s000338",
+        "s000621",
+        "s000653"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1019.38,
+          "end": 1062.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2113.6,
+          "end": 2235.62
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "claim_id": "C08",
+      "statement": "Choose round-one production and tech around slice and neighbors. Taking Warfare controls timing; following its secondary can be efficient with Sarween but depends on timing and home dock.",
+      "conditions": "When the infantry shortage makes a missed build dangerous.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts disagree: safest pick versus often overvalued.",
+      "components": [
+        "technology:st",
+        "unit:spacedock"
+      ],
+      "segment_ids": [
+        "s000705",
+        "s000713",
+        "s000940",
+        "s000963",
+        "s001001",
+        "s001020"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2423.56,
+          "end": 2451.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3341.44,
+          "end": 3438.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3629.88,
+          "end": 3717.94
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "claim_id": "C09",
+      "statement": "Trade is rated highly because Jol-Nar lacks an early trade ship and can use the card to bring players into Research Agreement negotiations while controlling when those conversations happen.",
+      "conditions": "Useful when Jol-Nar has no early trade ship and needs buyers to come negotiate; discuss timing before popping Trade.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Table dependent, though both speakers rate it favorably.",
+      "components": [
+        "promissory:ra",
+        "strategy-card:pok5trade"
+      ],
+      "segment_ids": [
+        "s000923",
+        "s000939"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3278.7,
+          "end": 3341.44
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "claim_id": "C10",
+      "statement": "Technology is attractive when the primary secures research timing and repeat Research Agreement sales; value is more than saving a command token.",
+      "conditions": "Take when available at useful pick and monetizable; otherwise secondary may suffice.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Mid-tier overall and often drafted before Jol-Nar\u2019s pick.",
+      "components": [
+        "ability:brilliant",
+        "strategy-card:pok7technology",
+        "promissory:ra"
+      ],
+      "segment_ids": [
+        "s001037",
+        "s001072"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3794.94,
+          "end": 3881.48
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "claim_id": "C11",
+      "statement": "Diplomacy can bridge awkward Technology/Warfare timing or solve a resource issue, but take only after agreeing a useful deal; Leadership or Construction may solve bottlenecks better.",
+      "conditions": "Depends on home system and coordination.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts disagree based on table friendliness.",
+      "components": [
+        "strategy-card:base2",
+        "strategy-card:pok1leadership",
+        "strategy-card:pok4construction"
+      ],
+      "segment_ids": [
+        "s000804",
+        "s000830",
+        "s000903",
+        "s000905"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2816.52,
+          "end": 2953.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3220.0,
+          "end": 3235.76
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "claim_id": "C12",
+      "statement": "Construction helps later production and structures, but does not solve round-one infantry timing when its secondary builds from one home dock.",
+      "conditions": "Useful round two onward; forward dock/PDS can secure slice and prepare structure objectives.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Dock placement depends on map.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:spacedock",
+        "unit:pds"
+      ],
+      "segment_ids": [
+        "s000865",
+        "s000883",
+        "s000889",
+        "s000918"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3099.74,
+          "end": 3163.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3183.36,
+          "end": 3272.52
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "claim_id": "C13",
+      "statement": "Do not make round-one Custodians the default. Cruiser II and a build can enable it, but setup and exposed development may cost more than scoring later.",
+      "conditions": "Pursue if opportunity appears or point changes race.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "One host says take it if it falls into your lap; other resists planning around it.",
+      "components": [
+        "technology:cv2",
+        "strategy-card:pok3politics"
+      ],
+      "segment_ids": [
+        "s000832",
+        "s000863",
+        "s001011",
+        "s001020"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2959.34,
+          "end": 3098.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3674.04,
+          "end": 3717.94
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "claim_id": "C14",
+      "statement": "The guide recommends aiming for two technologies in four colors and three unit upgrades by round five; tech choices remain flexible, but unit upgrades do not.",
+      "conditions": "By about round five, especially when technology objectives may be scored; unit upgrades cannot be exchanged by the hero.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Guide heuristic, not mandatory order.",
+      "components": [
+        "ability:analytical",
+        "technology:pds2",
+        "technology:cv2"
+      ],
+      "segment_ids": [
+        "s001078",
+        "s001104"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3907.36,
+          "end": 4004.46
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "claim_id": "C15",
+      "statement": "Prioritize early tech for reach, economy, defense, or bargaining. Gravity Drive/Hyper Metabolism may be worthwhile if they solve a problem or a buyer pays; Transit Diodes can recycle infantry.",
+      "conditions": "Adapt to slice and offers while retaining objective routes.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hyper Metabolism payback depends on hero timing.",
+      "components": [
+        "technology:gd",
+        "technology:hm",
+        "technology:td",
+        "technology:ers"
+      ],
+      "segment_ids": [
+        "s001151",
+        "s001181",
+        "s001199",
+        "s001210"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4159.98,
+          "end": 4280.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4336.8,
+          "end": 4372.26
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "claim_id": "C16",
+      "statement": "Consider PDS II early when a threatening neighbor or exposed slice makes deterrence valuable; it can also meet upgrade demand.",
+      "conditions": "Round-one choice depends on adjacency and threats.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Guide recommendation, not mandatory every game.",
+      "components": [
+        "technology:pds2",
+        "unit:pds"
+      ],
+      "segment_ids": [
+        "s001199",
+        "s001209"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4336.8,
+          "end": 4367.78
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "claim_id": "C17",
+      "statement": "Dreadnought II and Carrier II support reach and ground delivery; Space Dock II addresses production; Destroyer II shines when enemy fighters make barrage relevant.",
+      "conditions": "Choose based on enemies, production and objectives; Fighter II competes.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts differ over the third upgrade.",
+      "components": [
+        "technology:dn2",
+        "technology:cv2",
+        "technology:sd2",
+        "technology:dd2"
+      ],
+      "segment_ids": [
+        "s001307",
+        "s001317",
+        "s001341",
+        "s001350",
+        "s001400",
+        "s001415"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4744.7,
+          "end": 4799.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4894.68,
+          "end": 4939.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5140.62,
+          "end": 5193.26
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "claim_id": "C18",
+      "statement": "Use the hero after stage-two information is available when possible: exchange obsolete non-upgrade technologies for the final need and gain a useful stall/action.",
+      "conditions": "Usually late round four or round five after stage-two information is available; earlier can be justified by an immediate scoring or defense need.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts differ on exact timing, agree stage-two information matters.",
+      "components": [
+        "technology:lwd",
+        "technology:amd",
+        "technology:bs",
+        "technology:sr"
+      ],
+      "segment_ids": [
+        "s000599",
+        "s000613",
+        "s001426",
+        "s001466"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2023.82,
+          "end": 2075.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5236.42,
+          "end": 5424.68
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "claim_id": "C19",
+      "statement": "Anti-Mass, Neural Motivator and spent Self-Assembly Routines are possible hero replacements, not automatic cuts; Anti-Mass may matter for empty-space objective.",
+      "conditions": "Review stage two, movement needs and tech value.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Replacing Anti-Mass before seeing objective can derail plan.",
+      "components": [
+        "technology:amd",
+        "technology:nm",
+        "technology:sar",
+        "technology:st"
+      ],
+      "segment_ids": [
+        "s001468",
+        "s001519",
+        "s001487",
+        "s001497"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5429.02,
+          "end": 5616.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5506.16,
+          "end": 5546.52
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "claim_id": "C20",
+      "statement": "Late options include Light/Wave, Fleet Logistics, Sling Relay and Bio-Stims; Assault Cannon or Duranium depends on desired defense and fleet.",
+      "conditions": "Select by stage two, geometry, ships, and whether extra actions convert to point.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Guide debates red tech tradeoffs and PDS redundancy.",
+      "components": [
+        "technology:lwd",
+        "technology:fl",
+        "technology:sr",
+        "technology:bs",
+        "technology:asc",
+        "technology:da"
+      ],
+      "segment_ids": [
+        "s001523",
+        "s001543",
+        "s001544",
+        "s001581"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5627.84,
+          "end": 5722.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5723.2,
+          "end": 5880.8
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "claim_id": "C21",
+      "statement": "Negotiate Research Agreement broadly where it buys tempo, favors or protection; do not blindly give premium access for marginal payment.",
+      "conditions": "Consider scores, win-slay risk, tech objectives and buyer return.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "The hosts favor table-wide access for useful favors, but warn against giving a rival an advantage for only a marginal payment; this is meta-dependent.",
+      "components": [
+        "promissory:ra"
+      ],
+      "segment_ids": [
+        "s001664",
+        "s001669",
+        "s001690",
+        "s001730",
+        "s001742",
+        "s001750"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6104.3,
+          "end": 6128.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6194.04,
+          "end": 6320.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6365.22,
+          "end": 6407.06
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "claim_id": "C22",
+      "statement": "Seek commander/Alliance exchanges when rerolled unit abilities matter, pricing actual benefit to both sides and watching for asymmetry.",
+      "conditions": "Nomad, Argent and factions with barrage/bombardment/space cannon discussed.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "Hosts question whether proposed swaps are equitable.",
+      "components": [
+        "faction:jolnar"
+      ],
+      "segment_ids": [
+        "s001762",
+        "s001788",
+        "s001799",
+        "s001809"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6447.8,
+          "end": 6557.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6603.2,
+          "end": 6651.54
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "claim_id": "C23",
+      "statement": "With Nekro as a neighbor, consider mutually profitable E-Res activations; against Mahact, protect home planets with ground forces and consider Scepter of Dominion; with Sol, repeated Military Support bought through Research Agreement can address infantry needs.",
+      "conditions": "Opponent-specific, depends on neighbors.",
+      "compatibility": "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+      "uncertainty": "These are opponent-specific suggestions from the guide. The low-confidence Winnu quip is excluded.",
+      "components": [
+        "technology:ers",
+        "promissory:ms",
+        "promissory:scepter"
+      ],
+      "segment_ids": [
+        "s001789",
+        "s001798",
+        "s001842",
+        "s001857",
+        "s001881",
+        "s001889"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6557.22,
+          "end": 6599.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6743.9,
+          "end": 6788.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6841.4,
+          "end": 6867.44
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:ers",
+      "to": "promissory:ra",
+      "relation": "synergizes-with",
+      "conditions": "Bargaining and income tools; neither guarantees the other triggers.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1279.9,
+          "end": 1403.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1436.62,
+          "end": 1474.24
+        }
+      ],
+      "segment_ids": [
+        "s000399",
+        "s000421",
+        "s000429",
+        "s000438"
+      ]
+    },
+    {
+      "from": "ability:brilliant",
+      "to": "strategy-card:pok7technology",
+      "relation": "enables",
+      "conditions": "Following Technology secondary may resolve primary via Brilliant, subject to conditions.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1071.28,
+          "end": 1090.14
+        }
+      ],
+      "segment_ids": [
+        "s000342",
+        "s000348"
+      ]
+    },
+    {
+      "from": "technology:pds2",
+      "to": "unit:pds",
+      "relation": "enables",
+      "conditions": "When researched and defensive placement matters.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4336.8,
+          "end": 4367.78
+        }
+      ],
+      "segment_ids": [
+        "s001199",
+        "s001209"
+      ]
+    },
+    {
+      "from": "technology:dn2",
+      "to": "technology:gd",
+      "relation": "synergizes-with",
+      "conditions": "Dreadnought II and Carrier II may preserve fleet reach when Gravity Drive is replaced late.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4744.7,
+          "end": 4775.14
+        }
+      ],
+      "segment_ids": [
+        "s001307",
+        "s001312"
+      ]
+    },
+    {
+      "from": "technology:sr",
+      "to": "technology:bs",
+      "relation": "synergizes-with",
+      "conditions": "Bio-Stims may refresh Sling Relay for a stall/action line.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 5638.28,
+          "end": 5659.14
+        }
+      ],
+      "segment_ids": [
+        "s001525",
+        "s001529"
+      ]
+    }
+  ]
+}

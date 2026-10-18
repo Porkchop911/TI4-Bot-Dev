@@ -1,0 +1,911 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "saar",
+  "claims": [
+    {
+      "id": "C01",
+      "segment_ids": [
+        "s001783",
+        "s001830"
+      ],
+      "statement": "Play Saar tightly and conservatively: use its strong tempo without becoming the only obvious leader, since an overextended early lead gives the table time to coordinate and can make Saar eliminable.",
+      "conditions": "Especially relevant in rounds four and five when the table can compare scoring pace and coordinate; adjust to table awareness and Saar’s actual survival position.",
+      "compatibility": "SCPT faction guide published 2024-01-31; ruleset compatibility unreviewed.",
+      "uncertainty": "Strategic opinion from guide hosts; tempo examples are not guaranteed outcomes.",
+      "components": [
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 5432.26,
+          "end": 5605.7
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "segment_ids": [
+        "s000354",
+        "s000362",
+        "s000391",
+        "s000401"
+      ],
+      "statement": "Nomadic lets Saar score objectives without controlling its home-system planets, but Saar can still be eliminated and still needs planets to place floating factories through Construction.",
+      "conditions": "Use the scoring protection when planning late scoring or resisting a home-system win-slay; maintain other planets and forces to avoid elimination.",
+      "compatibility": "Guide discussion of Prophecy of Kings-era Saar; current rules not independently checked.",
+      "uncertainty": "The guide explicitly distinguishes home scoring from elimination; exact elimination edge cases are not analyzed.",
+      "components": [
+        "ability:nomadic",
+        "faction:saar",
+        "unit:saar_spacedock",
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1038.02,
+          "end": 1070.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1192.82,
+          "end": 1221.28
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "segment_ids": [
+        "s000765",
+        "s000775",
+        "s000865",
+        "s000915"
+      ],
+      "statement": "Construction is a robust default when Saar wants a safe opening: a second mobile dock provides insurance against losing the first and lets Saar develop in more than one direction.",
+      "conditions": "Particularly useful for a newer Saar player or when the table is likely to deny Construction later; Warfare is a major alternative when its expansion ceiling is worth the heat.",
+      "compatibility": "Guide strategic recommendation; strategy card rules and table meta not separately verified.",
+      "uncertainty": "Hosts call it an easy default but also explicitly discuss Warfare as an exception.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:saar_spacedock",
+        "unit:saar_spacedock2",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2481.42,
+          "end": 2504.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2752.46,
+          "end": 2903.04
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "segment_ids": [
+        "s000883",
+        "s000894"
+      ],
+      "statement": "A second Saar space dock insures against Reactor Meltdown destroying the only dock; three docks also unlock Saar’s commander, whose alliance can be sold once available.",
+      "conditions": "Prioritize early Construction when the first dock is exposed or commander access and an alliance sale will matter.",
+      "compatibility": "Guide component discussion; current interaction details not independently reviewed.",
+      "uncertainty": "The guide characterizes Reactor Meltdown risk as a reason for Construction; the actual threat depends on card access and table decisions.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:saar_spacedock",
+        "unit:saar_spacedock2",
+        "leader:saarcommander",
+        "promissory:<color>_an"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2786.66,
+          "end": 2843.82
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "segment_ids": [
+        "s000388",
+        "s000418",
+        "s000918",
+        "s000930"
+      ],
+      "statement": "Construction’s secondary requires a controlled planet to place a Saar space dock; Warfare’s secondary can build from only one dock in a system. Saar may pop Construction early without first landing if placing its dock is otherwise legal.",
+      "conditions": "Check whether a planet is present and controlled before placing a dock, and whether one or multiple docks are in the activated system when following Warfare.",
+      "compatibility": "Rule interpretation stated by SCPT in the 2024 guide; verify against the table’s governing rules if rules precision is essential.",
+      "uncertainty": "Transcript contains a few jokes and broad shorthand; claim retains the specific caveats stated in the episode.",
+      "components": [
+        "strategy-card:pok4construction",
+        "strategy-card:pok6warfare",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1174.7,
+          "end": 1259.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2904.92,
+          "end": 2931.48
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "segment_ids": [
+        "s000973",
+        "s001001"
+      ],
+      "statement": "Warfare can turn Saar’s multiple starting carriers and mobile dock into a high-expansion round: move forces forward, lift the token, then spread to several systems or approach Mecatol Rex.",
+      "conditions": "Best when slice geometry, action order, and available resources make the expansion useful for objectives or a custodians attempt.",
+      "compatibility": "Guide’s opening advice; outcome depends on map, draft order, and opponents.",
+      "uncertainty": "The hosts describe a high ceiling, not an automatic number of planets or custodians point.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3070.3,
+          "end": 3137.3
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "segment_ids": [
+        "s001003",
+        "s001046"
+      ],
+      "statement": "Warfare’s Saar ceiling carries political and tempo costs: early reach can make Saar the table’s shared target and a second-action Warfare can upset neighbors’ planned technology or builds.",
+      "conditions": "Weigh this cost when Saar neighbors can retaliate, when the table dislikes early aggression, or when the proposed movement does not advance scoring.",
+      "compatibility": "Table-meta advice, not a rules claim.",
+      "uncertainty": "The level of backlash varies by group; the speakers frame it as common experience.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3141.16,
+          "end": 3277.42
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "segment_ids": [
+        "s000782",
+        "s000812"
+      ],
+      "statement": "Leadership is a safe, mid-tier Saar pick when command-token momentum will support following Technology, Warfare, or Construction; Saar’s extra carriers create several tempting activations and Fleet Pool can become a ceiling.",
+      "conditions": "Useful when Saar expects multiple activations or needs tokens for round two; avoid spending tokens on low-value movement that leaves the fleet constrained.",
+      "compatibility": "Guide strategy advice; exact token needs depend on slice and objectives.",
+      "uncertainty": "Hosts call Leadership solid but not a top priority in every draft.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok7technology",
+        "strategy-card:pok6warfare",
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2520.5,
+          "end": 2625.2
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "segment_ids": [
+        "s000814",
+        "s000863"
+      ],
+      "statement": "Diplomacy supplies money and can enable custodians, but the guide considers it a less attractive round-one custodians route than Saar’s alternatives; Politics can preserve influence for a later Mecatol attempt but delays the point and risks losing the opportunity.",
+      "conditions": "Choose based on slice resources, pick order, and whether an immediate Mecatol point is safer than waiting.",
+      "compatibility": "Guide opinion about opening cards; current objective landscape not checked.",
+      "uncertainty": "The hosts debate relative rankings and do not give a single universally best choice.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok3politics",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2628.6,
+          "end": 2750.44
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "segment_ids": [
+        "s000945",
+        "s000971"
+      ],
+      "statement": "Trade is a lower-drama way to fund technology, plastic, and possibly custodians while using some of Saar’s Scavenge income to maintain goodwill through deals.",
+      "conditions": "Especially useful when Saar wants money and a less threatening opening than Warfare; trade timing may still depend on Technology or other players’ actions.",
+      "compatibility": "Guide advice; trade meta varies by group.",
+      "uncertainty": "Hosts describe Trade as safe and effective but with a lower ceiling than Warfare.",
+      "components": [
+        "strategy-card:pok5trade",
+        "ability:scavenge",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2964.84,
+          "end": 3068.98
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "segment_ids": [
+        "s001100",
+        "s001136"
+      ],
+      "statement": "Keep Saar’s technology plan shallow and prefer plastic when it solves the same movement, economic, or board-presence problem; Chaos Mapping is the guide’s essential technology.",
+      "conditions": "Particularly after early expansion when more ships and ground forces can turn money into objectives; technology objectives or bonuses can change the value calculation.",
+      "compatibility": "SCPT strategic opinion; no current-rules review.",
+      "uncertainty": "The guide calls Chaos Mapping essential while describing many other technologies as optional; the exact path remains situational.",
+      "components": [
+        "technology:cm",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3454.34,
+          "end": 3566.6
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "segment_ids": [
+        "s001142",
+        "s001243",
+        "s001245",
+        "s001255"
+      ],
+      "statement": "Research Chaos Mapping early for repeated production. Take Gravity Drive first if it makes round-one custodians or a necessary movement line possible; otherwise Chaos Mapping into Carrier II supports a slower, capacity-focused game without requiring Gravity Drive.",
+      "conditions": "Inspect the slice, custodian race, and floating factory or carrier movement plan before choosing the first technology; Chaos Mapping remains valuable after Gravity Drive.",
+      "compatibility": "Guide hosts disagree about Gravity Drive’s general value, while agreeing that it is not always required; no ruleset verification.",
+      "uncertainty": "The source presents competing strategic views and a conditional decision, not a universal technology order.",
+      "components": [
+        "technology:cm",
+        "technology:gd",
+        "technology:cv2",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3576.12,
+          "end": 3867.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3870.98,
+          "end": 3894.46
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "segment_ids": [
+        "s000470",
+        "s000495"
+      ],
+      "statement": "Scavenge grants one trade good after Saar gains a planet, and Saar may then spend one trade good to deploy a mech there; on explored planets, exploration occurs first, so the new reward cannot alter that exploration.",
+      "conditions": "Use the reward for a mech when its board value exceeds retaining the trade good; account for the exploration step before planning the control-trigger reward.",
+      "compatibility": "Guide timing explanation; current rules not independently checked.",
+      "uncertainty": "ASR garbles several planet names; claim concerns the named ability sequence only.",
+      "components": [
+        "ability:scavenge",
+        "unit:saar_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1402.18,
+          "end": 1501.54
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "segment_ids": [
+        "s000672",
+        "s000692",
+        "s000712",
+        "s000731"
+      ],
+      "statement": "Chaos Mapping lets Saar produce one unit at the start of each of its turns in a system with one of its units that has Production; this is distinct from using the Production ability, so the guide says Sarween Tools does not apply to this effect.",
+      "conditions": "Research early to gain more triggers; select units and systems that support future actions without assuming this replaces a normal production build or creates a stall.",
+      "compatibility": "SCPT’s rule interpretation, including a wording distinction; validate against current rules if exact legality is required.",
+      "uncertainty": "The episode notes production terminology is confusing; this summary preserves the guide’s asserted distinction.",
+      "components": [
+        "technology:cm",
+        "technology:st"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2076.1,
+          "end": 2156.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2223.04,
+          "end": 2286.1
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "segment_ids": [
+        "s001285",
+        "s001307"
+      ],
+      "statement": "An infantry-first opening can secure planets without tying up ship capacity; later pivot into fighters once Carrier II and the board position make a stronger space screen useful.",
+      "conditions": "Best when early opponents lack enough infantry to contest Saar’s planets and Saar can still protect critical fleets; do not leave key systems exposed.",
+      "compatibility": "A strategy tip attributed in the guide to experienced Saar player Empson; not a universal rule.",
+      "uncertainty": "The source provides one example of a successful large infantry footprint; outcomes depend on diplomacy and opponents.",
+      "components": [
+        "technology:cv2",
+        "unit:infantry",
+        "unit:fighter"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3957.24,
+          "end": 4038.94
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "segment_ids": [
+        "s001327",
+        "s001338"
+      ],
+      "statement": "Once Saar has enough technology for its plan, compare each optional technology with the ships or fighters the same resources could buy; the guide usually favors plastic that advances board presence or scoring.",
+      "conditions": "Applies when Saar has a viable production opportunity and no revealed technology objective or bonus makes the technology especially valuable.",
+      "compatibility": "Guide strategic heuristic; unit costs and resource availability vary by game state.",
+      "uncertainty": "The hosts frame the comparison as a rule of thumb rather than an exact calculation.",
+      "components": [
+        "faction:saar",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4082.2,
+          "end": 4124.18
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "segment_ids": [
+        "s000654",
+        "s000670",
+        "s000591",
+        "s000616"
+      ],
+      "statement": "Floating Factory II can improve movement and production when Saar can afford the yellow route without delaying urgent needs; commander routing still respects production capacity and cannot place units at a blockaded destination dock.",
+      "conditions": "Consider the upgrade in technology-rich games or with helpful yellow access; assess actual build money and whether remote production sites are unblocked.",
+      "compatibility": "Guide description of Saar unit upgrade and commander; present rules not verified.",
+      "uncertainty": "ASR has a clipped line about production/capacity values; the summary avoids relying on its exact numerical detail.",
+      "components": [
+        "unit:saar_spacedock2",
+        "unit:saar_spacedock2",
+        "leader:saarcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2007.1,
+          "end": 2072.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1832.52,
+          "end": 1902.96
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "segment_ids": [
+        "s000531",
+        "s000587"
+      ],
+      "statement": "Captain Mendosa can raise an activated ship’s move value to the highest move value on the board; Saar’s starting cruiser supports a round-one move-two carrier or factory, and Gravity Drive can add movement afterward.",
+      "conditions": "Use when a specific reach breakpoint matters, such as a custodians attempt; selling the agent may be reasonable if Saar does not expect to reach custodians and a buyer offers value.",
+      "compatibility": "Guide interpretation of the Saar agent; current movement rules not independently checked.",
+      "uncertainty": "The transcript discusses modifiers and terrain as caveats; this is not a promise of a clear route or a fixed total movement.",
+      "components": [
+        "leader:saaragent",
+        "technology:gd",
+        "unit:cruiser",
+        "unit:carrier",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1611.7,
+          "end": 1815.76
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "segment_ids": [
+        "s000672",
+        "s000688",
+        "s000736",
+        "s000744"
+      ],
+      "statement": "Chaos Mapping protects Saar ships in asteroid fields from opponents activating those systems, but non-activation effects such as the guide’s Benediction example can still move ships out and expose Saar.",
+      "conditions": "Treat asteroid positions as temporary protection and keep alternate survival or retreat paths, especially before passing or when an opponent has a relevant movement effect.",
+      "compatibility": "Guide’s POK-era interaction discussion; not independently rules-checked.",
+      "uncertainty": "The exact referenced card/ability wording may be ASR-imperfect; transcript clearly warns that protection is not absolute.",
+      "components": [
+        "technology:cm",
+        "technology:det"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2076.1,
+          "end": 2138.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2305.46,
+          "end": 2348.06
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "segment_ids": [
+        "s001783",
+        "s001799"
+      ],
+      "statement": "Do not assume Saar is safe merely because it can score without home planets or shelter ships in asteroid fields; overextension and a moment outside protection can let the table coordinate an elimination attempt.",
+      "conditions": "Keep this risk in view when Saar has passed, become the sole leader, or left safe positions to threaten the table.",
+      "compatibility": "Guide strategic warning; elimination and timing rules not separately reviewed.",
+      "uncertainty": "The guide describes table behavior and threat windows from play experience.",
+      "components": [
+        "ability:nomadic",
+        "technology:cm",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 5432.26,
+          "end": 5498.34
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "segment_ids": [
+        "s001416",
+        "s001445"
+      ],
+      "statement": "Dark Energy Tap is a useful later investment when Saar’s economy supports it: frontier outcomes can supply resources or secrets, and retreat can create an escape path for ships far from Saar’s planets.",
+      "conditions": "Prioritize it when the game needs secret cycling, frontier resources, or alternate retreat destinations; avoid retreat configurations that strand one floating factory at another.",
+      "compatibility": "Guide’s POK technology discussion; mechanics not independently checked.",
+      "uncertainty": "Hosts call DET strong but acknowledge its value is difficult to predict and may be displaced by urgent technology or plastic.",
+      "components": [
+        "technology:det",
+        "technology:cm",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4370.0,
+          "end": 4492.2
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "segment_ids": [
+        "s001468",
+        "s001474",
+        "s001687",
+        "s001760"
+      ],
+      "statement": "Saar has several scoring routes: custodians, a later Imperial/Mecatol point, and flexible unit-based secrets that can be prepared by producing the needed unit when useful. Preparation does not itself score the objective; check its full requirements and timing.",
+      "conditions": "Use the route matching the revealed objective, Saar’s current score, and its surviving force layout; preserve Imperial or the hero’s availability if the point requires it.",
+      "compatibility": "Guide advice based on its assumed rules and objectives; no official-rules audit.",
+      "uncertainty": "The guide says most stage-one, secret, and stage-two objectives are feasible but identifies exceptions; exact objective set varies.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "technology:cm",
+        "public-objective:infrastructure"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4545.02,
+          "end": 4578.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 5173.8,
+          "end": 5356.76
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "segment_ids": [
+        "s001687",
+        "s001726"
+      ],
+      "statement": "Improve Infrastructure is awkward for Saar because a floating factory is in space and does not count as a structure on a planet; PDS is the relevant structure. Decide whether to invest by comparing the objective with Saar’s path to ten and alternatives such as a stage two or Imperial/Mecatol point.",
+      "conditions": "A PDS secret or a weak alternative scoring path can justify investment; otherwise avoid defaulting to PDS solely for this objective.",
+      "compatibility": "Guide’s objective interpretation; current objective text not independently verified.",
+      "uncertainty": "The hosts explicitly leave the value conditional on revealed objectives and tempo.",
+      "components": [
+        "public-objective:infrastructure",
+        "unit:saar_spacedock",
+        "unit:pds",
+        "strategy-card:pok8imperial",
+        "technology:det"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 5173.8,
+          "end": 5271.02
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "segment_ids": [
+        "s000621",
+        "s000652"
+      ],
+      "statement": "Saar’s hero can destroy opponents’ infantry and fighters in a system adjacent to one of Saar’s docks, giving Saar a late-game tool against an important high-HP fleet; it does not target units in the dock’s own system merely because they are present there.",
+      "conditions": "Save the action for a strategically important adjacent system with relevant units; do not assume it removes ground forces below a dock.",
+      "compatibility": "Guide rules interpretation for Saar hero; legality not independently checked.",
+      "uncertainty": "The episode calls out adjacency as a common rules trap.",
+      "components": [
+        "leader:saarhero",
+        "unit:saar_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1910.26,
+          "end": 2004.54
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "segment_ids": [
+        "s000496",
+        "s000528",
+        "s001547",
+        "s001548"
+      ],
+      "statement": "Rog’s Call can let Saar preserve and redeploy its ground forces when an opponent commits to land; the recipient chooses where Saar’s forces are placed, so the note is often more valuable to Saar than to its recipient.",
+      "conditions": "Offer it when avoiding combat or moving forces elsewhere helps; account for the recipient’s destination choice and do not count on a specific planet.",
+      "compatibility": "Guide interpretation of Saar’s promissory note; current timing not reviewed.",
+      "uncertainty": "ASR renders the name as “Rog’s Call”; component reference uses “Raghs Call.”",
+      "components": [
+        "promissory:ragh",
+        "ability:scavenge"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1501.72,
+          "end": 1606.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4754.8,
+          "end": 4762.68
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "segment_ids": [
+        "s001553",
+        "s001678"
+      ],
+      "statement": "Make Saar extortion credible: before demanding payment or Support for the Throne, decide whether carrying through benefits Saar if refused. Smaller payments, support swaps, or redirecting Saar toward another threat may preserve leverage without making Saar the table’s sole target.",
+      "conditions": "Adapt the threat to the group’s tolerance for aggression and Saar’s actual military position; never rely on the other player yielding if the threatened move would be bad for Saar.",
+      "compatibility": "Social strategy based on guide hosts’ meta experience, not game rules.",
+      "uncertainty": "The guide emphasizes table culture and warns that an implausible threat can create enemies without delivering value.",
+      "components": [
+        "faction:saar",
+        "promissory:<color>_sftt",
+        "promissory:ragh"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4772.04,
+          "end": 5150.76
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "segment_ids": [
+        "s001508",
+        "s001522",
+        "s000736",
+        "s000744"
+      ],
+      "statement": "Opponents should account for Saar’s Shard of the Throne contingency before taking both Saar home planets; the guide suggests leaving one planet can preserve a way to deny that point later. Non-activation movement can also bypass Chaos Mapping’s asteroid protection.",
+      "conditions": "Relevant when Saar may draw Shard and opponents can access the home system, or when an opponent has a way to move ships without activation.",
+      "compatibility": "Guide’s POK-era strategic and rules advice; no independent rules review.",
+      "uncertainty": "The source says the home-planet advice is counterintuitive and may depend on the specific game; ASR has uncertain phrasing around the Shard sequence.",
+      "components": [
+        "relic:shard",
+        "technology:cm",
+        "faction:saar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4643.04,
+          "end": 4689.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2305.46,
+          "end": 2348.06
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ability:scavenge",
+      "to": "unit:saar_mech",
+      "relation": "synergizes-with",
+      "conditions": "After gaining a planet, the Scavenge trade good can be spent for that planet’s mech; the trade good has an opportunity cost.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1402.18,
+          "end": 1479.08
+        }
+      ]
+    },
+    {
+      "from": "technology:cm",
+      "to": "unit:saar_spacedock",
+      "relation": "synergizes-with",
+      "conditions": "Chaos Mapping’s start-of-turn production rewards Saar for having a Production unit in useful systems and for researching the technology early.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2076.1,
+          "end": 2156.18
+        }
+      ]
+    },
+    {
+      "from": "technology:cm",
+      "to": "technology:st",
+      "relation": "conflicts-with",
+      "conditions": "The guide distinguishes Chaos Mapping’s “produce” effect from the Production ability and says Sarween Tools does not discount this effect.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2223.04,
+          "end": 2286.1
+        }
+      ]
+    },
+    {
+      "from": "technology:cm",
+      "to": "technology:gd",
+      "relation": "synergizes-with",
+      "conditions": "Chaos Mapping is the guide’s continuing priority; Gravity Drive is a conditional first pick when it enables custodians or a necessary reach breakpoint.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3576.12,
+          "end": 3649.0
+        }
+      ]
+    },
+    {
+      "from": "technology:cm",
+      "to": "technology:cv2",
+      "relation": "enables",
+      "conditions": "The guide describes Chaos Mapping followed by Carrier II as a viable shallow technology route that adds capacity without requiring Gravity Drive in every game.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 3711.9,
+          "end": 3894.46
+        }
+      ]
+    },
+    {
+      "from": "leader:saaragent",
+      "to": "technology:gd",
+      "relation": "synergizes-with",
+      "conditions": "The agent’s increased move value combines with Gravity Drive’s later modifier when a movement breakpoint such as custodians matters.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1740.62,
+          "end": 1768.8
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok4construction",
+      "to": "unit:saar_spacedock2",
+      "relation": "enables",
+      "conditions": "Construction provides Saar another dock, reducing single-dock vulnerability and progressing the three-dock commander unlock.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2786.66,
+          "end": 2843.82
+        }
+      ]
+    },
+    {
+      "from": "unit:saar_spacedock",
+      "to": "leader:saarcommander",
+      "relation": "requires",
+      "conditions": "The commander unlock requires three space docks on the board; routing produced infantry or fighters also requires an unblocked destination dock and remains within production capacity.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1815.76,
+          "end": 1902.96
+        }
+      ]
+    },
+    {
+      "from": "technology:cm",
+      "to": "technology:det",
+      "relation": "synergizes-with",
+      "conditions": "Chaos Mapping protects Saar’s asteroid-field presence while Dark Energy Tap can provide frontier access and alternative retreat destinations; DET is a later, economy-dependent investment.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 2305.46,
+          "end": 2348.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4370.0,
+          "end": 4492.2
+        }
+      ]
+    },
+    {
+      "from": "leader:saarhero",
+      "to": "unit:saar_spacedock",
+      "relation": "counters",
+      "conditions": "The hero destroys opposing infantry and fighters in a system adjacent to a Saar dock, offering a late-game answer to units that otherwise absorb Saar’s attacks.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 1910.26,
+          "end": 2004.54
+        }
+      ]
+    },
+    {
+      "from": "public-objective:infrastructure",
+      "to": "unit:saar_spacedock",
+      "relation": "conflicts-with",
+      "conditions": "Improve Infrastructure counts structures on planets; a Saar floating factory is in space, so Saar may need PDS or an alternate scoring route.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 5173.8,
+          "end": 5224.34
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok8imperial",
+      "to": "faction:saar",
+      "relation": "scores",
+      "conditions": "The guide identifies taking Mecatol with Imperial later as a conditional scoring route when Saar needs the point and can meet the card and objective timing.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-336-bc6947c9dc9c",
+          "start": 4545.02,
+          "end": 4573.8
+        }
+      ]
+    }
+  ]
+}

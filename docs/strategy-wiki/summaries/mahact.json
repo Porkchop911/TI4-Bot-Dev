@@ -1,0 +1,2370 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "mahact",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat Mahact as a faction with a deliberate ramp: its kit is powerful once online, but the opening can go wrong before its timing tools mature.",
+      "conditions": "Careful early development sets up a later payoff.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Podcast judgment, not a guarantee.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 698.48,
+          "end": 703.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 713.28,
+          "end": 718.66
+        }
+      ],
+      "segment_ids": [
+        "s000194",
+        "s000197"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Draft toward an efficient opening: the starting dreadnought and thin carrier capacity favor a two-planet system plus a one-planet system, making Warfare round one less automatic.",
+      "conditions": "Slice needs and Warfare access depend on the map, neighbors, and resources.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "The hosts call the start passable, not uniformly bad.",
+      "components": [
+        "faction:mahact",
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1529.96,
+          "end": 1534.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1551.82,
+          "end": 1556.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1556.88,
+          "end": 1562.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1568.22,
+          "end": 1572.4
+        }
+      ],
+      "segment_ids": [
+        "s000388",
+        "s000392",
+        "s000393",
+        "s000395"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Value a good tech skip near home; it can supply the breakthrough without paying the usual round-one tech cost.",
+      "conditions": "Scoring or resource access can delay the breakthrough.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "The named breakthrough component is absent from the reference and remains unresolved.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1881.46,
+          "end": 1885.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1902.42,
+          "end": 1906.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5329.16,
+          "end": 5330.5
+        }
+      ],
+      "segment_ids": [
+        "s000470",
+        "s000474",
+        "s001414"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use Bio-Stims as a recurring economy tool: research a wanted technology, then ready a tech specialty planet or another technology at end of turn.",
+      "conditions": "Strong when a valuable specialty planet or exhausted technology is available.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Guide assessment; current rules not independently reviewed.",
+      "components": [
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1610.3,
+          "end": 1615.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1622.86,
+          "end": 1625.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1649.8,
+          "end": 1656.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1656.2,
+          "end": 1664.08
+        }
+      ],
+      "segment_ids": [
+        "s000406",
+        "s000409",
+        "s000419",
+        "s000420"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Use Predictive Intelligence to reshape command-token placement, often turning an unnecessary fleet token into a tactic or strategy follow; especially handy in round one.",
+      "conditions": "Edict tokens remain in the fleet pool and cannot be redistributed.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Useful for Mahact though not generally rated a strong technology.",
+      "components": [
+        "technology:pi",
+        "ability:edict"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1625.78,
+          "end": 1627.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1642.28,
+          "end": 1643.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1685.82,
+          "end": 1690.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1703.3,
+          "end": 1709.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2065.8,
+          "end": 2072.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2073.4,
+          "end": 2079.62
+        }
+      ],
+      "segment_ids": [
+        "s000410",
+        "s000416",
+        "s000426",
+        "s000430",
+        "s000522",
+        "s000523"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Plan around a modest economy: Ixth’s five influence helps with tokens and Custodians, but three home resources and three commodities leave technology and ship builds awkward.",
+      "conditions": "Round-one technology generally needs four resources; exploration or neighbors may bridge a shortfall.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Values and strategic impact are guide claims.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1822.84,
+          "end": 1828.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1881.46,
+          "end": 1885.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1917.46,
+          "end": 1922.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1940.3,
+          "end": 1947.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2019.98,
+          "end": 2024.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2030.94,
+          "end": 2033.06
+        }
+      ],
+      "segment_ids": [
+        "s000457",
+        "s000470",
+        "s000478",
+        "s000486",
+        "s000509",
+        "s000512"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Treat resources and production as the main structural problem; extra money is unusually valuable because Mahact can turn ships and tokens into repeated options.",
+      "conditions": "Prioritize slice resources, Trade access, and production that turns resources into a fleet.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Force-multiplier framing is the speakers’ judgment.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1974.98,
+          "end": 1980.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1988.72,
+          "end": 1990.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2018.06,
+          "end": 2019.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2040.34,
+          "end": 2044.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1822.84,
+          "end": 1828.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1881.46,
+          "end": 1885.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1917.46,
+          "end": 1922.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1940.3,
+          "end": 1947.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2019.98,
+          "end": 2024.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2030.94,
+          "end": 2033.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2543.46,
+          "end": 2548.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2554.22,
+          "end": 2561.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2563.88,
+          "end": 2566.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6263.84,
+          "end": 6266.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6367.66,
+          "end": 6375.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7784.86,
+          "end": 7786.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7786.6,
+          "end": 7788.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7789.02,
+          "end": 7789.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6527.94,
+          "end": 6530.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6533.72,
+          "end": 6535.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6545.28,
+          "end": 6547.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6574.34,
+          "end": 6580.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6600.8,
+          "end": 6606.28
+        }
+      ],
+      "segment_ids": [
+        "s000493",
+        "s000497",
+        "s000508",
+        "s000515",
+        "s000457",
+        "s000470",
+        "s000478",
+        "s000486",
+        "s000509",
+        "s000512",
+        "s000626",
+        "s000628",
+        "s000630",
+        "s001692",
+        "s001713",
+        "s002162",
+        "s002163",
+        "s002164",
+        "s001758",
+        "s001759",
+        "s001762",
+        "s001767",
+        "s001776",
+        "s001782"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Use Edict fights efficiently: winning combat can add an opponent’s token to your fleet pool, so combine acquisition with objectives, exploration, positional leverage, or another useful fight. Also avoid spending scarce early ships and money solely for tokens; combine the fight with an objective, exploration, or a negotiated deal.",
+      "conditions": "Edict requires a win and does not add a second token for an opponent already represented. Weigh commander access against Mahact’s thin early plastic and economy.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "No universal target order is stated. Situation-dependent advice.",
+      "components": [
+        "ability:edict"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2053.76,
+          "end": 2055.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2055.3,
+          "end": 2065.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2086.12,
+          "end": 2089.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2251.68,
+          "end": 2259.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2260.8,
+          "end": 2266.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2275.76,
+          "end": 2279.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2289.9,
+          "end": 2293.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2298.44,
+          "end": 2304.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2304.04,
+          "end": 2309.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2314.52,
+          "end": 2318.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2318.32,
+          "end": 2322.58
+        }
+      ],
+      "segment_ids": [
+        "s000520",
+        "s000521",
+        "s000525",
+        "s000568",
+        "s000570",
+        "s000573",
+        "s000576",
+        "s000578",
+        "s000579",
+        "s000581",
+        "s000582"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Each opponent token can also grant access through Imperia to that player’s unlocked commander.",
+      "conditions": "The commander must be unlocked and the opponent’s token present; value depends on the factions in the game.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Newer commander examples are best-case combinations.",
+      "components": [
+        "ability:imperia",
+        "leader:mahactcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2090.3,
+          "end": 2092.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2093.8,
+          "end": 2101.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2132.18,
+          "end": 2136.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2141.98,
+          "end": 2146.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2177.9,
+          "end": 2183.42
+        }
+      ],
+      "segment_ids": [
+        "s000526",
+        "s000527",
+        "s000533",
+        "s000536",
+        "s000547"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "The Starlancer is a powerful timing threat: when a represented player activates its system, Mahact may spend that player’s fleet token to end their turn; the token returns to them. Deploy these mechs near important systems and use the threat before the endgame; even a token that returns can create early pressure.",
+      "conditions": "Most consequential when Mahact has plastic to reclaim the token and exploit the window. Use when turn disruption or a forced decision helps; activation must be credible.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Not a guaranteed win; Thunder’s Edge interactions may affect surrounding timing. Table incentives vary.",
+      "components": [
+        "unit:mahact_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2648.2,
+          "end": 2651.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2660.16,
+          "end": 2664.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2664.02,
+          "end": 2667.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2667.54,
+          "end": 2669.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2691.58,
+          "end": 2694.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2725.96,
+          "end": 2732.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2737.16,
+          "end": 2743.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2768.26,
+          "end": 2772.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2776.76,
+          "end": 2779.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2797.94,
+          "end": 2799.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2825.14,
+          "end": 2826.84
+        }
+      ],
+      "segment_ids": [
+        "s000655",
+        "s000658",
+        "s000659",
+        "s000660",
+        "s000667",
+        "s000673",
+        "s000675",
+        "s000682",
+        "s000684",
+        "s000692",
+        "s000702"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Keep one of your own tokens in your fleet pool when practical, because opponents can otherwise activate your home system and trigger the Starlancer against your ships.",
+      "conditions": "Remove it when needed; defend home with real forces rather than a bluff.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Strong safety habit, not absolute.",
+      "components": [
+        "unit:mahact_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2840.38,
+          "end": 2841.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2868.38,
+          "end": 2875.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2887.28,
+          "end": 2892.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2904.82,
+          "end": 2908.2
+        }
+      ],
+      "segment_ids": [
+        "s000708",
+        "s000717",
+        "s000721",
+        "s000726"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Against Mahact, pressure Starlancer timing and resources: trigger it when it strains their fleet, then contest follow-up and force them to spend ships and attention.",
+      "conditions": "A threat matters only if you can carry it through; Mahact can regain tokens.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Opponent counterplay advice.",
+      "components": [
+        "unit:mahact_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2772.38,
+          "end": 2776.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2783.66,
+          "end": 2786.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2811.2,
+          "end": 2813.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2950.74,
+          "end": 2953.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2954.5,
+          "end": 2955.82
+        }
+      ],
+      "segment_ids": [
+        "s000683",
+        "s000687",
+        "s000696",
+        "s000738",
+        "s000740"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "If Articles of War is in the agenda pool, the guide recommends coordinating against it to disable mech abilities rather than letting Mahact keep the Starlancer threat.",
+      "conditions": "Judge agenda timing, votes, and trade-good distribution.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Transcript ASR truncates vote arithmetic; strategic recommendation is clearer than exact vote details.",
+      "components": [
+        "unit:mahact_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2971.26,
+          "end": 2979.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3029.98,
+          "end": 3037.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3045.22,
+          "end": 3049.98
+        }
+      ],
+      "segment_ids": [
+        "s000747",
+        "s000752",
+        "s000755"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Do not build Arvicon Rex by default for its combat modifier: Edict may obtain many opponents’ tokens, turning off that modifier in those matchups.",
+      "conditions": "Build for a flagship objective, a free Alliance copy, or when resources exceed production and another hull/capacity helps.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "The speakers still call it a good flagship; concern is its eight-resource opportunity cost.",
+      "components": [
+        "unit:mahact_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2467.04,
+          "end": 2471.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2503.4,
+          "end": 2506.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2515.66,
+          "end": 2517.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2533.88,
+          "end": 2539.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2596.8,
+          "end": 2602.94
+        }
+      ],
+      "segment_ids": [
+        "s000604",
+        "s000611",
+        "s000614",
+        "s000624",
+        "s000644"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Build a fleet you can afford and produce: the guide favors carriers and fighter screens, with a forward dock to ease limited home production.",
+      "conditions": "Fleet mix depends on objectives, docks, and table synergies.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Strategic preference.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2543.46,
+          "end": 2548.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2554.22,
+          "end": 2561.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2563.88,
+          "end": 2566.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6263.84,
+          "end": 6266.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6367.66,
+          "end": 6375.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7784.86,
+          "end": 7786.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7786.6,
+          "end": 7788.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7789.02,
+          "end": 7789.92
+        }
+      ],
+      "segment_ids": [
+        "s000626",
+        "s000628",
+        "s000630",
+        "s001692",
+        "s001713",
+        "s002162",
+        "s002163",
+        "s002164"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "View Vaults of the Arx as a risky relic route: the speakers like its access to X-89 and Transit Diodes and chance of a point-bearing relic, but disagree on how freely to use it. Preserve needed technology and objective or unit-upgrade prerequisites; purge only after the tech has done its job or near endgame. The guide calls a SCAR token-for-relic use favorable.",
+      "conditions": "Prefer technologies whose value has already been used; one speaker aims for about two attempts in rounds three and four, while the other accepts more variance. Safest after a technology has done its job or near endgame; SCAR is described as a favorable token-for-relic use.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Breakthrough node is absent from reference and left unresolved; relic outcomes are uncertain. The speakers report different risk tolerance.",
+      "components": [
+        "faction:mahact",
+        "technology:x89",
+        "technology:td"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3415.26,
+          "end": 3420.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3446.58,
+          "end": 3451.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3531.62,
+          "end": 3537.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3605.83,
+          "end": 3609.05
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3718.83,
+          "end": 3722.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3726.37,
+          "end": 3729.85
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3741.41,
+          "end": 3748.91
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3748.91,
+          "end": 3757.59
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3757.59,
+          "end": 3759.79
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3783.07,
+          "end": 3788.09
+        }
+      ],
+      "segment_ids": [
+        "s000887",
+        "s000894",
+        "s000913",
+        "s000939",
+        "s000968",
+        "s000970",
+        "s000973",
+        "s000974",
+        "s000975",
+        "s000981"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "A possible tech core is Gravity Drive, Carrier II, Fleet Logistics, and X-89; the speakers differ on whether Transit Diodes belongs in the core. With a cheap Blue skip, one route is round-one Hyper Metabolism, then Gravity Drive toward Fleet Logistics, Carrier II, and X-89; otherwise choose needed movement or Anti-Mass Deflectors.",
+      "conditions": "Adapt to skips, map access, scoring, and expected research count. Only use the skip route when affordable and consistent with scoring and economy.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Adaptable route, not a fixed list. One discussed path among alternatives.",
+      "components": [
+        "technology:gd",
+        "technology:cv2",
+        "technology:fl",
+        "technology:x89"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6927.5,
+          "end": 6929.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6934.06,
+          "end": 6936.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6950.84,
+          "end": 6953.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7012.5,
+          "end": 7018.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7042.04,
+          "end": 7048.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7130.46,
+          "end": 7134.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7140.88,
+          "end": 7146.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7178.42,
+          "end": 7184.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7184.68,
+          "end": 7191.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7200.68,
+          "end": 7206.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7209.94,
+          "end": 7216.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7217.22,
+          "end": 7220.86
+        }
+      ],
+      "segment_ids": [
+        "s001895",
+        "s001897",
+        "s001904",
+        "s001930",
+        "s001936",
+        "s001961",
+        "s001963",
+        "s001971",
+        "s001972",
+        "s001977",
+        "s001979",
+        "s001980"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Do not let Cruiser II trap the fleet into a skirmisher plan: it may enable an unusual early Custodians attempt from a red skip, but avoid treating it as a commitment to build cruisers.",
+      "conditions": "Consider it when it is a practical route to an attainable point; preserve a later heavy-fleet plan.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Early Custodians line is called potentially poor and table dependent.",
+      "components": [
+        "technology:cr2",
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7338.7,
+          "end": 7343.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7362.66,
+          "end": 7365.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7371.88,
+          "end": 7375.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7399.26,
+          "end": 7403.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7415.28,
+          "end": 7416.96
+        }
+      ],
+      "segment_ids": [
+        "s002017",
+        "s002022",
+        "s002025",
+        "s002031",
+        "s002037"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Sell Jae Mir Kan’s agent early enough for another player to plan around it; round one is its most valuable window and the guide suggests roughly two total trade goods or another consideration. Use the agent to replace an active player’s token when following a strategic-action secondary; agree early enough for the buyer to plan.",
+      "conditions": "Offer before strategy cards are chosen, especially for a planned secondary follow; speakers may accept one trade good in rounds two or three. Ability applies during the secondary; agree early enough for the buyer to plan.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Prices are examples, not fixed rates. Situational bargaining advice.",
+      "components": [
+        "leader:mahactagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4283.2,
+          "end": 4285.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4296.58,
+          "end": 4297.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4305.32,
+          "end": 4309.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4314.16,
+          "end": 4317.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4348.36,
+          "end": 4350.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4369.0,
+          "end": 4370.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4379.04,
+          "end": 4380.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4395.44,
+          "end": 4397.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4410.0,
+          "end": 4415.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4436.16,
+          "end": 4439.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7730.1,
+          "end": 7734.46
+        }
+      ],
+      "segment_ids": [
+        "s001131",
+        "s001135",
+        "s001138",
+        "s001140",
+        "s001154",
+        "s001163",
+        "s001167",
+        "s001175",
+        "s001181",
+        "s001187",
+        "s002148"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Unlock Il Na Viroset by getting two other factions’ tokens into the fleet pool and aim to have the commander active by round three.",
+      "conditions": "Requires efficient Edict interactions; commander reactivation spends both tokens and ends your turn.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Round three is advice, not a rules deadline.",
+      "components": [
+        "leader:mahactcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4472.62,
+          "end": 4477.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4487.46,
+          "end": 4492.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4525.54,
+          "end": 4529.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4529.8,
+          "end": 4530.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4530.8,
+          "end": 4537.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4556.64,
+          "end": 4561.72
+        }
+      ],
+      "segment_ids": [
+        "s001197",
+        "s001201",
+        "s001216",
+        "s001217",
+        "s001218",
+        "s001222"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Sequence the commander carefully: when using Fleet Logistics, take the other action before the commander activation that ends your turn.",
+      "conditions": "Order matters whenever more than one action is needed; a special Thunder’s Edge interaction is mentioned but not fully resolved.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Check current rules timing.",
+      "components": [
+        "leader:mahactcommander",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4677.28,
+          "end": 4682.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4700.36,
+          "end": 4705.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4705.86,
+          "end": 4706.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4706.7,
+          "end": 4710.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4720.68,
+          "end": 4722.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4727.22,
+          "end": 4731.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4739.52,
+          "end": 4744.46
+        }
+      ],
+      "segment_ids": [
+        "s001249",
+        "s001253",
+        "s001254",
+        "s001255",
+        "s001258",
+        "s001260",
+        "s001263"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Save a healthy command-token reserve and avoid activations without purpose; combine movement, fights, objective progress, and token collection. Preserve a healthy reserve through round three, then convert it into a scoring close; earlier spending can make sense for a round-four win.",
+      "conditions": "Balance resources for ships against influence for tokens; lifting Mahact tokens also consumes fleet tokens. A round-four win may justify earlier spending; default preference is stronger round-five potential.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Strategic prioritization. Meta advice, not fixed pacing.",
+      "components": [
+        "leader:mahactcommander",
+        "technology:pi"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4580.0,
+          "end": 4584.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4598.1,
+          "end": 4601.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4856.96,
+          "end": 4863.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4864.46,
+          "end": 4869.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4881.92,
+          "end": 4890.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5734.12,
+          "end": 5736.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5946.46,
+          "end": 5949.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5964.28,
+          "end": 5967.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7772.28,
+          "end": 7777.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7798.48,
+          "end": 7799.98
+        }
+      ],
+      "segment_ids": [
+        "s001226",
+        "s001230",
+        "s001291",
+        "s001293",
+        "s001297",
+        "s001546",
+        "s001601",
+        "s001606",
+        "s002158",
+        "s002168"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Use Airo Shir Aur’s Benediction for Mahact tempo and scoring: reposition a space fleet into a contested adjacent system, force combat without retreat, or move your own force out of a lock. Treat Benediction as a closer and blocker, not only a wind-slay effect: arrange a late objective or protect a control attempt from an opponent fleet.",
+      "conditions": "Needs an adjacent system with another player’s ships; only your own ground forces can be transported. Hold for a scoring window when a rival can contest; neutral units can also be targets per the guide.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Guide paraphrase; rules legality not separately reviewed. Timing depends on the board.",
+      "components": [
+        "leader:mahacthero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4968.54,
+          "end": 4975.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4977.22,
+          "end": 4983.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4983.32,
+          "end": 4985.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4985.26,
+          "end": 4991.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4991.38,
+          "end": 5000.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5006.6,
+          "end": 5013.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5022.82,
+          "end": 5028.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5083.56,
+          "end": 5088.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5101.44,
+          "end": 5108.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5126.3,
+          "end": 5133.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5144.0,
+          "end": 5153.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5201.28,
+          "end": 5208.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7086.34,
+          "end": 7091.78
+        }
+      ],
+      "segment_ids": [
+        "s001316",
+        "s001318",
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001323",
+        "s001330",
+        "s001351",
+        "s001357",
+        "s001368",
+        "s001371",
+        "s001385",
+        "s001945"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Draft for a valuable nearby tech specialty, solid resources, around four slice influence if practical, and a forward dock system with strong production. Also consider neighbors: Crimson or Deepwrought can improve commander/economic upside, and nearby SCAR can help relic plans; these require access and may justify trading speaker order.",
+      "conditions": "High-production two-dock system is an ideal; weak slices can make Mahact a worse first pick. Requires those factions and accessible board position; sometimes trade speaker order for a useful neighbor or slice.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Slice recipe is a guide preference. Contingent synergy.",
+      "components": [
+        "faction:mahact",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2132.18,
+          "end": 2136.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2141.98,
+          "end": 2146.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5327.84,
+          "end": 5328.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5331.32,
+          "end": 5333.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5356.04,
+          "end": 5357.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5364.72,
+          "end": 5366.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5372.24,
+          "end": 5377.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5394.02,
+          "end": 5397.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5484.78,
+          "end": 5486.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5489.97,
+          "end": 5491.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5500.08,
+          "end": 5502.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5514.42,
+          "end": 5517.18
+        }
+      ],
+      "segment_ids": [
+        "s000533",
+        "s000536",
+        "s001413",
+        "s001416",
+        "s001422",
+        "s001425",
+        "s001429",
+        "s001435",
+        "s001458",
+        "s001461",
+        "s001467",
+        "s001472"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Trade is the preferred round-one card when available because it can fund technology, a spend objective, or an opening build; Mahact can still shift tokens with Predictive Intelligence.",
+      "conditions": "Timing can make a Warfare secondary awkward; decide whether proceeds go to technology, scoring, or plastic.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Speaker preference.",
+      "components": [
+        "strategy-card:pok5trade",
+        "technology:pi"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6527.94,
+          "end": 6530.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6533.72,
+          "end": 6535.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6545.28,
+          "end": 6547.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6574.34,
+          "end": 6580.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6600.8,
+          "end": 6606.28
+        }
+      ],
+      "segment_ids": [
+        "s001759",
+        "s001762",
+        "s001767",
+        "s001776",
+        "s001782"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Construction is a credible alternative when a planned forward dock and extra plastic address production limits; prioritize the build over taking two structures just because the primary permits it.",
+      "conditions": "Positive alternative after Trade is taken and when slice/build timing supports it.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "One speaker’s hot take, not consensus.",
+      "components": [
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6243.76,
+          "end": 6249.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6263.84,
+          "end": 6266.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6302.72,
+          "end": 6306.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6367.66,
+          "end": 6375.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6388.56,
+          "end": 6391.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6406.42,
+          "end": 6408.62
+        }
+      ],
+      "segment_ids": [
+        "s001687",
+        "s001692",
+        "s001701",
+        "s001713",
+        "s001718",
+        "s001724"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Warfare is a competing opening: its primary can claim a third adjacent planet without paying for the secondary, but may spread limited starting ships too thin.",
+      "conditions": "Choose when planet access or an early Mecatol approach is worth exposure and you have a build plan.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "The hosts disagree in emphasis.",
+      "components": [
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6614.72,
+          "end": 6628.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6648.58,
+          "end": 6654.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6675.88,
+          "end": 6677.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6713.0,
+          "end": 6719.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6740.86,
+          "end": 6747.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6789.72,
+          "end": 6791.78
+        }
+      ],
+      "segment_ids": [
+        "s001784",
+        "s001793",
+        "s001804",
+        "s001820",
+        "s001826",
+        "s001839"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Do not prioritize Custodians by default; the guide often prefers arriving after another player for Imperial’s point, once Mahact has movement and a useful Edict fight.",
+      "conditions": "Go early if a rival can lock Mecatol or the opportunity stays open; round-one Cruiser II is an expensive exception.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Conditional preference.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial",
+        "ability:edict"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2326.34,
+          "end": 2334.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2340.32,
+          "end": 2343.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6118.54,
+          "end": 6120.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6146.94,
+          "end": 6155.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6213.72,
+          "end": 6216.5
+        }
+      ],
+      "segment_ids": [
+        "s000584",
+        "s000586",
+        "s001661",
+        "s001668",
+        "s001681"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Leadership can bank reserve tokens, but distinguish taking its primary from following its secondary; Mahact may already have useful follows through starting tokens and the agent.",
+      "conditions": "Middle pick; lower value with an influence-rich slice or when objectives are difficult.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Table and objectives change value.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "leader:mahactagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5894.16,
+          "end": 5897.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5929.08,
+          "end": 5935.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6000.0,
+          "end": 6004.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6011.44,
+          "end": 6018.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 6043.48,
+          "end": 6045.42
+        }
+      ],
+      "segment_ids": [
+        "s001587",
+        "s001597",
+        "s001621",
+        "s001623",
+        "s001632"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Scepter of Dominion is usually a modest deal sweetener, but can place tokens in a useful system for a control objective, Mecatol pressure, or an adjacent empty-space objective.",
+      "conditions": "Difficult to sell dearly and may help an opponent; choose target and timing.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Occasional tactical use, not a core plan.",
+      "components": [
+        "promissory:scepter"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3083.92,
+          "end": 3096.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3131.26,
+          "end": 3135.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3155.82,
+          "end": 3158.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3191.0,
+          "end": 3195.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3206.14,
+          "end": 3207.82
+        }
+      ],
+      "segment_ids": [
+        "s000766",
+        "s000773",
+        "s000782",
+        "s000796",
+        "s000806"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Do not plan around Genetic Recombination as core tech; the guide calls it weak, with a narrow use to disrupt Keleres Executive Order voting.",
+      "conditions": "Even then the player may accept the fleet-token loss, so the threat may not justify researching it.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Podcast opinion.",
+      "components": [
+        "technology:gr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3227.96,
+          "end": 3235.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3251.2,
+          "end": 3253.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3260.78,
+          "end": 3268.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3284.2,
+          "end": 3289.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 3290.9,
+          "end": 3293.18
+        }
+      ],
+      "segment_ids": [
+        "s000816",
+        "s000820",
+        "s000823",
+        "s000828",
+        "s000831"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Mahact is strong but stoppable: opponents should apply pressure in the midgame, before commander, fleet, and hero combine for the close. On Styx, Benediction can dislodge a blocking fleet when ground combat is favorable; Yin and Arborec are cited as especially difficult if established first.",
+      "conditions": "Avoid futile forever-war; pressure economy, production, timing, and plastic. Assumes the Thunder’s Edge fracture and control objective are in play; outcome depends on units and timing.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Meta advice, not a guaranteed counter. Faction-specific counter advice.",
+      "components": [
+        "faction:mahact",
+        "unit:mahact_mech",
+        "leader:mahacthero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5694.78,
+          "end": 5699.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5816.64,
+          "end": 5822.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5836.82,
+          "end": 5840.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5868.56,
+          "end": 5872.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5874.8,
+          "end": 5878.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7868.8,
+          "end": 7872.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7879.56,
+          "end": 7886.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7891.56,
+          "end": 7894.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7899.62,
+          "end": 7901.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7901.74,
+          "end": 7902.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7921.38,
+          "end": 7925.54
+        }
+      ],
+      "segment_ids": [
+        "s001531",
+        "s001569",
+        "s001572",
+        "s001579",
+        "s001581",
+        "s002172",
+        "s002174",
+        "s002178",
+        "s002182",
+        "s002183",
+        "s002190"
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "The guide says Mahact’s relative standing may have fallen with Thunder’s Edge’s faster pace, while still rating them highly and remaining unsure about the breakthrough.",
+      "conditions": "Meta impressions from one episode, not settled ranking or rules ruling.",
+      "compatibility": "SCPT 467 (2026-07-29); guide discusses Prophecy of Kings and Thunder’s Edge eras; current rules compatibility not reviewed.",
+      "uncertainty": "Speakers expect opinions to change with more games.",
+      "components": [
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5651.3,
+          "end": 5657.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5663.18,
+          "end": 5669.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7978.58,
+          "end": 7982.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 8003.86,
+          "end": 8006.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 8014.2,
+          "end": 8017.9
+        }
+      ],
+      "segment_ids": [
+        "s001521",
+        "s001523",
+        "s002207",
+        "s002214",
+        "s002217"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:bs",
+      "to": "faction:mahact",
+      "relation": "synergizes-with",
+      "conditions": "Bio-Stims enables recurring use of valuable tech specialties or technologies.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1649.8,
+          "end": 1656.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 1656.2,
+          "end": 1664.08
+        }
+      ]
+    },
+    {
+      "from": "ability:edict",
+      "to": "leader:mahactcommander",
+      "relation": "enables",
+      "conditions": "Edict can add opponents’ tokens to the fleet pool, helping unlock the commander.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2053.76,
+          "end": 2055.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2055.3,
+          "end": 2065.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2093.8,
+          "end": 2101.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4472.62,
+          "end": 4477.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4487.46,
+          "end": 4492.48
+        }
+      ]
+    },
+    {
+      "from": "ability:imperia",
+      "to": "leader:mahactcommander",
+      "relation": "requires",
+      "conditions": "Imperia uses an unlocked commander belonging to a player whose token is in the fleet pool.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2090.3,
+          "end": 2092.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2093.8,
+          "end": 2101.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2132.18,
+          "end": 2136.1
+        }
+      ]
+    },
+    {
+      "from": "technology:fl",
+      "to": "leader:mahactcommander",
+      "relation": "synergizes-with",
+      "conditions": "Fleet Logistics can precede the commander’s turn-ending activation.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4677.28,
+          "end": 4682.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4739.52,
+          "end": 4744.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4744.46,
+          "end": 4748.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4748.26,
+          "end": 4753.4
+        }
+      ]
+    },
+    {
+      "from": "unit:mahact_mech",
+      "to": "ability:edict",
+      "relation": "synergizes-with",
+      "conditions": "Starlancer spends a represented opponent token; Edict can reacquire it in a later win.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2055.3,
+          "end": 2065.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2660.16,
+          "end": 2664.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 2732.4,
+          "end": 2736.28
+        }
+      ]
+    },
+    {
+      "from": "leader:mahacthero",
+      "to": "leader:mahactcommander",
+      "relation": "synergizes-with",
+      "conditions": "Benediction can set a scoring or blocking fight while the commander supports repeated activations.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 4977.22,
+          "end": 4983.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5038.6,
+          "end": 5044.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5144.0,
+          "end": 5153.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 5166.08,
+          "end": 5173.16
+        }
+      ]
+    },
+    {
+      "from": "technology:x89",
+      "to": "faction:mahact",
+      "relation": "synergizes-with",
+      "conditions": "The guide values X-89 as access to an answer for ground combat that fleet repositioning cannot solve.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7042.04,
+          "end": 7048.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7048.86,
+          "end": 7053.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7062.7,
+          "end": 7068.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-467-aee4429069d3",
+          "start": 7086.34,
+          "end": 7091.78
+        }
+      ]
+    }
+  ]
+}

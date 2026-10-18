@@ -1,0 +1,2138 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "mentak",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Mentak’s Pillage income is a traditional economic edge, but it no longer ensures a lead in the richer POK economy; a round-one Promise of Protection payment can buy needed tempo.",
+      "conditions": "The hosts say other factions now make ample money too; they value early payment over later Pillage income when Mentak needs round-one tempo.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Comparative faction strength is the speakers’ judgment, not a measured result. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "faction:mentak",
+        "technology:mc"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 1521.58,
+          "end": 1568.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7721.36,
+          "end": 7765.32
+        }
+      ],
+      "segment_ids": [
+        "s000452",
+        "s000453",
+        "s000454",
+        "s000455",
+        "s000456",
+        "s000457",
+        "s000458",
+        "s000459",
+        "s000460",
+        "s000461",
+        "s000462",
+        "s000463",
+        "s000464",
+        "s000465",
+        "s002506",
+        "s002507",
+        "s002508",
+        "s002509",
+        "s002510",
+        "s002511",
+        "s002512",
+        "s002513",
+        "s002514",
+        "s002515",
+        "s002516",
+        "s002517",
+        "s002518",
+        "s002519"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Plan around the single-carrier opening because technology, expansion, and a home build compete for early resources and actions.",
+      "conditions": "Especially important in round one, when technology, a carrier purchase, strategy timing, and a home build compete for early resources and actions; the episode describes the base Mentak start.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Opening evaluation is source-era strategy advice. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "faction:mentak",
+        "unit:carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2018.12,
+          "end": 2045.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2096.18,
+          "end": 2128.76
+        }
+      ],
+      "segment_ids": [
+        "s000630",
+        "s000631",
+        "s000632",
+        "s000633",
+        "s000634",
+        "s000635",
+        "s000636",
+        "s000637",
+        "s000638",
+        "s000647",
+        "s000648",
+        "s000649",
+        "s000650",
+        "s000651",
+        "s000652",
+        "s000653",
+        "s000654",
+        "s000655",
+        "s000656",
+        "s000657",
+        "s000658"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Treat Sarween Tools and Plasma Scoring as prerequisites and options, not a complete fixed technology plan; take PDS II when unit-upgrade objectives justify it.",
+      "conditions": "The start has yellow and red tech but no blue tech; PDS II is presented as situational.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The transcript’s proper names are ASR and current compatibility is unchecked. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:st",
+        "technology:ps",
+        "technology:pds2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2164.24,
+          "end": 2225.7
+        }
+      ],
+      "segment_ids": [
+        "s000667",
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use Ambush for selective small fights; fighter screens can blunt its pre-Anti-Fighter-Barrage hits in large battles.",
+      "conditions": "Most attractive in scrappy cruiser-versus-lone-ship fights without a large fighter screen.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts disagree with more dismissive evaluations of Ambush; this is conditional opinion. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:ambush",
+        "unit:cruiser",
+        "unit:destroyer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3797.72,
+          "end": 3815.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3816.42,
+          "end": 3849.34
+        }
+      ],
+      "segment_ids": [
+        "s001201",
+        "s001202",
+        "s001203",
+        "s001204",
+        "s001205",
+        "s001206",
+        "s001207",
+        "s001208",
+        "s001210",
+        "s001211",
+        "s001212",
+        "s001213",
+        "s001214",
+        "s001215",
+        "s001216",
+        "s001217",
+        "s001218",
+        "s001219",
+        "s001220",
+        "s001221",
+        "s001222",
+        "s001223",
+        "s001224"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Pursue Cruiser II early only when its timing makes it relevant; do not build a full-game plan around it.",
+      "conditions": "Its useful window is described as closing quickly; after it passes, the hosts say it is only an opportunistic technology.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Timing and value are guide judgments, not current-rules verification. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:cr2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3960.14,
+          "end": 3982.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3989.12,
+          "end": 4016.84
+        }
+      ],
+      "segment_ids": [
+        "s001271",
+        "s001272",
+        "s001273",
+        "s001274",
+        "s001275",
+        "s001276",
+        "s001277",
+        "s001278",
+        "s001279",
+        "s001280",
+        "s001283",
+        "s001284",
+        "s001285",
+        "s001286",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001290",
+        "s001291",
+        "s001292",
+        "s001293",
+        "s001294",
+        "s001295"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Draft around round-one timing among Trade, Warfare, Technology, and Diplomacy instead of maximizing income alone.",
+      "conditions": "Trade is attractive, but Warfare/Technology order and Diplomacy to refresh a skip can matter more; if Trade, Warfare, and Technology are unavailable, the hosts elevate Diplomacy.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Priority order varies with pick order, table choices, and available skips. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok6warfare",
+        "strategy-card:pok7technology",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4310.0,
+          "end": 4323.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4425.08,
+          "end": 4497.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4545.02,
+          "end": 4551.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4729.22,
+          "end": 4774.04
+        }
+      ],
+      "segment_ids": [
+        "s001375",
+        "s001376",
+        "s001377",
+        "s001378",
+        "s001379",
+        "s001380",
+        "s001421",
+        "s001422",
+        "s001423",
+        "s001424",
+        "s001425",
+        "s001426",
+        "s001427",
+        "s001428",
+        "s001429",
+        "s001430",
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001451",
+        "s001452",
+        "s001453",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001516",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Take Warfare if leaving it unclaimed would strand the carrier opening; move, build at home, then lift the home token, with an optional cruiser reposition.",
+      "conditions": "A late pick that still sees Warfare is the guide’s warning sign; Mecatol is floated as a provocative cruiser destination, not a default.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The speaker dislikes this line but recommends it when no better timing option exists. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "unit:carrier",
+        "unit:cruiser"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4829.47,
+          "end": 4912.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4929.83,
+          "end": 4956.57
+        }
+      ],
+      "segment_ids": [
+        "s001544",
+        "s001545",
+        "s001546",
+        "s001547",
+        "s001548",
+        "s001549",
+        "s001550",
+        "s001551",
+        "s001552",
+        "s001553",
+        "s001554",
+        "s001555",
+        "s001556",
+        "s001557",
+        "s001558",
+        "s001559",
+        "s001560",
+        "s001561",
+        "s001562",
+        "s001563",
+        "s001564",
+        "s001565",
+        "s001566",
+        "s001567",
+        "s001568",
+        "s001569",
+        "s001570",
+        "s001571",
+        "s001572",
+        "s001573",
+        "s001577",
+        "s001578",
+        "s001579",
+        "s001580",
+        "s001581",
+        "s001582",
+        "s001583",
+        "s001584"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Use Diplomacy to refresh a green skip for Cruiser II while its early window remains; spending the home system twice is only a consolation.",
+      "conditions": "Requires a green skip and useful Technology timing; it can reduce dependence on Warfare/Technology order.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The home-system alternative is not presented as a reliable centerpiece. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "technology:cr2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4438.36,
+          "end": 4497.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4517.72,
+          "end": 4542.34
+        }
+      ],
+      "segment_ids": [
+        "s001424",
+        "s001425",
+        "s001426",
+        "s001427",
+        "s001428",
+        "s001429",
+        "s001430",
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001442",
+        "s001443",
+        "s001444",
+        "s001445",
+        "s001446",
+        "s001447",
+        "s001448",
+        "s001449"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Do not rely on Politics to secure Custodians; Cruiser II or Gravity Drive still needs unusual technology access and timing.",
+      "conditions": "Jol-Nar Research Agreement could improve the line, but the hosts treat it as a possible deal rather than an assumption.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts call the favorable alignment unusual. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "strategy-card:pok3politics",
+        "promissory:ra"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4554.2,
+          "end": 4589.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4617.24,
+          "end": 4645.88
+        }
+      ],
+      "segment_ids": [
+        "s001455",
+        "s001456",
+        "s001457",
+        "s001458",
+        "s001459",
+        "s001460",
+        "s001461",
+        "s001462",
+        "s001463",
+        "s001464",
+        "s001465",
+        "s001466",
+        "s001467",
+        "s001468",
+        "s001477",
+        "s001478",
+        "s001479",
+        "s001480",
+        "s001481",
+        "s001482",
+        "s001483",
+        "s001484"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Keep Construction secondary until a forward dock or PDS has a concrete use, or Space Dock II can turn excess trade goods into board presence.",
+      "conditions": "Space Dock II can spend a large reserve quickly and put more units on the board; the hosts do not treat round-one Construction as urgent.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "This is a contextual card evaluation. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:sd2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4646.14,
+          "end": 4669.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 4682.94,
+          "end": 4701.84
+        }
+      ],
+      "segment_ids": [
+        "s001485",
+        "s001486",
+        "s001487",
+        "s001488",
+        "s001489",
+        "s001490",
+        "s001491",
+        "s001492",
+        "s001493",
+        "s001494",
+        "s001495",
+        "s001500",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505",
+        "s001506"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Let available skips shape a flexible technology plan instead of forcing a standard Mentak tech script.",
+      "conditions": "Cruiser II is the clearest early exception; the hosts are unsure that even Cruiser II or Mirror Computing is universally core.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The speakers are uncertain that either named tech is universally core. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:cr2",
+        "technology:mc"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5184.45,
+          "end": 5288.45
+        }
+      ],
+      "segment_ids": [
+        "s001676",
+        "s001677",
+        "s001678",
+        "s001679",
+        "s001680",
+        "s001681",
+        "s001682",
+        "s001683",
+        "s001684",
+        "s001685",
+        "s001686",
+        "s001687",
+        "s001688",
+        "s001689",
+        "s001690",
+        "s001691",
+        "s001692",
+        "s001693",
+        "s001694",
+        "s001695",
+        "s001696",
+        "s001697",
+        "s001698",
+        "s001699",
+        "s001700",
+        "s001701",
+        "s001702",
+        "s001703",
+        "s001704",
+        "s001705",
+        "s001706",
+        "s001707",
+        "s001708",
+        "s001709",
+        "s001710"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "With green and yellow skips, consider Cruiser II, Salvage Operations, then Mirror Computing, while accounting for weak direct combat punch.",
+      "conditions": "This route assumes both skips and may need production support or a different technology to improve combat.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The route is an example rather than a mandatory build. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:cr2",
+        "technology:so",
+        "technology:mc",
+        "technology:sd2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5295.83,
+          "end": 5344.75
+        }
+      ],
+      "segment_ids": [
+        "s001713",
+        "s001714",
+        "s001715",
+        "s001716",
+        "s001717",
+        "s001718",
+        "s001719",
+        "s001720",
+        "s001721",
+        "s001722",
+        "s001723",
+        "s001724",
+        "s001725",
+        "s001726",
+        "s001727",
+        "s001728",
+        "s001729",
+        "s001730"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "A blue-and-yellow route can use Gravity Drive before Salvage Operations and Mirror Computing, then leverage Carrier II or Dreadnought II.",
+      "conditions": "Prefer this when transport, soak, or heavier combat matter more than early Cruiser II reach.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The guide presents a competing path, not a settled universal recommendation. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:gd",
+        "technology:so",
+        "technology:mc",
+        "technology:cv2",
+        "technology:dn2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5488.16,
+          "end": 5596.12
+        }
+      ],
+      "segment_ids": [
+        "s001775",
+        "s001776",
+        "s001777",
+        "s001778",
+        "s001779",
+        "s001780",
+        "s001781",
+        "s001782",
+        "s001783",
+        "s001784",
+        "s001785",
+        "s001786",
+        "s001787",
+        "s001788",
+        "s001789",
+        "s001790",
+        "s001791",
+        "s001792",
+        "s001793",
+        "s001794",
+        "s001795",
+        "s001796",
+        "s001797",
+        "s001798",
+        "s001799",
+        "s001800",
+        "s001801",
+        "s001802",
+        "s001803",
+        "s001804",
+        "s001805",
+        "s001806",
+        "s001807"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Without skips, consider useful yellow technologies and AI Development Algorithm toward War Suns when a rich game leaves time to research and buy one.",
+      "conditions": "The hosts describe War Suns as a late pivot for surplus in a rich game, not a default; the research order can vary.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts call the route non-ideal and timing-sensitive. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:aida",
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5596.12,
+          "end": 5636.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5687.14,
+          "end": 5713.86
+        }
+      ],
+      "segment_ids": [
+        "s001808",
+        "s001809",
+        "s001810",
+        "s001811",
+        "s001812",
+        "s001813",
+        "s001814",
+        "s001815",
+        "s001816",
+        "s001817",
+        "s001818",
+        "s001819",
+        "s001829",
+        "s001830",
+        "s001831",
+        "s001832",
+        "s001833",
+        "s001834",
+        "s001835"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Salvage Operations grants a trade good after a space combat whether Mentak win or lose, and on a win may produce a ship type destroyed in that combat.",
+      "conditions": "Treat the ship as post-combat value; the hosts distinguish a draw and warn against counting it for timing-sensitive objectives as if it fought throughout.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Exact timing interpretation is podcast commentary, not a rules ruling. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:so"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2656.68,
+          "end": 2670.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2695.98,
+          "end": 2752.0
+        }
+      ],
+      "segment_ids": [
+        "s000811",
+        "s000812",
+        "s000813",
+        "s000814",
+        "s000815",
+        "s000822",
+        "s000823",
+        "s000824",
+        "s000825",
+        "s000826",
+        "s000827",
+        "s000828",
+        "s000829",
+        "s000830",
+        "s000831",
+        "s000832",
+        "s000833",
+        "s000834",
+        "s000835",
+        "s000836",
+        "s000837",
+        "s000838",
+        "s000839",
+        "s000840"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Mirror Computing doubles a trade good’s resource or influence spending value, but not its value toward an objective requiring trade goods.",
+      "conditions": "Its value is highest when Mentak can spend the reserve; saving for a stage-two objective can leave money idle if that objective does not appear.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The guide warns about a trap but also calls the technology powerful. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:mc"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2756.56,
+          "end": 2772.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2797.92,
+          "end": 2853.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2867.38,
+          "end": 2880.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5345.41,
+          "end": 5359.99
+        }
+      ],
+      "segment_ids": [
+        "s000844",
+        "s000845",
+        "s000846",
+        "s000847",
+        "s000848",
+        "s000849",
+        "s000850",
+        "s000860",
+        "s000861",
+        "s000862",
+        "s000863",
+        "s000864",
+        "s000865",
+        "s000866",
+        "s000867",
+        "s000868",
+        "s000869",
+        "s000870",
+        "s000871",
+        "s000872",
+        "s000873",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s001731",
+        "s001732",
+        "s001733",
+        "s001734",
+        "s001735"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "With Mirror Computing, Psychoarchaeology can make exhausting a planet for a trade good attractive and allow earlier spending followed by replenishment.",
+      "conditions": "Requires both technologies and an expendable planet; consider the printed planet value and actual upcoming spending needs.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The speakers say this is usually attractive, not always correct. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:pa",
+        "technology:mc"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5345.41,
+          "end": 5359.99
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5384.09,
+          "end": 5428.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5437.0,
+          "end": 5448.4
+        }
+      ],
+      "segment_ids": [
+        "s001731",
+        "s001732",
+        "s001733",
+        "s001734",
+        "s001735",
+        "s001746",
+        "s001747",
+        "s001748",
+        "s001749",
+        "s001750",
+        "s001751",
+        "s001752",
+        "s001753",
+        "s001754",
+        "s001755",
+        "s001756",
+        "s001760",
+        "s001761",
+        "s001762",
+        "s001763",
+        "s001764"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Use the threat of Pillage to bargain, but generally do not Pillage a transaction that includes Mentak because it sacrifices soft power.",
+      "conditions": "The advice concerns preserving future deal-making leverage, not maximizing every possible trigger.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "This is a table-norm preference; the hosts invite disagreement. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:pillage",
+        "faction:mentak"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6269.4,
+          "end": 6282.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6339.26,
+          "end": 6381.24
+        }
+      ],
+      "segment_ids": [
+        "s002017",
+        "s002018",
+        "s002019",
+        "s002020",
+        "s002021",
+        "s002022",
+        "s002052",
+        "s002053",
+        "s002054",
+        "s002055",
+        "s002056",
+        "s002057",
+        "s002058",
+        "s002059",
+        "s002060",
+        "s002061",
+        "s002062",
+        "s002063",
+        "s002064",
+        "s002065",
+        "s002066",
+        "s002067"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Treat Pillage on other players’ deals as a selective vote: waive it when the deal helps Mentak and use the threat to influence who trades with whom.",
+      "conditions": "Do not suppress all table trade; Mentak still depends on transactions.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Value depends on the table’s factions and deal consequences. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6131.52,
+          "end": 6174.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6402.78,
+          "end": 6442.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6065.3,
+          "end": 6097.06
+        }
+      ],
+      "segment_ids": [
+        "s001950",
+        "s001951",
+        "s001952",
+        "s001953",
+        "s001954",
+        "s001955",
+        "s001956",
+        "s001957",
+        "s001958",
+        "s001959",
+        "s001960",
+        "s001961",
+        "s001975",
+        "s001976",
+        "s001977",
+        "s001978",
+        "s001979",
+        "s001980",
+        "s001981",
+        "s001982",
+        "s001983",
+        "s001984",
+        "s001985",
+        "s001986",
+        "s001987",
+        "s001988",
+        "s001989",
+        "s002074",
+        "s002075",
+        "s002076",
+        "s002077",
+        "s002078",
+        "s002079",
+        "s002080",
+        "s002081",
+        "s002082",
+        "s002083",
+        "s002084",
+        "s002085",
+        "s002086",
+        "s002087",
+        "s002088",
+        "s002089"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Set a credible table-specific Pillage policy, then waive triggers when goodwill or a useful deal is worth more than another trade good.",
+      "conditions": "Round-one commodity washing is hard to tally; judge trade volume, table wealth, and Mentak’s current resources.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The proposed tax styles are alternatives, not a single agreed price. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5984.86,
+          "end": 6058.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6206.0,
+          "end": 6243.17
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6467.82,
+          "end": 6529.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6557.0,
+          "end": 6599.98
+        }
+      ],
+      "segment_ids": [
+        "s001920",
+        "s001921",
+        "s001922",
+        "s001923",
+        "s001924",
+        "s001925",
+        "s001926",
+        "s001927",
+        "s001928",
+        "s001929",
+        "s001930",
+        "s001931",
+        "s001932",
+        "s001933",
+        "s001934",
+        "s001935",
+        "s001936",
+        "s001937",
+        "s001938",
+        "s001939",
+        "s001940",
+        "s001941",
+        "s001942",
+        "s001943",
+        "s001944",
+        "s001945",
+        "s001946",
+        "s001998",
+        "s001999",
+        "s002000",
+        "s002001",
+        "s002002",
+        "s002003",
+        "s002004",
+        "s002005",
+        "s002099",
+        "s002100",
+        "s002101",
+        "s002102",
+        "s002103",
+        "s002104",
+        "s002105",
+        "s002106",
+        "s002107",
+        "s002108",
+        "s002109",
+        "s002110",
+        "s002111",
+        "s002112",
+        "s002125",
+        "s002126",
+        "s002127",
+        "s002128",
+        "s002129",
+        "s002130",
+        "s002131",
+        "s002132",
+        "s002133",
+        "s002134",
+        "s002135",
+        "s002136",
+        "s002137",
+        "s002138",
+        "s002139",
+        "s002140",
+        "s002141"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Place cruisers near wormholes or Mecatol Rex where adjacency persists and removing the ship costs opponents actions.",
+      "conditions": "Avoid sending a lone cruiser so far away that it is easy to eliminate; position supports Pillage leverage but does not make the cruiser untouchable.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The speakers describe positional examples, not a guarantee. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "unit:cruiser",
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6626.12,
+          "end": 6720.86
+        }
+      ],
+      "segment_ids": [
+        "s002143",
+        "s002144",
+        "s002145",
+        "s002146",
+        "s002147",
+        "s002148",
+        "s002149",
+        "s002150",
+        "s002151",
+        "s002152",
+        "s002153",
+        "s002154",
+        "s002155",
+        "s002156",
+        "s002157",
+        "s002158",
+        "s002159",
+        "s002160",
+        "s002161",
+        "s002162",
+        "s002163",
+        "s002164",
+        "s002165",
+        "s002166",
+        "s002167",
+        "s002168",
+        "s002169",
+        "s002170",
+        "s002171",
+        "s002172",
+        "s002173"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Prefer an explicit bounded no-Pillage promise for a specific deal over cumbersome pass tokens or invisible long-term protection.",
+      "conditions": "A player may receive a no-Pillage window for an action phase; Mentak may still Pillage the other side of the transaction.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts say this kind of promise should be a last resort. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:pillage",
+        "promissory:pop"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6744.0,
+          "end": 6853.62
+        }
+      ],
+      "segment_ids": [
+        "s002187",
+        "s002188",
+        "s002189",
+        "s002190",
+        "s002191",
+        "s002192",
+        "s002193",
+        "s002194",
+        "s002195",
+        "s002196",
+        "s002197",
+        "s002198",
+        "s002199",
+        "s002200",
+        "s002201",
+        "s002202",
+        "s002203",
+        "s002204",
+        "s002205",
+        "s002206",
+        "s002207",
+        "s002208",
+        "s002209",
+        "s002210",
+        "s002211",
+        "s002212",
+        "s002213",
+        "s002214",
+        "s002215",
+        "s002216",
+        "s002217",
+        "s002218",
+        "s002219",
+        "s002220",
+        "s002221",
+        "s002222",
+        "s002223",
+        "s002224",
+        "s002225"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "In asynchronous games, agree on Pillage expectations early and keep transactions visible so Mentak can respond before deals accumulate.",
+      "conditions": "A bot reminder helps but does not replace attention; the etiquette request applies to all players.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "This is etiquette commentary about async play, not a rules interpretation. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 6873.86,
+          "end": 6943.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7018.84,
+          "end": 7026.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7051.86,
+          "end": 7128.08
+        }
+      ],
+      "segment_ids": [
+        "s002232",
+        "s002233",
+        "s002234",
+        "s002235",
+        "s002236",
+        "s002237",
+        "s002238",
+        "s002239",
+        "s002240",
+        "s002241",
+        "s002242",
+        "s002243",
+        "s002244",
+        "s002245",
+        "s002246",
+        "s002247",
+        "s002248",
+        "s002249",
+        "s002250",
+        "s002251",
+        "s002252",
+        "s002253",
+        "s002277",
+        "s002278",
+        "s002279",
+        "s002280",
+        "s002281",
+        "s002293",
+        "s002294",
+        "s002295",
+        "s002296",
+        "s002297",
+        "s002298",
+        "s002299",
+        "s002300",
+        "s002301",
+        "s002302",
+        "s002303",
+        "s002304",
+        "s002305",
+        "s002306",
+        "s002307",
+        "s002308",
+        "s002309",
+        "s002310",
+        "s002311",
+        "s002312",
+        "s002313",
+        "s002314",
+        "s002315",
+        "s002316",
+        "s002317"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Use Suffi An as a negotiated sweetener: after Pillage is used against another player, both draw an action card; do not give the agent away for free.",
+      "conditions": "The hosts also note agenda-phase transactions as a useful negotiation window because the agent refreshes in the status phase.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The action-card value is situational and should not be the whole deal. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "leader:mentakagent",
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2919.38,
+          "end": 2942.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3005.78,
+          "end": 3067.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7139.06,
+          "end": 7199.24
+        }
+      ],
+      "segment_ids": [
+        "s000897",
+        "s000898",
+        "s000899",
+        "s000900",
+        "s000919",
+        "s000920",
+        "s000921",
+        "s000922",
+        "s000923",
+        "s000924",
+        "s000925",
+        "s000926",
+        "s000927",
+        "s000928",
+        "s000929",
+        "s000930",
+        "s000931",
+        "s002323",
+        "s002324",
+        "s002325",
+        "s002326",
+        "s002327",
+        "s002328",
+        "s002329",
+        "s002330",
+        "s002331",
+        "s002332",
+        "s002333",
+        "s002334",
+        "s002335",
+        "s002336",
+        "s002337",
+        "s002338",
+        "s002339",
+        "s002340",
+        "s002341",
+        "s002342",
+        "s002343",
+        "s002344"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Offer Promise of Protection when early payment improves Mentak’s weak opening more than the forgone future Pillage income.",
+      "conditions": "It prevents Pillage against its holder and returns when that player activates a system with Mentak units; the hosts explicitly disagree with advice to withhold it from rich factions.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts’ position contests outside advice and depends on timing and leverage. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "promissory:pop",
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2546.82,
+          "end": 2604.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7329.06,
+          "end": 7498.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7537.12,
+          "end": 7598.9
+        }
+      ],
+      "segment_ids": [
+        "s000778",
+        "s000779",
+        "s000780",
+        "s000781",
+        "s000782",
+        "s000783",
+        "s000784",
+        "s000785",
+        "s000786",
+        "s000787",
+        "s000788",
+        "s000789",
+        "s000790",
+        "s000791",
+        "s000792",
+        "s000793",
+        "s002385",
+        "s002386",
+        "s002387",
+        "s002388",
+        "s002389",
+        "s002390",
+        "s002391",
+        "s002392",
+        "s002393",
+        "s002394",
+        "s002395",
+        "s002396",
+        "s002397",
+        "s002398",
+        "s002399",
+        "s002400",
+        "s002401",
+        "s002402",
+        "s002403",
+        "s002404",
+        "s002405",
+        "s002406",
+        "s002407",
+        "s002408",
+        "s002409",
+        "s002410",
+        "s002411",
+        "s002412",
+        "s002413",
+        "s002414",
+        "s002415",
+        "s002416",
+        "s002417",
+        "s002418",
+        "s002419",
+        "s002420",
+        "s002421",
+        "s002422",
+        "s002423",
+        "s002444",
+        "s002445",
+        "s002446",
+        "s002447",
+        "s002448",
+        "s002449",
+        "s002450",
+        "s002451",
+        "s002452",
+        "s002453",
+        "s002454",
+        "s002455",
+        "s002456",
+        "s002457",
+        "s002458",
+        "s002459",
+        "s002460"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Treat S’ula Mentarion’s post-victory promissory-note theft as opportunistic; it unlocks at four cruisers and matters only if the opponent holds a useful note.",
+      "conditions": "Ceasefire or Political Secret could be valuable in the right state, but the hosts say relevant notes are often absent or low impact.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The speakers say the ability is rarely relevant in their metas. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "leader:mentakcommander",
+        "promissory:<color>_cf",
+        "promissory:<color>_ps"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3085.58,
+          "end": 3114.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3137.8,
+          "end": 3186.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3253.44,
+          "end": 3293.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7200.0,
+          "end": 7251.12
+        }
+      ],
+      "segment_ids": [
+        "s000936",
+        "s000937",
+        "s000938",
+        "s000939",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000950",
+        "s000951",
+        "s000952",
+        "s000953",
+        "s000954",
+        "s000955",
+        "s000956",
+        "s000957",
+        "s000958",
+        "s000959",
+        "s000960",
+        "s000961",
+        "s000962",
+        "s000963",
+        "s000964",
+        "s000965",
+        "s000966",
+        "s000967",
+        "s000968",
+        "s000969",
+        "s000970",
+        "s000993",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000",
+        "s001001",
+        "s001002",
+        "s001003",
+        "s001004",
+        "s001005",
+        "s001006",
+        "s001007",
+        "s001008",
+        "s002345",
+        "s002346",
+        "s002347",
+        "s002348",
+        "s002349",
+        "s002350",
+        "s002351",
+        "s002352",
+        "s002353",
+        "s002354"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Reserve Ipswitch for a combat that changes the game: it can replace destroyed enemy ships with Mentak ships of matching types in that active system.",
+      "conditions": "An offensive use can win a fight or seize a position but removes the one-combat defensive threat and cannot stop coordinated follow-up attacks.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The episode describes very high impact but not certainty in every combat. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "leader:mentakhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3472.94,
+          "end": 3535.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3693.02,
+          "end": 3754.66
+        }
+      ],
+      "segment_ids": [
+        "s001086",
+        "s001087",
+        "s001088",
+        "s001089",
+        "s001090",
+        "s001091",
+        "s001092",
+        "s001093",
+        "s001094",
+        "s001095",
+        "s001096",
+        "s001097",
+        "s001098",
+        "s001099",
+        "s001100",
+        "s001101",
+        "s001102",
+        "s001103",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111",
+        "s001112",
+        "s001113",
+        "s001114",
+        "s001115",
+        "s001116",
+        "s001170",
+        "s001171",
+        "s001172",
+        "s001173",
+        "s001174",
+        "s001175",
+        "s001176",
+        "s001177",
+        "s001178",
+        "s001179",
+        "s001180",
+        "s001181",
+        "s001182",
+        "s001183"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Use Moll Terminus against sustain-dependent ground defenses, while remembering it does not solve transport or bombardment.",
+      "conditions": "It matters only when Mentak invade the planet; bring enough infantry and a way to land them.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The matchups cited by the hosts are examples. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "unit:mentak_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3535.8,
+          "end": 3617.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3850.08,
+          "end": 3895.2
+        }
+      ],
+      "segment_ids": [
+        "s001117",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001121",
+        "s001122",
+        "s001123",
+        "s001124",
+        "s001125",
+        "s001126",
+        "s001127",
+        "s001128",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135",
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001225",
+        "s001226",
+        "s001227",
+        "s001228",
+        "s001229",
+        "s001230",
+        "s001231",
+        "s001232",
+        "s001233",
+        "s001234",
+        "s001235",
+        "s001236",
+        "s001237",
+        "s001238",
+        "s001239",
+        "s001240",
+        "s001241",
+        "s001242",
+        "s001243",
+        "s001244",
+        "s001245"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Treat the Fourth Moon as a narrow counter to opponent ships using sustain damage in its system, not as a board-wide defense.",
+      "conditions": "The hosts consider its single-system reach and modest combat profile less central now that Mentak have other defensive tools.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts still allow situational use. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "unit:mentak_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2412.9,
+          "end": 2531.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 3489.54,
+          "end": 3506.04
+        }
+      ],
+      "segment_ids": [
+        "s000732",
+        "s000733",
+        "s000734",
+        "s000735",
+        "s000736",
+        "s000737",
+        "s000738",
+        "s000739",
+        "s000740",
+        "s000741",
+        "s000742",
+        "s000743",
+        "s000744",
+        "s000745",
+        "s000746",
+        "s000747",
+        "s000748",
+        "s000749",
+        "s000750",
+        "s000751",
+        "s000752",
+        "s000753",
+        "s000754",
+        "s000755",
+        "s000756",
+        "s000757",
+        "s000758",
+        "s000759",
+        "s000760",
+        "s000761",
+        "s000762",
+        "s000763",
+        "s000764",
+        "s000765",
+        "s000766",
+        "s001095",
+        "s001096",
+        "s001097",
+        "s001098",
+        "s001099",
+        "s001100",
+        "s001101",
+        "s001102",
+        "s001103"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Economic objectives are an edge, not a scoring plan; Mentak lack natural help for many control and combat requirements.",
+      "conditions": "Cruiser II may create a temporary control opportunity, but economic objectives are only a small part of the deck and other factions score them too.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "Objective strength is a broad podcast judgment; objective mix varies. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "faction:mentak",
+        "technology:cr2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 8487.86,
+          "end": 8620.5
+        }
+      ],
+      "segment_ids": [
+        "s002798",
+        "s002799",
+        "s002800",
+        "s002801",
+        "s002802",
+        "s002803",
+        "s002804",
+        "s002805",
+        "s002806",
+        "s002807",
+        "s002808",
+        "s002809",
+        "s002810",
+        "s002811",
+        "s002812",
+        "s002813",
+        "s002814",
+        "s002815",
+        "s002816",
+        "s002817",
+        "s002818",
+        "s002819",
+        "s002820",
+        "s002821",
+        "s002822",
+        "s002823",
+        "s002824",
+        "s002825",
+        "s002826",
+        "s002827",
+        "s002828",
+        "s002829",
+        "s002830",
+        "s002831",
+        "s002832",
+        "s002833",
+        "s002834",
+        "s002835",
+        "s002836",
+        "s002837",
+        "s002838",
+        "s002839",
+        "s002840",
+        "s002841",
+        "s002842",
+        "s002843",
+        "s002844",
+        "s002845",
+        "s002846",
+        "s002847",
+        "s002848",
+        "s002849"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Explore and seek bonus points, but do not rely on early Politics for Custodians; a Mecatol Imperial line needs an unusual setup and timely access.",
+      "conditions": "Buying fragments, extra exploration, and Dark Energy Tap are upside when the map and timing support them; mechs or War Suns can help with Mecatol, but getting there is a constraint.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "The hosts label these lines unlikely or demanding. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "technology:det",
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial",
+        "unit:mentak_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 8008.87,
+          "end": 8086.47
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 8167.41,
+          "end": 8237.39
+        }
+      ],
+      "segment_ids": [
+        "s002601",
+        "s002602",
+        "s002603",
+        "s002604",
+        "s002605",
+        "s002606",
+        "s002607",
+        "s002608",
+        "s002609",
+        "s002610",
+        "s002611",
+        "s002612",
+        "s002613",
+        "s002614",
+        "s002615",
+        "s002616",
+        "s002617",
+        "s002618",
+        "s002619",
+        "s002620",
+        "s002621",
+        "s002622",
+        "s002623",
+        "s002624",
+        "s002625",
+        "s002626",
+        "s002627",
+        "s002628",
+        "s002629",
+        "s002630",
+        "s002631",
+        "s002632",
+        "s002633",
+        "s002634",
+        "s002635",
+        "s002636",
+        "s002637",
+        "s002638",
+        "s002639",
+        "s002640",
+        "s002671",
+        "s002672",
+        "s002673",
+        "s002674",
+        "s002675",
+        "s002676",
+        "s002677",
+        "s002678",
+        "s002679",
+        "s002680",
+        "s002681",
+        "s002682",
+        "s002683",
+        "s002684",
+        "s002685",
+        "s002686",
+        "s002687",
+        "s002688",
+        "s002689",
+        "s002690",
+        "s002691",
+        "s002692",
+        "s002693",
+        "s002694",
+        "s002695",
+        "s002696",
+        "s002697",
+        "s002698",
+        "s002699",
+        "s002700"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Stay in the scoring pack rather than taking the lead early; Mentak’s one-combat hero can be answered by coordinated attacks.",
+      "conditions": "A later steal may succeed after opponents spend actions elsewhere; an offensive hero use trades away its defensive threat.",
+      "compatibility": "SCPT episode published 2024-03-27; POK/Codex III-era discussion. Current rules and errata not checked.",
+      "uncertainty": "This is a strategic tempo judgment, not a guarantee of survival. ASR transcript and strategic claims remain unverified.",
+      "components": [
+        "leader:mentakhero",
+        "unit:cruiser"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7944.19,
+          "end": 8004.33
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 8303.71,
+          "end": 8375.69
+        }
+      ],
+      "segment_ids": [
+        "s002580",
+        "s002581",
+        "s002582",
+        "s002583",
+        "s002584",
+        "s002585",
+        "s002586",
+        "s002587",
+        "s002588",
+        "s002589",
+        "s002590",
+        "s002591",
+        "s002592",
+        "s002593",
+        "s002594",
+        "s002595",
+        "s002596",
+        "s002597",
+        "s002598",
+        "s002723",
+        "s002724",
+        "s002725",
+        "s002726",
+        "s002727",
+        "s002728",
+        "s002729",
+        "s002730",
+        "s002731",
+        "s002732",
+        "s002733",
+        "s002734",
+        "s002735",
+        "s002736",
+        "s002737",
+        "s002738",
+        "s002739",
+        "s002740",
+        "s002741",
+        "s002742",
+        "s002743",
+        "s002744",
+        "s002745",
+        "s002746",
+        "s002747",
+        "s002748",
+        "s002749",
+        "s002750",
+        "s002751",
+        "s002752"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:pa",
+      "to": "technology:mc",
+      "relation": "synergizes-with",
+      "conditions": "When both technologies are researched and Mentak have a planet they can exhaust for a trade good.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 5345.41,
+          "end": 5448.4
+        }
+      ]
+    },
+    {
+      "from": "ability:pillage",
+      "to": "leader:mentakagent",
+      "relation": "enables",
+      "conditions": "After Mentak use Pillage against another player; Suffi An may be exhausted for both players to draw an action card.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 2919.38,
+          "end": 2942.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7139.06,
+          "end": 7199.24
+        }
+      ]
+    },
+    {
+      "from": "technology:ws",
+      "to": "leader:mentakhero",
+      "relation": "synergizes-with",
+      "conditions": "If Mentak can afford, build, and move a War Sun into a decisive combat, the hero can magnify the combat’s ship replacement effect.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 8273.29,
+          "end": 8375.69
+        }
+      ]
+    },
+    {
+      "from": "promissory:pop",
+      "to": "ability:pillage",
+      "relation": "synergizes-with",
+      "conditions": "When a round-one payment for Promise of Protection is worth more to Mentak than the later Pillage income forgone from that player.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7329.06,
+          "end": 7498.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-344-46a8ac4fa9b6",
+          "start": 7537.12,
+          "end": 7598.9
+        }
+      ]
+    }
+  ]
+}

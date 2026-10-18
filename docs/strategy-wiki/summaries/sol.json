@@ -1,0 +1,1862 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "sol",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Sol starts with a dependable expansion package: two carriers, five infantry, three fighters, Anti-Mass Deflectors and Neural Motivator. The five infantry are a key part of occupying two systems even when a slice offers three planets; the hosts call the start solid rather than exceptional.",
+      "conditions": "Use the starting force to claim ordinary nearby planets; the podcast’s three-planet example is a slice assumption, not a universal map guarantee.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The tactical evaluation is opinion and the transcript has minor ASR errors around the faction name.",
+      "components": [
+        "faction:sol",
+        "unit:sol_carrier",
+        "unit:sol_infantry",
+        "technology:amd",
+        "technology:nm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1095.66,
+          "end": 1171.68
+        }
+      ],
+      "segment_ids": [
+        "s000295",
+        "s000296",
+        "s000297",
+        "s000298",
+        "s000299",
+        "s000300",
+        "s000301",
+        "s000302",
+        "s000303",
+        "s000304",
+        "s000305",
+        "s000306",
+        "s000307",
+        "s000308",
+        "s000309",
+        "s000310",
+        "s000311",
+        "s000312",
+        "s000313",
+        "s000314",
+        "s000315",
+        "s000316",
+        "s000317",
+        "s000318"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Advanced Carrier I has capacity six but remains a Carrier I: cost three, combat nine, movement one. The guide warns against treating its extra capacity as the movement upgrade; it carries most of Sol’s early ground force and fighters.",
+      "conditions": "This describes the printed starting special unit in the guide’s rules context.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The transcript corrects itself mid-discussion, so the Carrier I versus Carrier II distinction is deliberately explicit.",
+      "components": [
+        "unit:sol_carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1346.84,
+          "end": 1417.84
+        }
+      ],
+      "segment_ids": [
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000372",
+        "s000373",
+        "s000374",
+        "s000375"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Advanced Carrier II is the central unit upgrade: movement and capacity eight are the useful gains. The hosts regard Sustain Damage as marginal because a loaded carrier can take fighter hits instead, and a Direct Hit can punish risking the hull.",
+      "conditions": "The recommendation assumes Sol is using carriers to transport infantry and fighters; combat composition can make Sustain Damage relevant.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "This is a strategic preference, not a claim that Sustain Damage is never useful.",
+      "components": [
+        "unit:sol_carrier2",
+        "technology:ac2",
+        "unit:fighter"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1420.4,
+          "end": 1515.98
+        }
+      ],
+      "segment_ids": [
+        "s000377",
+        "s000378",
+        "s000379",
+        "s000380",
+        "s000381",
+        "s000382",
+        "s000383",
+        "s000384",
+        "s000385",
+        "s000386",
+        "s000387",
+        "s000388",
+        "s000389",
+        "s000390",
+        "s000391",
+        "s000392",
+        "s000393",
+        "s000394",
+        "s000395",
+        "s000396",
+        "s000397",
+        "s000398",
+        "s000399",
+        "s000400",
+        "s000401",
+        "s000402"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Orbital Drop spends a strategy token to place two infantry on a planet Sol controls. The hosts call it expensive and situational, while stressing its value as a stall when the added infantry also matter.",
+      "conditions": "Use it when the timing stall or extra ground presence changes a decision; do not spend a token automatically just because the ability is available.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The guide gives no general-purpose priority rule for Orbital Drop.",
+      "components": [
+        "ability:orbital_drop",
+        "unit:sol_infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1270.48,
+          "end": 1321.04
+        }
+      ],
+      "segment_ids": [
+        "s000339",
+        "s000340",
+        "s000341",
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Versatile adds one command token to each status-phase gain: Sol gets three in its first status phase, and the hosts note four per phase with Hyper Metabolism. That surplus supports secondaries and later flexibility, provided tokens are spent on useful actions rather than burned without purpose.",
+      "conditions": "Token value depends on the available secondaries, action economy and map; Hyper Metabolism is an optional extension.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The guide mentions a community pre-errata discussion but does not establish current rules beyond its stated description.",
+      "components": [
+        "ability:versatile",
+        "technology:hm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1321.42,
+          "end": 1396.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3423.4,
+          "end": 3509.04
+        }
+      ],
+      "segment_ids": [
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000929",
+        "s000930",
+        "s000931",
+        "s000932",
+        "s000933",
+        "s000934",
+        "s000935",
+        "s000936",
+        "s000937",
+        "s000938",
+        "s000939",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000943",
+        "s000944",
+        "s000945",
+        "s000946",
+        "s000947",
+        "s000948",
+        "s000949",
+        "s000950",
+        "s000951"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "The hosts generally skip Spec Ops II. Their stated plan is to win ground fights through more transported units and hit points; improving Spec Ops from hits on seven to hits on six is not worth diverting early resources in their baseline plan. Gen Synthesis is described as a better return roll than the generic version, but not as a reason to buy the upgrade.",
+      "conditions": "Reconsider only if an objective or matchup gives the upgrade unusual immediate value.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "This is a guide-era judgment; the transcript’s Gen Synthesis percentage is descriptive, not independently rules-checked here.",
+      "components": [
+        "unit:sol_infantry2",
+        "technology:so2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1516.8,
+          "end": 1578.38
+        }
+      ],
+      "segment_ids": [
+        "s000403",
+        "s000404",
+        "s000405",
+        "s000406",
+        "s000407",
+        "s000408",
+        "s000409",
+        "s000410",
+        "s000411",
+        "s000412",
+        "s000413",
+        "s000414",
+        "s000415",
+        "s000416",
+        "s000417",
+        "s000418",
+        "s000419",
+        "s000420",
+        "s000421",
+        "s000422",
+        "s000423",
+        "s000424",
+        "s000425"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Genesis brings cost-eight, combat-five-on-two stats and capacity twelve. Its status-phase ability places one infantry in its system’s space area; the hosts disagree at first about how useful that is, then favor remembering the free infantry because Sol wants ground-force volume and is unlikely to fill the flagship’s capacity.",
+      "conditions": "The value rises when the flagship is built early and remains active through status phases.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers explicitly differ before converging on the free infantry’s practical value.",
+      "components": [
+        "unit:sol_flagship",
+        "unit:sol_infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1581.68,
+          "end": 1643.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1693.8,
+          "end": 1711.24
+        }
+      ],
+      "segment_ids": [
+        "s000427",
+        "s000428",
+        "s000429",
+        "s000430",
+        "s000431",
+        "s000432",
+        "s000433",
+        "s000434",
+        "s000435",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439",
+        "s000440",
+        "s000441",
+        "s000442",
+        "s000443",
+        "s000444",
+        "s000457",
+        "s000458",
+        "s000459",
+        "s000460",
+        "s000461"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "The Sol mech is a situational tool, not a build-around plan. After Orbital Drop, Sol may pay three resources to place a mech on that planet; the hosts advise remembering the option for a late need while rejecting a dedicated rush built around it.",
+      "conditions": "Use when a planet needs the added defense or combat weight and three resources are affordable.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The hosts call both the drop and deployment cost high; the value is matchup-dependent.",
+      "components": [
+        "unit:sol_mech",
+        "ability:orbital_drop"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1755.78,
+          "end": 1835.28
+        }
+      ],
+      "segment_ids": [
+        "s000473",
+        "s000474",
+        "s000475",
+        "s000476",
+        "s000477",
+        "s000478",
+        "s000479",
+        "s000480",
+        "s000481",
+        "s000482",
+        "s000483",
+        "s000484",
+        "s000485",
+        "s000486",
+        "s000487",
+        "s000488",
+        "s000489"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Sol’s agent adds a die to one ground force in the active system for a ground-combat round. The hosts value it as a free way to swing low-number fights: in their 2-versus-1 example, the extra die can create the hit needed to avoid losing on a defensive tie.",
+      "conditions": "Save it for an important ground combat where one added die can change the result.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The 2-versus-1 example illustrates a probability swing; it does not guarantee a win.",
+      "components": [
+        "leader:solagent",
+        "unit:sol_infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1837.8,
+          "end": 1924.4
+        }
+      ],
+      "segment_ids": [
+        "s000491",
+        "s000492",
+        "s000493",
+        "s000494",
+        "s000495",
+        "s000496",
+        "s000497",
+        "s000498",
+        "s000499",
+        "s000500",
+        "s000501",
+        "s000502",
+        "s000503",
+        "s000504",
+        "s000505",
+        "s000506",
+        "s000507",
+        "s000508",
+        "s000509",
+        "s000510",
+        "s000511",
+        "s000512",
+        "s000513",
+        "s000514",
+        "s000515",
+        "s000516",
+        "s000517",
+        "s000518",
+        "s000519",
+        "s000520",
+        "s000521"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Sol’s commander unlocks after controlling planets with at least twelve combined resources; home contributes four. At the start of ground combat on a controlled planet, it can add one infantry there, which compounds with Spec Ops I and the agent.",
+      "conditions": "The unlock may take time in a poor slice; its defense benefit applies only after it is unlocked and a ground combat begins on a controlled planet.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The named commander spelling in ASR is not relied upon; the ability and unlock are the point.",
+      "components": [
+        "leader:solcommander",
+        "unit:sol_infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2069.77,
+          "end": 2129.93
+        }
+      ],
+      "segment_ids": [
+        "s000570",
+        "s000571",
+        "s000572",
+        "s000573",
+        "s000574",
+        "s000575",
+        "s000576",
+        "s000577",
+        "s000578",
+        "s000579",
+        "s000580",
+        "s000581",
+        "s000582",
+        "s000583",
+        "s000584",
+        "s000585",
+        "s000586",
+        "s000587",
+        "s000588"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "A single infantry planet can be much harder to invade once the commander is online: the guide’s example adds an infantry and combines the commander with the agent and Spec Ops to roll three dice on sevens. The speakers name heavy bombardment or focused mech fire as answers.",
+      "conditions": "This defense example assumes the commander is unlocked and the attacker initiates ground combat.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The precise combat odds depend on the attacker’s units and other effects; the hosts present a representative example.",
+      "components": [
+        "leader:solcommander",
+        "leader:solagent",
+        "unit:sol_infantry",
+        "unit:sol_infantry2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2130.05,
+          "end": 2194.61
+        }
+      ],
+      "segment_ids": [
+        "s000589",
+        "s000590",
+        "s000591",
+        "s000592",
+        "s000593",
+        "s000594",
+        "s000595",
+        "s000596",
+        "s000597",
+        "s000598",
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605",
+        "s000606",
+        "s000607"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Sol’s hero removes its command tokens from the board and returns them to reinforcements. The guide treats this as both a scoring and tempo tool: hold a home fleet for defense, use the round to act or stall, then reclaim tokens and send that fleet out to finish a round or contest objectives.",
+      "conditions": "Plan the token layout and timing before using the hero; the payoff depends on what can be activated after tokens return.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The source alternates between several hero names in ASR; this summary calls it Sol’s hero and does not resolve the proper name.",
+      "components": [
+        "leader:solhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2253.87,
+          "end": 2341.73
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2940.36,
+          "end": 2999.32
+        }
+      ],
+      "segment_ids": [
+        "s000626",
+        "s000627",
+        "s000628",
+        "s000629",
+        "s000630",
+        "s000631",
+        "s000632",
+        "s000633",
+        "s000634",
+        "s000635",
+        "s000636",
+        "s000637",
+        "s000638",
+        "s000639",
+        "s000640",
+        "s000641",
+        "s000642",
+        "s000643",
+        "s000644",
+        "s000645",
+        "s000646",
+        "s000647",
+        "s000648",
+        "s000649",
+        "s000812",
+        "s000813",
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000817",
+        "s000818",
+        "s000819",
+        "s000820",
+        "s000821",
+        "s000822",
+        "s000823",
+        "s000824",
+        "s000825",
+        "s000826"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Military Support is a repeatable table offer tied to Sol’s four commodities. The card’s described start-of-turn effect returns a strategy-pool token and lets its holder place two infantry from Sol’s reinforcements on a planet Sol controls, then returns the card to Sol.",
+      "conditions": "The economic value depends on the table’s appetite for infantry and the deal Sol can make.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The guide describes a specific rules interaction that it later labels old and difficult to locate; treat it as unverified.",
+      "components": [
+        "promissory:ms",
+        "unit:sol_infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2415.16,
+          "end": 2496.6
+        }
+      ],
+      "segment_ids": [
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679",
+        "s000680",
+        "s000681",
+        "s000682",
+        "s000683",
+        "s000684",
+        "s000685",
+        "s000686",
+        "s000687",
+        "s000688",
+        "s000689",
+        "s000690",
+        "s000691",
+        "s000692"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "The hosts say Military Support can be traded and played immediately during its start-of-turn window, and can still place infantry when Sol has no token in its strategy pool. On that interpretation Sol can offer it after spending the pool, including on its pass turn.",
+      "conditions": "This line depends on the cited timing and empty-pool interpretations and on the relevant start-of-turn window being available.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers call the empty-pool answer an old ruling they could not find in the FAQ; neither ruling is independently confirmed here.",
+      "components": [
+        "promissory:ms",
+        "ability:orbital_drop"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2465.8,
+          "end": 2554.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2554.8,
+          "end": 2586.96
+        }
+      ],
+      "segment_ids": [
+        "s000682",
+        "s000683",
+        "s000684",
+        "s000685",
+        "s000686",
+        "s000687",
+        "s000688",
+        "s000689",
+        "s000690",
+        "s000691",
+        "s000692",
+        "s000693",
+        "s000694",
+        "s000695",
+        "s000696",
+        "s000697",
+        "s000698",
+        "s000699",
+        "s000700",
+        "s000701",
+        "s000702",
+        "s000703",
+        "s000704",
+        "s000705",
+        "s000706",
+        "s000707",
+        "s000708",
+        "s000709",
+        "s000710",
+        "s000711",
+        "s000712",
+        "s000713",
+        "s000714",
+        "s000715",
+        "s000716",
+        "s000717",
+        "s000718",
+        "s000719",
+        "s000720",
+        "s000721"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "One host’s baseline sale price for Military Support is one trade good or an equivalent favor, and the recommendation is to offer it repeatedly rather than accept less. They reject vague future promises as payment; the other host says aggressive selling can attract heat.",
+      "conditions": "The one-good floor is a negotiating recommendation. In asynchronous games the speakers advise arranging the deal in advance because buyers may not be available at the right window.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The hosts disagree in practice: one sells it readily while the other avoids it when backlash is high.",
+      "components": [
+        "promissory:ms"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2580.4,
+          "end": 2628.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5237.78,
+          "end": 5313.88
+        }
+      ],
+      "segment_ids": [
+        "s000719",
+        "s000720",
+        "s000721",
+        "s000722",
+        "s000723",
+        "s000724",
+        "s000725",
+        "s000726",
+        "s000727",
+        "s000728",
+        "s001421",
+        "s001422",
+        "s001423",
+        "s001424",
+        "s001425",
+        "s001426",
+        "s001427",
+        "s001428",
+        "s001429",
+        "s001430",
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001436",
+        "s001437",
+        "s001438",
+        "s001439",
+        "s001440",
+        "s001441",
+        "s001442"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "The guide presents Military Support’s price as table-dependent. An active, deal-friendly meta may yield several trade goods or favors over a round; at a more violent table one host worries about arming opponents, while the other says Sol can out-capacity and out-punch them. Both note sales may add heat.",
+      "conditions": "The return depends on table transaction norms and whether recipients can turn the infantry into useful board position; political response matters.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers explicitly report different comfort levels and local meta experiences.",
+      "components": [
+        "promissory:ms",
+        "unit:sol_carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2737.92,
+          "end": 2799.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2821.9,
+          "end": 2856.52
+        }
+      ],
+      "segment_ids": [
+        "s000758",
+        "s000759",
+        "s000760",
+        "s000761",
+        "s000762",
+        "s000763",
+        "s000764",
+        "s000765",
+        "s000766",
+        "s000767",
+        "s000768",
+        "s000769",
+        "s000770",
+        "s000771",
+        "s000772",
+        "s000773",
+        "s000774",
+        "s000781",
+        "s000782",
+        "s000783",
+        "s000784",
+        "s000785",
+        "s000786",
+        "s000787",
+        "s000788",
+        "s000789",
+        "s000790"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "In a baseline round one, prioritize Gravity Drive; the hosts say other technology is extra and should depend on objectives or slice needs. Their broader advice is to build plastic instead of double-teching when the faction has a shallow technology path and can acquire needed upgrades later.",
+      "conditions": "Change the priority when the slice or revealed objectives create an immediate technology requirement.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The recommendation is an opinion about Sol’s typical path, not a ban on round-one technology.",
+      "components": [
+        "technology:gd",
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3336.94,
+          "end": 3370.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4132.74,
+          "end": 4194.82
+        }
+      ],
+      "segment_ids": [
+        "s000904",
+        "s000905",
+        "s000906",
+        "s000907",
+        "s000908",
+        "s000909",
+        "s000910",
+        "s001125",
+        "s001126",
+        "s001127",
+        "s001128",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135",
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001147",
+        "s001148"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Leadership is an unusually attractive round-one strategy card for Sol in the hosts’ view: Versatile turns its token gain into an early lead, as long as Sol spends the tokens on worthwhile actions.",
+      "conditions": "This is strongest when the available token uses justify the primary and Sol is not forced to waste the extra tokens.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers call this a surprising departure from their usual low rating of round-one Leadership.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "ability:versatile"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3374.74,
+          "end": 3423.4
+        }
+      ],
+      "segment_ids": [
+        "s000912",
+        "s000913",
+        "s000914",
+        "s000915",
+        "s000916",
+        "s000917",
+        "s000918",
+        "s000919",
+        "s000920",
+        "s000921",
+        "s000922",
+        "s000923",
+        "s000924",
+        "s000925",
+        "s000926",
+        "s000927",
+        "s000928"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Do not confuse taking Politics with following its secondary. The Politics secondary supplies action cards; the hosts say Sol’s command-token economy makes it easy to afford that secondary and can support taking several useful secondaries across a round. They also criticize researching Neural Motivator solely for cards Sol can obtain this way.",
+      "conditions": "Use the secondary when the hand has room and action cards matter; the hosts mention the seven-card limit.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "This is advice about following the Politics secondary, not a claim that Politics itself researches Gravity Drive.",
+      "components": [
+        "strategy-card:pok3politics",
+        "ability:versatile",
+        "technology:nm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3423.4,
+          "end": 3509.04
+        }
+      ],
+      "segment_ids": [
+        "s000929",
+        "s000930",
+        "s000931",
+        "s000932",
+        "s000933",
+        "s000934",
+        "s000935",
+        "s000936",
+        "s000937",
+        "s000938",
+        "s000939",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000943",
+        "s000944",
+        "s000945",
+        "s000946",
+        "s000947",
+        "s000948",
+        "s000949",
+        "s000950",
+        "s000951"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "The hosts dislike Diplomacy as Sol’s own pick because it opens a round-one Custodians window for someone else and makes already wealthy neighbors richer. If another player takes it, they expect Sol to follow; in a last-pick situation they prefer Construction, especially when a structure objective or forward dock matters.",
+      "conditions": "Construction is a low-priority fallback outside structure objectives; a forward dock can support Sling Relay, and a PDS may deter bombardment depending on matchup.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The source treats this as a comparative draft preference, not a fixed card ranking.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok4construction",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3524.2,
+          "end": 3576.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3641.44,
+          "end": 3704.08
+        }
+      ],
+      "segment_ids": [
+        "s000955",
+        "s000956",
+        "s000957",
+        "s000958",
+        "s000959",
+        "s000960",
+        "s000961",
+        "s000962",
+        "s000963",
+        "s000964",
+        "s000965",
+        "s000966",
+        "s000967",
+        "s000982",
+        "s000983",
+        "s000984",
+        "s000985",
+        "s000986",
+        "s000987",
+        "s000988",
+        "s000989",
+        "s000990",
+        "s000991",
+        "s000992",
+        "s000993",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Trade is a strong round-one option when Sol wants persistent flexible money. The hosts accept that taking it probably concedes Custodians, while noting that a negotiated speaker-token purchase after another player takes Politics can sometimes preserve a Mecatol line.",
+      "conditions": "The alternate Custodians line depends on turn order, a willing Politics player and a table that permits the deal.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "“Never bad” is the hosts’ emphatic opinion, not a universal rule.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3706.14,
+          "end": 3773.82
+        }
+      ],
+      "segment_ids": [
+        "s001001",
+        "s001002",
+        "s001003",
+        "s001004",
+        "s001005",
+        "s001006",
+        "s001007",
+        "s001008",
+        "s001009",
+        "s001010",
+        "s001011",
+        "s001012",
+        "s001013",
+        "s001014",
+        "s001015",
+        "s001016",
+        "s001017",
+        "s001018",
+        "s001019",
+        "s001020"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "The X-minus-one example explains why the hosts favor Trade over Diplomacy: trade goods persist and can pay varied economic costs, while refreshed planets must be spent in that round and also require a token. Under their six-player, four-commodity illustration, they estimate Sol can make about twelve trade goods while other players gain roughly two or three each.",
+      "conditions": "Treat the totals as an illustration for the stated X-minus-one meta and table size, not a guaranteed yield.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "Commodity meta, player count, transaction partners and available planets change the arithmetic.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy",
+        "promissory:ms"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3800.4,
+          "end": 3850.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3882.32,
+          "end": 3924.92
+        }
+      ],
+      "segment_ids": [
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036",
+        "s001037",
+        "s001038",
+        "s001039",
+        "s001040",
+        "s001041",
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001053",
+        "s001054",
+        "s001055",
+        "s001056",
+        "s001057",
+        "s001058",
+        "s001059",
+        "s001060",
+        "s001061",
+        "s001062"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Round-one Warfare is a viable but conditional Sol opening. The proposed line follows Technology for Gravity Drive, may follow Politics for cards, sells Military Support, saves Warfare until late, then moves again; the speakers budget six resources, with Trade and Military Support covering the example.",
+      "conditions": "It needs enough money, access to the required secondaries and a useful route. The trade ship must do work; a wormhole in the slice makes the Custodians attempt less ambitious.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "One host emphasizes that this is an unusual recommendation; it is not a guaranteed Custodians capture.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "strategy-card:pok7technology",
+        "strategy-card:pok3politics",
+        "promissory:ms",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3938.3,
+          "end": 4023.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4098.2,
+          "end": 4129.32
+        }
+      ],
+      "segment_ids": [
+        "s001066",
+        "s001067",
+        "s001068",
+        "s001069",
+        "s001070",
+        "s001071",
+        "s001072",
+        "s001073",
+        "s001074",
+        "s001075",
+        "s001076",
+        "s001077",
+        "s001078",
+        "s001079",
+        "s001080",
+        "s001081",
+        "s001082",
+        "s001083",
+        "s001084",
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001088",
+        "s001114",
+        "s001115",
+        "s001116",
+        "s001117",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001121",
+        "s001122"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "A round-one Custodians double-tech route is preserved as contested theorycraft: one host proposes Trade income, Gravity Drive, Advanced Carrier II and enough influence from Diplomacy; the other calls the line exceptionally unlikely. Both agree it needs favorable slice, timing and resources.",
+      "conditions": "Only consider it when the map, available cards, trade ship and influence line all cooperate; do not treat partial prerequisites as a completed Mecatol score.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "ASR renders a named planet as “air namir” among other guesses; the identity remains uncertain and is not converted to a component.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok7technology",
+        "technology:gd",
+        "technology:ac2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4330.62,
+          "end": 4426.7
+        }
+      ],
+      "segment_ids": [
+        "s001182",
+        "s001183",
+        "s001184",
+        "s001185",
+        "s001186",
+        "s001187",
+        "s001188",
+        "s001189",
+        "s001190",
+        "s001191",
+        "s001192",
+        "s001193",
+        "s001194",
+        "s001195",
+        "s001196",
+        "s001197",
+        "s001198",
+        "s001199",
+        "s001200",
+        "s001201",
+        "s001202",
+        "s001203",
+        "s001204",
+        "s001205",
+        "s001206",
+        "s001207",
+        "s001208",
+        "s001209",
+        "s001210",
+        "s001211",
+        "s001212",
+        "s001213"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Among supplemental blue technologies, the hosts favor Sling Relay; Light/Wave Deflector is valued for the hero, while Dark Energy Tap ranks last because Sol already starts with blue technology and is not desperate for frontier rewards.",
+      "conditions": "These are priorities after Gravity Drive, with objectives and map needs able to change the order.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The transcript’s “Lightwave” wording is ASR shorthand; the component reference uses the canonical ID.",
+      "components": [
+        "technology:sr",
+        "technology:lwd",
+        "technology:det",
+        "leader:solhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4645.26,
+          "end": 4700.2
+        }
+      ],
+      "segment_ids": [
+        "s001284",
+        "s001285",
+        "s001286",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001290",
+        "s001291",
+        "s001292",
+        "s001293"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Biostims and Sling Relay are explicitly recommended together. The speakers’ rationale is that extra start-of-turn windows create more chances to sell Military Support; they also describe using the combination to bring out capital ships while later home builds focus on fighters and infantry.",
+      "conditions": "This plan assumes the table accepts repeated Military Support offers and Sol can use its production capacity.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The synergy is attributed to a community “pre-errata” comment; the acronym is unclear in ASR, and the interaction is not rules-verified here.",
+      "components": [
+        "technology:bs",
+        "technology:sr",
+        "promissory:ms"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4700.66,
+          "end": 4797.44
+        }
+      ],
+      "segment_ids": [
+        "s001294",
+        "s001295",
+        "s001296",
+        "s001297",
+        "s001298",
+        "s001299",
+        "s001300",
+        "s001301",
+        "s001302",
+        "s001303",
+        "s001304",
+        "s001305",
+        "s001306",
+        "s001307",
+        "s001308",
+        "s001309",
+        "s001310",
+        "s001311",
+        "s001312",
+        "s001313",
+        "s001314"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Scanlink Drone Network is an attractive way to spend Sol’s surplus tokens and economy on uncertain exploration returns. Predictive Intelligence is not a priority because Sol is not token-starved, though the hosts identify a conditional hero interaction after spreading tokens to stall and then reclaiming them.",
+      "conditions": "Scanlink’s value depends on available planets and exploration results; the Predictive line needs token timing and a planned hero turn.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers call Predictive Intelligence generally unnecessary while still entertaining the hero interaction.",
+      "components": [
+        "technology:sdn",
+        "technology:pi",
+        "leader:solhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4798.36,
+          "end": 4857.6
+        }
+      ],
+      "segment_ids": [
+        "s001315",
+        "s001316",
+        "s001317",
+        "s001318",
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001322",
+        "s001323",
+        "s001324",
+        "s001325",
+        "s001326"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "The hosts recommend no red technology and do not prioritize AI Development Algorithm: Sol has money but can run short on production capacity, so they prefer spending economy to improve odds of winning rather than accumulating more resources.",
+      "conditions": "The hosts’ priority can change when an objective or a specific matchup creates a concrete technology need.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "This is a broad build-priority opinion; it does not rule out every red-tech path.",
+      "components": [
+        "technology:aida",
+        "unit:sol_carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4973.06,
+          "end": 5042.68
+        }
+      ],
+      "segment_ids": [
+        "s001358",
+        "s001359",
+        "s001360",
+        "s001361",
+        "s001362",
+        "s001363",
+        "s001364",
+        "s001365",
+        "s001366",
+        "s001367",
+        "s001368",
+        "s001369",
+        "s001370",
+        "s001371",
+        "s001372"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Advanced Carrier II is usually enough for the transport plan. Fighter II and Dreadnought II are matchup or objective choices: Dreadnought II may add needed punch or bombardment, while Fighter II can help with maneuverability and control objectives that require reaching empty space.",
+      "conditions": "Consider the upgrades when a control objective, fleet-composition need or opponent makes their specific function matter.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers differ on Fighter II’s general value; Sol’s high carrier capacity reduces its usual maneuverability benefit.",
+      "components": [
+        "technology:ac2",
+        "technology:ffac2",
+        "technology:dn2",
+        "unit:sol_carrier2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5043.6,
+          "end": 5099.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5137.6,
+          "end": 5206.72
+        }
+      ],
+      "segment_ids": [
+        "s001373",
+        "s001374",
+        "s001375",
+        "s001376",
+        "s001377",
+        "s001378",
+        "s001379",
+        "s001380",
+        "s001381",
+        "s001382",
+        "s001383",
+        "s001384",
+        "s001396",
+        "s001397",
+        "s001398",
+        "s001399",
+        "s001400",
+        "s001401",
+        "s001402",
+        "s001403",
+        "s001404",
+        "s001405",
+        "s001406",
+        "s001407",
+        "s001408",
+        "s001409",
+        "s001410",
+        "s001411",
+        "s001412",
+        "s001413",
+        "s001414"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "For stage-one objectives, the guide sees Sol as comfortable in technology, control and economy, but weak in structures unless an objective gives a reason to invest. For stage two, it favors control objectives; economy is manageable, structures remain poor, and the hero plus ground-force tools help secure planets.",
+      "conditions": "Objective feasibility depends on the revealed card, board and timing; the hosts’ category rankings are not guarantees.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The category rankings are source opinion and preserve the guide’s unreviewed rules context.",
+      "components": [
+        "leader:solhero",
+        "leader:solagent",
+        "leader:solcommander",
+        "technology:sr"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5863.68,
+          "end": 5905.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 6050.2,
+          "end": 6100.86
+        }
+      ],
+      "segment_ids": [
+        "s001591",
+        "s001592",
+        "s001593",
+        "s001594",
+        "s001595",
+        "s001596",
+        "s001597",
+        "s001598",
+        "s001599",
+        "s001600",
+        "s001601",
+        "s001602",
+        "s001603",
+        "s001604",
+        "s001605",
+        "s001654",
+        "s001655",
+        "s001656",
+        "s001657",
+        "s001658",
+        "s001659",
+        "s001660",
+        "s001661",
+        "s001662",
+        "s001663",
+        "s001664",
+        "s001665",
+        "s001666",
+        "s001667",
+        "s001668",
+        "s001669"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Mechanize the Military is described as a late pivot: Orbital Drop plus a home build puts Sol “halfway done,” and the speakers say Sol can still find time to finish it. That is preparation progress, not a claim that the objective is scored by placing those two mechs.",
+      "conditions": "Use the line only when the objective appears and Sol can still complete its remaining requirements before scoring.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The transcript does not spell out every scoring prerequisite in this passage; the “halfway” language is the hosts’ progress estimate.",
+      "components": [
+        "ability:orbital_drop",
+        "unit:sol_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 6006.1,
+          "end": 6053.78
+        }
+      ],
+      "segment_ids": [
+        "s001639",
+        "s001640",
+        "s001641",
+        "s001642",
+        "s001643",
+        "s001644",
+        "s001645",
+        "s001646",
+        "s001647",
+        "s001648",
+        "s001649",
+        "s001650",
+        "s001651",
+        "s001652",
+        "s001653",
+        "s001654"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Agenda preferences follow Sol’s strengths and counters: Conventions of War is favored because it blocks bombardment on cultural planets; Economic Equality is opposed because Sol wants saved trade goods; Executive Sanctions is bad either way for its action-card plan; Prophecy of Ix is attractive because Sol already builds fighters. Regulated Conscription is contested by timing, but the hosts dislike its early cost increase to infantry/fighter production.",
+      "conditions": "The effect depends on which outcome applies and when the agenda appears; the hosts soften their view of Regulated Conscription if it arrives late.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "These are table and era-specific agenda opinions, not current rules advice.",
+      "components": [],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5521.1,
+          "end": 5598.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5598.76,
+          "end": 5690.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5690.8,
+          "end": 5791.54
+        }
+      ],
+      "segment_ids": [
+        "s001490",
+        "s001491",
+        "s001492",
+        "s001493",
+        "s001494",
+        "s001495",
+        "s001496",
+        "s001497",
+        "s001498",
+        "s001499",
+        "s001500",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505",
+        "s001506",
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001516",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524",
+        "s001525",
+        "s001526",
+        "s001527",
+        "s001528",
+        "s001529",
+        "s001530",
+        "s001531",
+        "s001532",
+        "s001533",
+        "s001534",
+        "s001535",
+        "s001536",
+        "s001537",
+        "s001538",
+        "s001539",
+        "s001540",
+        "s001541",
+        "s001542",
+        "s001543",
+        "s001544",
+        "s001545",
+        "s001546",
+        "s001547",
+        "s001548",
+        "s001549",
+        "s001550",
+        "s001551",
+        "s001552",
+        "s001553",
+        "s001554",
+        "s001555",
+        "s001556",
+        "s001557",
+        "s001558",
+        "s001559",
+        "s001560",
+        "s001561",
+        "s001562",
+        "s001563",
+        "s001564"
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "Sol may trade away its commander alliance for roughly two trade goods, a trade good plus a side benefit, or a mid-tier commander swap. The guide highlights Ghost when a wormhole is in the slice, Sardakk and Cabal for combat or production, Nomad for a cheaper flagship, and S.A.R. as a mutually useful swap.",
+      "conditions": "Look for a partner who can actually use the commander and compare the value of the alliance Sol gives up.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "Alliance rankings and prices are negotiation heuristics; several named factions are garbled in ASR.",
+      "components": [
+        "leader:solcommander",
+        "leader:solhero",
+        "unit:sol_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5314.62,
+          "end": 5387.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 5388.28,
+          "end": 5452.2
+        }
+      ],
+      "segment_ids": [
+        "s001443",
+        "s001444",
+        "s001445",
+        "s001446",
+        "s001447",
+        "s001448",
+        "s001449",
+        "s001450",
+        "s001451",
+        "s001452",
+        "s001453",
+        "s001454",
+        "s001455",
+        "s001456",
+        "s001457",
+        "s001458",
+        "s001459",
+        "s001460",
+        "s001461",
+        "s001462",
+        "s001463",
+        "s001464",
+        "s001465",
+        "s001466",
+        "s001467",
+        "s001468",
+        "s001469",
+        "s001470",
+        "s001471"
+      ]
+    },
+    {
+      "id": "C34",
+      "statement": "Heat is Sol’s main weakness in the guide: the faction is visibly strong but lacks the relationship tools that help some other top factions defuse attention. The speakers also describe Sol as straightforward—build, expand and win through solid play—with the hero as its standout trick.",
+      "conditions": "Adjust trading and public commitments when the table is likely to coordinate against Sol.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The authors disagree about how much heat the faction can defuse; their descriptions are meta judgment.",
+      "components": [
+        "faction:sol",
+        "leader:solhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3029.34,
+          "end": 3075.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3113.14,
+          "end": 3147.96
+        }
+      ],
+      "segment_ids": [
+        "s000830",
+        "s000831",
+        "s000832",
+        "s000833",
+        "s000834",
+        "s000835",
+        "s000836",
+        "s000837",
+        "s000838",
+        "s000839",
+        "s000840",
+        "s000841",
+        "s000842",
+        "s000843",
+        "s000844",
+        "s000856",
+        "s000857",
+        "s000858",
+        "s000859",
+        "s000860",
+        "s000861",
+        "s000862",
+        "s000863",
+        "s000864",
+        "s000865"
+      ]
+    },
+    {
+      "id": "C35",
+      "statement": "The hosts say Sol can remain a good pick even when it falls to a late draft position: some players avoid it as “boring,” leaving a strong faction available around fifth pick. They present it as a clear, low-complexity way to learn the game and still compete.",
+      "conditions": "This is a draft-table observation, not a claim that Sol will always be available or win.",
+      "compatibility": "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed.",
+      "uncertainty": "The speakers report personal preferences and a subjective meta pattern.",
+      "components": [
+        "faction:sol"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3269.06,
+          "end": 3303.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3172.1,
+          "end": 3218.86
+        }
+      ],
+      "segment_ids": [
+        "s000873",
+        "s000874",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000894",
+        "s000895",
+        "s000896",
+        "s000897",
+        "s000898",
+        "s000899",
+        "s000900"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:bs",
+      "to": "technology:sr",
+      "relation": "synergizes-with",
+      "conditions": "The guide’s stated interaction is most useful when Sol can create additional start-of-turn windows and has buyers for repeated Military Support offers.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4700.66,
+          "end": 4780.18
+        }
+      ]
+    },
+    {
+      "from": "technology:pi",
+      "to": "leader:solhero",
+      "relation": "synergizes-with",
+      "conditions": "A planned hero turn can reclaim tokens spread across the board after Sol has used them to stall; the source presents this as a niche line.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4844.58,
+          "end": 4908.7
+        }
+      ]
+    },
+    {
+      "from": "ability:versatile",
+      "to": "strategy-card:pok1leadership",
+      "relation": "synergizes-with",
+      "conditions": "The round-one Leadership pick is attractive when Sol can convert the extra tokens into useful actions.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3374.74,
+          "end": 3423.4
+        }
+      ]
+    },
+    {
+      "from": "leader:solagent",
+      "to": "unit:sol_infantry",
+      "relation": "enables",
+      "conditions": "The agent’s added die matters most in a consequential ground-combat round with a small number of units.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1837.8,
+          "end": 1924.4
+        }
+      ]
+    },
+    {
+      "from": "leader:solcommander",
+      "to": "unit:sol_infantry",
+      "relation": "enables",
+      "conditions": "After the commander unlocks, the added infantry strengthens a controlled planet when ground combat begins.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 2069.77,
+          "end": 2129.93
+        }
+      ]
+    },
+    {
+      "from": "unit:sol_flagship",
+      "to": "unit:sol_infantry",
+      "relation": "synergizes-with",
+      "conditions": "The flagship can add a free infantry in its system at status, and its capacity makes transporting ground forces central to Sol’s plan.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 1612.18,
+          "end": 1707.2
+        }
+      ]
+    }
+  ]
+}

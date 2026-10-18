@@ -1,0 +1,3285 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "keleresa",
+  "claims": [
+    {
+      "id": "C01",
+      "segment_ids": [
+        "s000503",
+        "s000504",
+        "s000505",
+        "s000521",
+        "s000528",
+        "s000529"
+      ],
+      "statement": "Use Council Patronage’s refreshed commodities and gained trade good as flexible funding; Law’s Order can spend one commodity or trade good at the start of any player’s turn to blank laws for that turn.",
+      "conditions": "Applies to Council Keleres; refreshed commodity count can be raised by relevant trade stations or Dynamic Core. Timing at another player’s turn can raise table etiquette questions.",
+      "compatibility": "Episode 472, published 2026-09-02; Thunder’s Edge-era discussion, exact rules compatibility unverified.",
+      "uncertainty": "ASR transcript and speakers describe Law’s Order as rewritten from Codex III; do not treat the guide as rules adjudication.",
+      "components": [
+        "ability:council_patronage",
+        "ability:laws_order"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2014.24,
+          "end": 2029.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2085.34,
+          "end": 2090.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2099.1,
+          "end": 2109.78
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "segment_ids": [
+        "s000545",
+        "s000550",
+        "s000552",
+        "s000553",
+        "s000554",
+        "s000555",
+        "s000556"
+      ],
+      "statement": "Trade Agreement is a credible bargaining chip because Council Patronage forces a commodity refresh at the start of the next strategy phase, letting its holder turn those commodities into trade goods if they choose.",
+      "conditions": "Best when the other player values the refreshed commodities and can transact; negotiate the agreement’s price and use rather than assuming guaranteed value in every table.",
+      "compatibility": "Episode 472 (2026-09-02); exact trade timing and component edition not checked.",
+      "uncertainty": "The speaker calls it nearly full commodity value, but actual value depends on deals and table behavior.",
+      "components": [
+        "ability:council_patronage",
+        "promissory:<color>_ta"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2166.14,
+          "end": 2168.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2178.34,
+          "end": 2180.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2183.16,
+          "end": 2200.78
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "segment_ids": [
+        "s000578",
+        "s000583",
+        "s000587",
+        "s000590",
+        "s000591",
+        "s000595",
+        "s000598",
+        "s000599",
+        "s000600"
+      ],
+      "statement": "Use Law’s Order as a situational response to a known law effect: the guide highlights blanking Political Censure before Repeal Law, which its speakers say removes the action-card restriction while retaining the point, and stopping Minister of Peace from interfering with a planned game-winning attack.",
+      "conditions": "Requires correctly identifying the law and resolving the ability in its permitted timing window; Repeal Law / Political Censure interaction is presented as a ruling, not independently checked.",
+      "compatibility": "Episode 472 (2026-09-02), Thunder’s Edge discussion; rules compatibility unverified.",
+      "uncertainty": "The guide expressly flags uncertainty about Law’s Order timing and interaction; its other examples are cherry-picked and may rarely arise.",
+      "components": [
+        "ability:laws_order"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2274.76,
+          "end": 2276.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2286.32,
+          "end": 2289.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2294.5,
+          "end": 2297.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2303.96,
+          "end": 2309.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2318.8,
+          "end": 2320.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2327.12,
+          "end": 2333.42
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "segment_ids": [
+        "s000639",
+        "s000648",
+        "s000651",
+        "s000652",
+        "s000658",
+        "s000661",
+        "s000663",
+        "s000664",
+        "s000665",
+        "s000688",
+        "s000690",
+        "s000691"
+      ],
+      "statement": "Agree with the table on how Law’s Order may be used at the start of another player’s turn; whether reacting after seeing their action is acceptable is described as unsettled, and the guide warns that many flashy examples will not come up.",
+      "conditions": "Particularly relevant when using the ability on another player’s turn rather than your own.",
+      "compatibility": "Episode 472 (2026-09-02); social convention and adjudication remain table-specific.",
+      "uncertainty": "Speakers explicitly do not settle what counts as angle-shooting and expect no definitive answer from the guide.",
+      "components": [
+        "ability:laws_order"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2470.74,
+          "end": 2477.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2509.22,
+          "end": 2513.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2517.7,
+          "end": 2522.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2532.84,
+          "end": 2539.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2546.44,
+          "end": 2552.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2556.28,
+          "end": 2571.37
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2668.76,
+          "end": 2672.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2673.54,
+          "end": 2679.42
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "segment_ids": [
+        "s000715",
+        "s000716",
+        "s000717",
+        "s000718",
+        "s000719",
+        "s000724",
+        "s000726",
+        "s000729",
+        "s000730",
+        "s000733",
+        "s000734",
+        "s000735",
+        "s000736"
+      ],
+      "statement": "The flagship’s six capacity can support the faction’s growing plastic, while its two-influence activation tax and each Keleres mech’s separate one-influence landing tax can make key systems costly to invade; the speakers regard the mech tax as more central than the flagship.",
+      "conditions": "Defensive value matters when opponents need to activate or commit ground forces into the system/planet; available trade goods can soften the tax.",
+      "compatibility": "Episode 472 (2026-09-02); component names and exact rules text are ASR-derived and not rules-verified.",
+      "uncertainty": "Mech transcription is uncertain; use the known unit ID only as a reference, not as validation of the paraphrased rule.",
+      "components": [
+        "unit:keleres_flagship",
+        "unit:keleres_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2743.1,
+          "end": 2769.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2788.24,
+          "end": 2792.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2794.5,
+          "end": 2802.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2808.92,
+          "end": 2816.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2824.24,
+          "end": 2850.54
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "segment_ids": [
+        "s000775",
+        "s000776",
+        "s000777",
+        "s000778",
+        "s000780",
+        "s000782",
+        "s000783",
+        "s000784",
+        "s000788",
+        "s000791"
+      ],
+      "statement": "Sell Keleres Rider uses for a negotiated payment when the buyer values the action card; the speakers describe two trade goods as a common deal and estimate repeated successful uses can generate substantial money, potentially four to eight per round.",
+      "conditions": "The buyer must want the card and cooperate; Executive Order, Bio-Stims, and multiple agendas create more opportunities, but every use is not guaranteed.",
+      "compatibility": "Episode 472 (2026-09-02); table norms and card availability vary.",
+      "uncertainty": "The per-round amount is explicitly conditional and action-card demand varies by table.",
+      "components": [
+        "promissory:riderm",
+        "technology:executiveorder",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 2992.54,
+          "end": 3048.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3055.9,
+          "end": 3060.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3061.66,
+          "end": 3070.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3075.86,
+          "end": 3078.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3084.82,
+          "end": 3090.64
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "segment_ids": [
+        "s000825",
+        "s000829",
+        "s000830",
+        "s000831",
+        "s000832",
+        "s000833",
+        "s000837",
+        "s000838",
+        "s000839",
+        "s000840"
+      ],
+      "statement": "Executive Order converts an action into an agenda vote using the top or bottom agenda card, with Keleres acting as speaker and able to spend trade goods/resources as votes; this also creates a Keleres Rider sale window.",
+      "conditions": "Use when agenda outcomes, action-card windows, or a chosen agenda are worth the tempo and resources; other players still vote and can affect the result.",
+      "compatibility": "Episode 472 (2026-09-02); Thunder’s Edge era, while the speakers flag many unresolved edge cases.",
+      "uncertainty": "Action-card windows and edge rulings are discussed from experience rather than independently verified.",
+      "components": [
+        "technology:executiveorder",
+        "promissory:riderm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3221.02,
+          "end": 3226.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3240.58,
+          "end": 3269.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3278.34,
+          "end": 3288.26
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "segment_ids": [
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000886",
+        "s000887",
+        "s000888",
+        "s000889",
+        "s000890",
+        "s000894",
+        "s000895",
+        "s000896",
+        "s000897",
+        "s000902",
+        "s000903",
+        "s000904",
+        "s000905",
+        "s000910",
+        "s000911",
+        "s000913"
+      ],
+      "statement": "Do not assume Executive Order satisfies every agenda-phase objective or effect immediately: the guide says Representative Government does not prevent Executive Order voting, Drive the Debate cannot score during this action-phase agenda, and multi-point agendas resolve points by initiative order.",
+      "conditions": "Check each card’s named timing and prerequisite; the transcript distinguishes the action phase’s agenda resolution from the agenda phase.",
+      "compatibility": "Episode 472 (2026-09-02); preserve as reported rulings pending current rules review.",
+      "uncertainty": "Most claims are introduced as rulings, but this is an unfinished guide and Argent’s Zeal interaction is explicitly uncertain.",
+      "components": [
+        "technology:executiveorder"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3453.66,
+          "end": 3493.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3507.04,
+          "end": 3531.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3556.24,
+          "end": 3574.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3581.86,
+          "end": 3586.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3589.02,
+          "end": 3591.62
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "segment_ids": [
+        "s000931",
+        "s000933",
+        "s000936",
+        "s000938",
+        "s000941",
+        "s000943",
+        "s000944",
+        "s000986",
+        "s000988",
+        "s000989",
+        "s000990",
+        "s000991",
+        "s000992",
+        "s000994",
+        "s000995"
+      ],
+      "statement": "Consider placing a promising agenda on the bottom of the deck for a later Executive Order, but account for opponent influence and the risk that waiting loses control over when it returns.",
+      "conditions": "Most attractive when you can plausibly use Executive Order again and the agenda’s delayed timing creates value; playing it earlier exposes the outcome to votes and interference.",
+      "compatibility": "Episode 472 (2026-09-02); agenda-deck control varies with Politics and other players.",
+      "uncertainty": "Speakers call this a partial, not complete, way to control the bottom card and warn against early use when the vote can be disrupted.",
+      "components": [
+        "technology:executiveorder",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3644.76,
+          "end": 3651.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3656.86,
+          "end": 3660.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3667.72,
+          "end": 3669.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3672.54,
+          "end": 3676.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3682.62,
+          "end": 3684.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3689.56,
+          "end": 3702.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3817.22,
+          "end": 3822.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3828.72,
+          "end": 3848.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3849.82,
+          "end": 3855.0
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "segment_ids": [
+        "s000334",
+        "s000335",
+        "s000337",
+        "s000338",
+        "s000339",
+        "s000340",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000352",
+        "s000353",
+        "s000358",
+        "s000369",
+        "s000371",
+        "s000377",
+        "s000381",
+        "s000384",
+        "s000385",
+        "s000387",
+        "s000390",
+        "s000391",
+        "s000392",
+        "s000394",
+        "s000398",
+        "s000399",
+        "s000400",
+        "s000401",
+        "s000402",
+        "s000421",
+        "s000422",
+        "s000423",
+        "s000424",
+        "s000425",
+        "s000430",
+        "s000435",
+        "s000437",
+        "s000440",
+        "s000443",
+        "s000444",
+        "s000445",
+        "s000447",
+        "s000449",
+        "s000450",
+        "s000452",
+        "s000454"
+      ],
+      "statement": "The guide compares the Mentak, Xxcha (heard as extra in the ASR), and Argent Council Keleres starts. It favors Mentak overall; Xxcha can be preferable with a resource-rich, influence-poor slice or a credible round-one Custodians line, while Argent is characterized as the weakest start.",
+      "conditions": "Setup must use a faction that is not already in the game, and each variant provides its own home system and hero. The Xxcha start extra influence is most useful when the slice or Custodians plan needs it; variant-specific hero advice does not transfer.",
+      "compatibility": "Episode 472 (2026-09-02); source compares the then-current Mentak, Xxcha and Argent Council Keleres starts; current compatibility is unverified.",
+      "uncertainty": "The transcript repeatedly recognizes Xxcha as extra; variant identification is inferred from the registered faction variants and corresponding hero discussion. The source ranking is podcast opinion/data, not a universal result.",
+      "components": [
+        "faction:keleresa",
+        "faction:keleresx",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1376.56,
+          "end": 1387.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1388.5,
+          "end": 1405.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1419.08,
+          "end": 1453.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1456.26,
+          "end": 1465.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1482.44,
+          "end": 1485.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1528.56,
+          "end": 1531.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1532.46,
+          "end": 1534.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1548.44,
+          "end": 1551.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1561.68,
+          "end": 1564.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1567.98,
+          "end": 1572.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1574.7,
+          "end": 1577.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1584.5,
+          "end": 1591.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1594.36,
+          "end": 1595.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1604.0,
+          "end": 1616.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1666.68,
+          "end": 1689.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1711.7,
+          "end": 1717.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1730.7,
+          "end": 1733.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1734.66,
+          "end": 1736.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1739.84,
+          "end": 1742.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1749.56,
+          "end": 1760.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1765.5,
+          "end": 1771.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1772.48,
+          "end": 1784.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1790.94,
+          "end": 1796.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1800.0,
+          "end": 1811.86
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "segment_ids": [
+        "s001223",
+        "s001224",
+        "s001225",
+        "s001226",
+        "s001227",
+        "s001228",
+        "s001234",
+        "s001238",
+        "s001239",
+        "s001244",
+        "s001246"
+      ],
+      "statement": "Despite its variance and unresolved interactions, the guide strongly recommends acquiring and using Executive Order; Bio-Stims is a favored accelerator, but do not spend votes as if the speaker’s result were assured.",
+      "conditions": "Use repeatedly when the agenda deck and table state make the expected value worthwhile; retain influence flexibility because opponents vote before Keleres.",
+      "compatibility": "Episode 472 (2026-09-02); advice reflects the speakers’ contemporary games, not a verified rules guide.",
+      "uncertainty": "Strong recommendation coexists with the speakers’ criticism that outcomes can feel like gambling and sometimes harm Keleres.",
+      "components": [
+        "technology:executiveorder",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4697.51,
+          "end": 4727.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4741.8,
+          "end": 4746.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4753.1,
+          "end": 4756.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4764.12,
+          "end": 4767.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4769.96,
+          "end": 4772.9
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "segment_ids": [
+        "s001267",
+        "s001268",
+        "s001269",
+        "s001270",
+        "s001271",
+        "s001278",
+        "s001279",
+        "s001280",
+        "s001281",
+        "s001282",
+        "s001283",
+        "s001299",
+        "s001302",
+        "s001303",
+        "s001305",
+        "s001306",
+        "s001308",
+        "s001309",
+        "s001310",
+        "s001311",
+        "s001315",
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001325",
+        "s001346",
+        "s001347"
+      ],
+      "statement": "Agency Supply Network is a strong but game-length-sensitive investment: it pairs production in one system with another production ability elsewhere, enabling repeated builds and low-cost reinforcement, but a shorter game can end before its plastic snowballs.",
+      "conditions": "Value rises with multiple separated production sources, Sarween Tools, spare resources, forward access and time; prioritize it less absolutely if the game is racing to an early finish.",
+      "compatibility": "Episode 472 (2026-09-02); Thunder’s Edge pace discussion, exact tech legality not checked.",
+      "uncertainty": "Speakers disagree in emphasis: it remains excellent, but the guide says its old automatic priority has softened under faster game pace.",
+      "components": [
+        "technology:asn",
+        "technology:st"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4881.74,
+          "end": 4901.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4921.9,
+          "end": 4939.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4983.54,
+          "end": 4986.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4991.42,
+          "end": 4997.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4999.22,
+          "end": 5005.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5008.6,
+          "end": 5025.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5037.6,
+          "end": 5042.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5055.58,
+          "end": 5084.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5092.52,
+          "end": 5097.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5168.16,
+          "end": 5173.54
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "segment_ids": [
+        "s001375",
+        "s001378",
+        "s001379",
+        "s001380",
+        "s001381",
+        "s001392",
+        "s001393",
+        "s001394",
+        "s001395",
+        "s001415",
+        "s001418",
+        "s001419",
+        "s001420",
+        "s001421",
+        "s001437",
+        "s001438",
+        "s001441",
+        "s001443",
+        "s001451",
+        "s001455",
+        "s001457",
+        "s001458",
+        "s001459",
+        "s001460",
+        "s001463"
+      ],
+      "statement": "The green-yellow IHQ Modernization breakthrough is presented as close to an automatic buy: it grants Custodia Vigilia, a 2/2 legendary planet card, broad adjacency-based neighbor access, and command tokens when another player scores Imperial’s second-clause point.",
+      "conditions": "Remember the planet enters exhausted and distinguish planet-card checks from system/planet checks: the guide says it helps Push Boundaries and some resource/influence secrets, but not control six planets outside home or Making History.",
+      "compatibility": "Episode 472 (2026-09-02); named breakthrough and objective interactions are not independently rules-checked.",
+      "uncertainty": "ASR spelling varies; transcript reports a prior 2/3 version nerfed to 2/2 and a narrow Imperial trigger.",
+      "components": [
+        "faction:keleresa",
+        "technology:asn",
+        "technology:executiveorder"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5281.96,
+          "end": 5289.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5296.76,
+          "end": 5315.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5355.24,
+          "end": 5380.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5439.14,
+          "end": 5442.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5447.84,
+          "end": 5455.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5481.22,
+          "end": 5495.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5504.32,
+          "end": 5508.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5509.82,
+          "end": 5516.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5544.34,
+          "end": 5547.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5557.48,
+          "end": 5559.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5560.9,
+          "end": 5580.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5586.72,
+          "end": 5591.3
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "segment_ids": [
+        "s001484",
+        "s001485",
+        "s001486",
+        "s001487",
+        "s001488",
+        "s001489",
+        "s001490"
+      ],
+      "statement": "If another player scores Mecatol Rex’s Imperial point while Custodia Vigilia is active, the resulting two command tokens can include one in the strategy pool and help pay for an Imperial secondary follow that round.",
+      "conditions": "Only applies to the specified Imperial second-clause scoring trigger; confirm the point is actually scored before planning to spend the token.",
+      "compatibility": "Episode 472 (2026-09-02); guide distinguishes this trigger from other bonus-point effects.",
+      "uncertainty": "The example is conditional on the other player’s Imperial point and an available follow.",
+      "components": [
+        "faction:keleresa",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5645.82,
+          "end": 5684.2
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "segment_ids": [
+        "s001493",
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001513",
+        "s001514"
+      ],
+      "statement": "Use Xander Alexin Victori III to spend Council Keleres commodities as trade goods when needed; the guide highlights paying for the breakthrough after a first action or enabling a first-round double-tech line with Technology.",
+      "conditions": "The agent is a one-use flexible payment; coordinate with the chosen start’s commodity and resource situation and the timing of Technology.",
+      "compatibility": "Episode 472 (2026-09-02); edition-specific ability text not reviewed.",
+      "uncertainty": "The transcript’s technology shorthand and start condition are not fully explicit, so treat double-tech as an available line rather than guaranteed opening.",
+      "components": [
+        "leader:keleresagent",
+        "ability:council_patronage",
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5692.12,
+          "end": 5698.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5761.1,
+          "end": 5789.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5791.64,
+          "end": 5798.57
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "segment_ids": [
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001525",
+        "s001526",
+        "s001528",
+        "s001529",
+        "s001553",
+        "s001554",
+        "s001555",
+        "s001556",
+        "s001557",
+        "s001558",
+        "s001562",
+        "s001578",
+        "s001579",
+        "s001581",
+        "s001584"
+      ],
+      "statement": "Unlock Suffi An with a trade good after playing a component-action action card; after unlocking, the commander can chain an additional action after a component action, making Executive Order or a useful action card a potential bridge into a tactical score.",
+      "conditions": "The unlocking component action does not itself grant the extra action; plan a separate action source such as Fleet Logistics. Chain only when the game state supports the follow-up. The source explicitly says the component-action card used to unlock the commander does not itself grant this additional action; plan a later component action or a separate Fleet Logistics action.",
+      "compatibility": "Episode 472 (2026-09-02); preserve the guide’s stated unlock condition and distinction between unlock and later use.",
+      "uncertainty": "The transcript uses a few garbled names, but describes the timing distinction explicitly.",
+      "components": [
+        "leader:kelerescommander",
+        "technology:fl",
+        "technology:executiveorder"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5814.06,
+          "end": 5831.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5849.96,
+          "end": 5856.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5859.86,
+          "end": 5868.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5925.06,
+          "end": 5949.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5952.76,
+          "end": 5956.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5985.64,
+          "end": 5993.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5994.8,
+          "end": 5996.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6000.0,
+          "end": 6010.58
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "segment_ids": [
+        "s001587",
+        "s001591",
+        "s001592",
+        "s001593",
+        "s001597",
+        "s001600",
+        "s001601",
+        "s001603",
+        "s001604",
+        "s001605",
+        "s001611",
+        "s001612",
+        "s001613",
+        "s001616",
+        "s001617"
+      ],
+      "statement": "The commander’s extra action can be more valuable to an ally with reliable component actions than to Keleres itself; price the Alliance with that in mind, and consider it for a last-round surprise build or movement-to-score sequence.",
+      "conditions": "Value depends on what component actions and action cards the recipient can actually use; the guide notes Keleres may need favorable action-card access, especially under the Mentak variant.",
+      "compatibility": "Episode 472 (2026-09-02); trade value is table-dependent.",
+      "uncertainty": "The speakers call the commander especially valuable to several other factions and do not give a fixed fair price.",
+      "components": [
+        "leader:kelerescommander",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6034.94,
+          "end": 6038.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6048.88,
+          "end": 6058.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6065.54,
+          "end": 6067.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6071.24,
+          "end": 6077.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6079.02,
+          "end": 6087.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6099.78,
+          "end": 6106.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6109.24,
+          "end": 6117.06
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "segment_ids": [
+        "s001627",
+        "s001629",
+        "s001637",
+        "s001638",
+        "s001639",
+        "s001647",
+        "s001654",
+        "s001657",
+        "s001658",
+        "s001669",
+        "s001680",
+        "s001682",
+        "s001691",
+        "s001693",
+        "s001694"
+      ],
+      "statement": "The Argent Keleres hero is a situational combat surprise that can add its flagship and up to two cruisers or destroyers at the start of a space combat in a system containing a planet you control; the speakers find it modest and constrained by fleet pool and poor unit synergy.",
+      "conditions": "Applies only if Council Keleres chose the Argent start and unlocks its hero; best when the surprise changes a combat needed for scoring or preserves a forward dock.",
+      "compatibility": "Episode 472 (2026-09-02); advice concerns the Argent variant only.",
+      "uncertainty": "The hosts disagree in strength assessment: one reports a decisive successful use, while overall commentary remains negative.",
+      "components": [
+        "faction:keleresa",
+        "unit:keleres_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6147.48,
+          "end": 6152.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6153.04,
+          "end": 6160.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6183.94,
+          "end": 6202.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6232.18,
+          "end": 6237.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6256.62,
+          "end": 6258.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6264.92,
+          "end": 6269.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6295.84,
+          "end": 6299.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6325.76,
+          "end": 6327.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6329.66,
+          "end": 6332.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6359.96,
+          "end": 6362.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6366.2,
+          "end": 6371.4
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "segment_ids": [
+        "s001725",
+        "s001727",
+        "s001728",
+        "s001729",
+        "s001730",
+        "s001731",
+        "s001747",
+        "s001748",
+        "s001750",
+        "s001751",
+        "s001753",
+        "s001754",
+        "s001757",
+        "s001760",
+        "s001761",
+        "s001762",
+        "s001763"
+      ],
+      "statement": "The Xxcha Keleres hero gains value from Executive Order: it can add votes and reward correct predictions about who abstains or votes differently, with the action-phase timing making it easier to use than the earlier version described by the hosts.",
+      "conditions": "Applies only if Council Keleres chose the Xxcha start and unlocks its hero; the vote sequence and other players’ choices determine value.",
+      "compatibility": "Episode 472 (2026-09-02); Xxcha variant only; preserve the guide’s rules-era caveat.",
+      "uncertainty": "The speakers correct their own explanation of vote timing mid-discussion; do not assume the maximum payout is automatic.",
+      "components": [
+        "faction:keleresx",
+        "technology:executiveorder"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6469.32,
+          "end": 6477.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6485.54,
+          "end": 6516.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6559.98,
+          "end": 6565.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6571.1,
+          "end": 6575.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6578.64,
+          "end": 6584.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6591.46,
+          "end": 6594.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6630.02,
+          "end": 6663.76
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "segment_ids": [
+        "s001767",
+        "s001768",
+        "s001777",
+        "s001782",
+        "s001787",
+        "s001791",
+        "s001798",
+        "s001802",
+        "s001803",
+        "s001804",
+        "s001808",
+        "s001812",
+        "s001813",
+        "s001814",
+        "s001815",
+        "s001818"
+      ],
+      "statement": "The Mentak Keleres hero draws three action cards with component actions and is described as high-variance with a useful floor; an exceptional Overrule or movement card can combine with Fleet Logistics and a Fracture route for a late multi-point turn.",
+      "conditions": "Applies only to the Mentak start and its unlocked hero; the dramatic line requires the specific cards, position, route and score opportunities, and is not a routine expectation.",
+      "compatibility": "Episode 472 (2026-09-02); Mentak variant only; guide presents the combination as plausible Christmas-land, not a guaranteed line.",
+      "uncertainty": "ASR says ‘burge’ for purge; component names are identified from context and not a rules ruling.",
+      "components": [
+        "faction:keleresa",
+        "action-card:overrule",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6678.84,
+          "end": 6691.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6729.1,
+          "end": 6732.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6747.24,
+          "end": 6750.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6759.2,
+          "end": 6762.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6768.44,
+          "end": 6772.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6783.74,
+          "end": 6787.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6798.34,
+          "end": 6817.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6829.14,
+          "end": 6833.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6840.7,
+          "end": 6850.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6854.24,
+          "end": 6856.82
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "segment_ids": [
+        "s001821",
+        "s001828",
+        "s001831",
+        "s001836",
+        "s001839",
+        "s001840",
+        "s001844",
+        "s001845",
+        "s001847",
+        "s001848",
+        "s001850",
+        "s001861",
+        "s001881",
+        "s001882",
+        "s001887",
+        "s001888",
+        "s001889",
+        "s001927",
+        "s001934",
+        "s001935"
+      ],
+      "statement": "Plan to convert Keleres’ potentially large, variable economy into timely board position: the guide’s default route is early access and production toward Mecatol Rex, then the Fracture/Styx, while table hostility can deny the setup and the faction is not especially punchy in a late fight.",
+      "conditions": "Requires suitable ingress, forward production, build resources and time; adapt when the table treats Mecatol presence as an imminent threat or blocks the route.",
+      "compatibility": "Episode 472 (2026-09-02), discussing Thunder’s Edge / Fracture-era play.",
+      "uncertainty": "The guide gives contrasting play experiences and emphasizes table attitude as a major variable.",
+      "components": [
+        "technology:asn",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6872.78,
+          "end": 6879.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6899.54,
+          "end": 6902.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6908.54,
+          "end": 6916.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6936.4,
+          "end": 6942.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6950.46,
+          "end": 6958.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6964.16,
+          "end": 6979.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6986.8,
+          "end": 6991.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6993.2,
+          "end": 6995.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7017.16,
+          "end": 7018.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7049.08,
+          "end": 7060.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7077.36,
+          "end": 7088.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7222.46,
+          "end": 7228.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7253.74,
+          "end": 7266.46
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "segment_ids": [
+        "s001947",
+        "s001948",
+        "s001954",
+        "s001955",
+        "s001956",
+        "s001957",
+        "s001958",
+        "s001961",
+        "s001962",
+        "s001965",
+        "s001966",
+        "s001969",
+        "s001970",
+        "s001972"
+      ],
+      "statement": "Construction is a strong opening pick when it secures a home build, repairs the thin infantry start, and places a forward Space Dock for later Agency Supply Network production; a straight, planet-rich slice supports that plan.",
+      "conditions": "The forward dock placement and route to Mecatol depend on slice geometry; Gravity Drive adjacency is described as a bonus rather than a requirement.",
+      "compatibility": "Episode 472 (2026-09-02); strategy-card advice and map assumptions are guide-specific.",
+      "uncertainty": "The ideal location varies, and the hosts explicitly caution against treating a dock next to Mecatol as necessary.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:asn"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7320.68,
+          "end": 7329.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7359.84,
+          "end": 7381.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7388.14,
+          "end": 7396.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7399.34,
+          "end": 7409.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7415.82,
+          "end": 7423.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7428.04,
+          "end": 7428.56
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "segment_ids": [
+        "s001974",
+        "s001979",
+        "s001982",
+        "s001983",
+        "s001985",
+        "s001986",
+        "s001987",
+        "s001988",
+        "s001991",
+        "s001994",
+        "s001995",
+        "s001996",
+        "s002005",
+        "s002008",
+        "s002009",
+        "s002011",
+        "s002012",
+        "s002015",
+        "s002016",
+        "s002017"
+      ],
+      "statement": "Consider Technology early because Keleres has several valuable tech needs; following Warfare afterward is acceptable when it supplies the infantry missing from the weak start, while Council Patronage can finance a breakthrough on a different line.",
+      "conditions": "The double-tech opening assumes the chosen start, payment plan, available Warfare primary and suitable starting technologies; the speakers say the double-tech path is too costly for a round-one Mecatol grab.",
+      "compatibility": "Episode 472 (2026-09-02); opening evaluation varies by chosen start and table strategy-card order.",
+      "uncertainty": "They call Tech a high-priority option, not an automatic first pick, and note Warfare may be skipped or unavailable.",
+      "components": [
+        "strategy-card:pok7technology",
+        "strategy-card:pok6warfare",
+        "ability:council_patronage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7434.48,
+          "end": 7440.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7458.44,
+          "end": 7460.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7470.08,
+          "end": 7475.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7478.0,
+          "end": 7488.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7496.38,
+          "end": 7499.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7507.36,
+          "end": 7514.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7550.08,
+          "end": 7553.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7559.9,
+          "end": 7566.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7568.06,
+          "end": 7578.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7587.66,
+          "end": 7603.8
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "segment_ids": [
+        "s002023",
+        "s002026",
+        "s002028",
+        "s002029",
+        "s002030",
+        "s002031",
+        "s002038",
+        "s002042",
+        "s002050",
+        "s002051",
+        "s002052",
+        "s002053"
+      ],
+      "statement": "Politics can preserve starting commodities for the proposed round-one line, but any non-Construction opening risks missing the Warfare secondary and the infantry the weak start needs.",
+      "conditions": "The hosts do not spell out the exact use of the retained commodities; only take this line if Warfare is likely to be selected or another production plan covers infantry.",
+      "compatibility": "Episode 472 (2026-09-02); starting option and pick order affect the line.",
+      "uncertainty": "The speaker calls their concern paranoid but says a missed Warfare primary can make the start very poor.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok6warfare",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7619.68,
+          "end": 7625.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7630.28,
+          "end": 7634.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7639.26,
+          "end": 7652.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7683.18,
+          "end": 7684.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7704.6,
+          "end": 7713.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7751.98,
+          "end": 7776.9
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "segment_ids": [
+        "s002062",
+        "s002068",
+        "s002069",
+        "s002070",
+        "s002077",
+        "s002078",
+        "s002079",
+        "s002080",
+        "s002084",
+        "s002094",
+        "s002097",
+        "s002098",
+        "s002103",
+        "s002106",
+        "s002107"
+      ],
+      "statement": "Leadership becomes more attractive with a temporal anomaly scar because the extra token helps pay for the faction tech; Warfare is usually better used for a home-system build than for spreading the small starting force outward.",
+      "conditions": "The scar changes the token/tech calculation; avoid the outward Warfare line unless the resulting thin, exposed board position is acceptable.",
+      "compatibility": "Episode 472 (2026-09-02); the scar and strategy-card availability are map/table dependent.",
+      "uncertainty": "Hosts differ on Leadership’s general ranking but agree the scar makes it more appealing.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7801.86,
+          "end": 7804.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7819.9,
+          "end": 7824.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7838.4,
+          "end": 7850.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7859.88,
+          "end": 7864.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7908.64,
+          "end": 7913.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7918.74,
+          "end": 7925.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7946.2,
+          "end": 7952.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7957.54,
+          "end": 7965.72
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "segment_ids": [
+        "s002111",
+        "s002112",
+        "s002113",
+        "s002114",
+        "s002121",
+        "s002122",
+        "s002123",
+        "s002128",
+        "s002133",
+        "s002137",
+        "s002140",
+        "s002149",
+        "s002152",
+        "s002153",
+        "s002155",
+        "s002159",
+        "s002163",
+        "s002164",
+        "s002184"
+      ],
+      "statement": "Trade remains useful after a separate breakthrough payment, while Diplomacy is a low-priority pick because Keleres already has money and often needs productive outlets for it; Technology, Warfare and Construction better address its early needs.",
+      "conditions": "The guide prefers Trade after the breakthrough action and still allows following Diplomacy when its secondary meaningfully improves the position.",
+      "compatibility": "Episode 472 (2026-09-02); advice assumes the discussed strategy-card set and round-one economy.",
+      "uncertainty": "The hosts qualify Diplomacy as low probability rather than literally unpickable.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok7technology",
+        "strategy-card:pok4construction",
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7971.58,
+          "end": 7983.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 7998.48,
+          "end": 8009.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8022.72,
+          "end": 8024.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8035.76,
+          "end": 8037.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8042.24,
+          "end": 8043.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8046.52,
+          "end": 8054.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8081.54,
+          "end": 8083.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8090.52,
+          "end": 8095.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8098.9,
+          "end": 8100.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8108.88,
+          "end": 8111.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8123.12,
+          "end": 8131.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8159.76,
+          "end": 8163.24
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "segment_ids": [
+        "s002189",
+        "s002194",
+        "s002195",
+        "s002196",
+        "s002197",
+        "s002203",
+        "s002211",
+        "s002213",
+        "s002214",
+        "s002216",
+        "s002221",
+        "s002223",
+        "s002224",
+        "s002225",
+        "s002230",
+        "s002234",
+        "s002237",
+        "s002238",
+        "s002239",
+        "s002245",
+        "s002246",
+        "s002247",
+        "s002249",
+        "s002251",
+        "s002254",
+        "s002261",
+        "s002265",
+        "s002266",
+        "s002267",
+        "s002268",
+        "s002276",
+        "s002280",
+        "s002281",
+        "s002282",
+        "s002283",
+        "s002284",
+        "s002287"
+      ],
+      "statement": "Treat Gravity Drive, Executive Order, Agency Supply Network, Carrier II and X-89 as the guide’s core tech path; Bio-Stims is a high-value accelerator, Sarween is useful but optional, and Fleet Logistics, Fighter II, Light/Wave Deflector, Transit Diodes or Space Dock II can be strong situational extensions.",
+      "conditions": "Prioritize tech according to route access, game length, unit-upgrade objectives and available economy; Fleet Logistics is especially valuable when an action-phase win is possible, Light/Wave when late Fracture access is needed.",
+      "compatibility": "Episode 472 (2026-09-02); advice describes a technology-heavy strategy and is not an exhaustive build order.",
+      "uncertainty": "The core list is the speaker’s proposed essential set; later discussion adds alternatives and explicitly says there is too much useful tech to acquire all of it.",
+      "components": [
+        "technology:gd",
+        "technology:executiveorder",
+        "technology:asn",
+        "technology:cv2",
+        "technology:x89",
+        "technology:bs",
+        "technology:st",
+        "technology:fl",
+        "technology:ff2",
+        "technology:lwd",
+        "technology:td",
+        "technology:sd2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8179.44,
+          "end": 8182.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8202.62,
+          "end": 8221.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8234.04,
+          "end": 8236.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8253.06,
+          "end": 8255.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8258.8,
+          "end": 8262.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8263.5,
+          "end": 8266.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8274.42,
+          "end": 8280.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8284.28,
+          "end": 8303.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8316.08,
+          "end": 8318.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8325.58,
+          "end": 8329.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8336.18,
+          "end": 8347.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8361.56,
+          "end": 8371.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8373.28,
+          "end": 8379.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8382.34,
+          "end": 8384.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8390.96,
+          "end": 8393.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8411.14,
+          "end": 8414.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8430.38,
+          "end": 8454.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8467.86,
+          "end": 8469.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8474.46,
+          "end": 8490.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8497.0,
+          "end": 8498.82
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "segment_ids": [
+        "s002297",
+        "s002299",
+        "s002301",
+        "s002304",
+        "s002307",
+        "s002309",
+        "s002310",
+        "s002317",
+        "s002318",
+        "s002320",
+        "s002321",
+        "s002322",
+        "s002329",
+        "s002330",
+        "s002332"
+      ],
+      "statement": "Space Dock II can raise production at Mecatol or a low-production home system, but it competes with Fleet Logistics and a second forward dock; the speakers usually prefer Fleet Logistics when choosing one luxury tech.",
+      "conditions": "Consider it when production is the actual bottleneck or two-unit upgrades make the yellow-green path convenient; Keleres may already have enough production sources to saturate Agency Supply Network.",
+      "compatibility": "Episode 472 (2026-09-02); conditional tech-priority advice.",
+      "uncertainty": "The cited Mecatol production example assumes additional docks and planetary production not present in every game.",
+      "components": [
+        "technology:sd2",
+        "technology:asn",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8521.44,
+          "end": 8522.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8523.78,
+          "end": 8525.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8529.26,
+          "end": 8532.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8540.88,
+          "end": 8546.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8552.74,
+          "end": 8560.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8566.86,
+          "end": 8579.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8600.82,
+          "end": 8609.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8612.04,
+          "end": 8625.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8648.02,
+          "end": 8662.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8665.74,
+          "end": 8670.82
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "segment_ids": [
+        "s002334",
+        "s002339",
+        "s002341",
+        "s002342",
+        "s002347",
+        "s002351",
+        "s002352",
+        "s002359",
+        "s002360",
+        "s002361",
+        "s002368",
+        "s002369",
+        "s002379",
+        "s002380",
+        "s002381",
+        "s002383",
+        "s002384",
+        "s002407",
+        "s002409",
+        "s002410",
+        "s002412",
+        "s002418",
+        "s002422",
+        "s002427",
+        "s002428",
+        "s002431",
+        "s002432",
+        "s002436"
+      ],
+      "statement": "Negotiate Keleres Rider and Alliance deals early, since repeated Rider windows can fund builds and agendas; opponents can contest free agenda-phase Rider value, while a late Alliance request may signal the note is no longer safely tradable.",
+      "conditions": "The common Rider terms discussed are one trade good without a guarantee or two with help on the outcome; a Last Bastion swap is proposed as mutually useful but remains table-specific.",
+      "compatibility": "Episode 472 (2026-09-02); examples depend on table norms, faction mix and agenda timing.",
+      "uncertainty": "Speakers disagree on how much opponents should block the deal and say the value is not absolute.",
+      "components": [
+        "promissory:riderm",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8676.8,
+          "end": 8681.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8702.38,
+          "end": 8707.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8711.2,
+          "end": 8720.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8731.78,
+          "end": 8733.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8740.78,
+          "end": 8746.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8756.98,
+          "end": 8770.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8792.64,
+          "end": 8797.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8821.12,
+          "end": 8830.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8831.28,
+          "end": 8837.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8881.52,
+          "end": 8885.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8888.14,
+          "end": 8903.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8909.64,
+          "end": 8915.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8926.96,
+          "end": 8930.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8934.26,
+          "end": 8936.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8945.58,
+          "end": 8949.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8952.94,
+          "end": 8956.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8962.24,
+          "end": 8964.36
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "segment_ids": [
+        "s002451",
+        "s002453",
+        "s002454",
+        "s002468",
+        "s002477",
+        "s002478",
+        "s002479",
+        "s002484",
+        "s002486",
+        "s002489",
+        "s002491"
+      ],
+      "statement": "Titans can be a valuable partner: terraforming Custodia Vigilia helps Keleres, and Titans’ Commander can repeatedly pair with Agency Supply Network to add value to builds; negotiate compensation early because the speakers cannot name a universal fair price.",
+      "conditions": "Requires Titans in the game, an agreed unlock/trade and enough production events to realize repeated benefit; a per-trigger trade-good share is offered as one possible deal structure.",
+      "compatibility": "Episode 472 (2026-09-02); trade proposal only, not a guaranteed component interaction.",
+      "uncertainty": "The transcript speculates about exact interaction and pricing; validate current rules and the Alliance text before use.",
+      "components": [
+        "technology:asn",
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9000.0,
+          "end": 9003.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9008.22,
+          "end": 9020.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9066.16,
+          "end": 9072.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9108.02,
+          "end": 9127.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9132.0,
+          "end": 9135.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9136.92,
+          "end": 9137.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9139.34,
+          "end": 9141.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9145.36,
+          "end": 9152.88
+        }
+      ]
+    },
+    {
+      "id": "C32",
+      "segment_ids": [
+        "s002522",
+        "s002524",
+        "s002527",
+        "s002531",
+        "s002534",
+        "s002536",
+        "s002539",
+        "s002541",
+        "s002545",
+        "s002546",
+        "s002547",
+        "s002552",
+        "s002554",
+        "s002556",
+        "s002561"
+      ],
+      "statement": "The Sardakk Alliance can make production unusually flexible: the speakers describe building at a high-production dock while placing the resulting plastic in another system, complementing Keleres’ multiple production events.",
+      "conditions": "Requires Sardakk in the game, its Alliance and appropriate docks/placement; the example is one play-test arrangement, not a general permission claim.",
+      "compatibility": "Episode 472 (2026-09-02); interaction description is not independently rules-verified.",
+      "uncertainty": "Transcript labels the ability only as the Sardakk Commander/Alliance; avoid expanding the rule beyond the described placement example.",
+      "components": [
+        "faction:sardakk",
+        "technology:asn"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9237.46,
+          "end": 9242.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9244.32,
+          "end": 9249.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9251.44,
+          "end": 9260.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9274.74,
+          "end": 9279.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9289.32,
+          "end": 9291.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9294.48,
+          "end": 9295.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9299.12,
+          "end": 9300.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9302.42,
+          "end": 9305.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9311.38,
+          "end": 9317.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9323.52,
+          "end": 9327.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9329.84,
+          "end": 9331.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9333.24,
+          "end": 9334.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9341.88,
+          "end": 9343.52
+        }
+      ]
+    },
+    {
+      "id": "C33",
+      "segment_ids": [
+        "s000457",
+        "s000458",
+        "s002562",
+        "s002563",
+        "s002566",
+        "s002568",
+        "s002569",
+        "s002580",
+        "s002581",
+        "s002584",
+        "s002587",
+        "s002589",
+        "s002597",
+        "s002598",
+        "s002601",
+        "s002606",
+        "s002607",
+        "s002608",
+        "s002627",
+        "s002628",
+        "s002629",
+        "s002634",
+        "s002639",
+        "s002640",
+        "s002642"
+      ],
+      "statement": "Mentak is a major Council Keleres counter because Pillage can intercept the faction’s frequent trade goods; if Mentak is in the game, negotiate protection or other value rather than assuming the Keleres economy will function normally.",
+      "conditions": "Applies when Mentak is a separate opponent and Council Keleres has selected another available start; the Mentak home-system variant itself is unavailable if Mentak is already in the game.",
+      "compatibility": "Episode 472 (2026-09-02); compatibility depends on the variant draft and faction pool.",
+      "uncertainty": "The speakers call Mentak a serious counter but also debate whether Pillage’s money translates into wins for Mentak; trade response is speculative.",
+      "components": [
+        "faction:keleresa",
+        "faction:mentak",
+        "ability:pillage"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1822.4,
+          "end": 1834.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9346.06,
+          "end": 9350.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9355.78,
+          "end": 9357.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9360.7,
+          "end": 9364.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9381.44,
+          "end": 9384.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9387.22,
+          "end": 9390.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9393.5,
+          "end": 9394.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9400.7,
+          "end": 9403.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9430.8,
+          "end": 9436.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9443.56,
+          "end": 9446.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9456.98,
+          "end": 9464.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9524.08,
+          "end": 9548.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9560.08,
+          "end": 9561.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9579.92,
+          "end": 9586.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9587.66,
+          "end": 9594.14
+        }
+      ]
+    },
+    {
+      "id": "C34",
+      "segment_ids": [
+        "s002652",
+        "s002653",
+        "s002655",
+        "s002656",
+        "s002659",
+        "s002663",
+        "s002664",
+        "s002667",
+        "s002668",
+        "s002669",
+        "s002674",
+        "s002675",
+        "s002677",
+        "s002678",
+        "s002681",
+        "s002688",
+        "s002691",
+        "s002699",
+        "s002702",
+        "s002707"
+      ],
+      "statement": "Seek faction-specific trades that improve the Keleres plan: the guide favors Jol-Nar Research Agreement and Deepwrought technology access, values Winnu’s alliance when Keleres reaches Mecatol first, and notes the Xxcha/extra political tools can shape Executive Order outcomes.",
+      "conditions": "Each offer is opponent- and variant-dependent; Winnu may contest Mecatol, and the Xxcha start itself cannot be chosen if Xxcha is already in the game.",
+      "compatibility": "Episode 472 (2026-09-02); this claim summarizes distinct conditional table interactions, not a required package.",
+      "uncertainty": "Several proper nouns are low-confidence ASR (e.g. Deepwrought rendered ‘Deep Rott’); named examples should be checked against components before rules use.",
+      "components": [
+        "faction:keleresa",
+        "faction:winnu",
+        "faction:keleresx",
+        "promissory:ra"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9696.26,
+          "end": 9709.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9710.62,
+          "end": 9716.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9725.46,
+          "end": 9727.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9734.16,
+          "end": 9740.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9744.2,
+          "end": 9752.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9763.66,
+          "end": 9766.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9767.56,
+          "end": 9774.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9779.3,
+          "end": 9782.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9794.12,
+          "end": 9800.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9808.42,
+          "end": 9812.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9835.48,
+          "end": 9838.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9843.9,
+          "end": 9846.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9855.18,
+          "end": 9859.86
+        }
+      ]
+    },
+    {
+      "id": "C35",
+      "segment_ids": [
+        "s002714",
+        "s002715",
+        "s002716",
+        "s002722",
+        "s002724",
+        "s002749",
+        "s002753",
+        "s002755",
+        "s002759",
+        "s002760",
+        "s002762",
+        "s002766",
+        "s002768",
+        "s002770",
+        "s002772",
+        "s002774",
+        "s002775",
+        "s002777"
+      ],
+      "statement": "Empyrean can turn frequent commodity refreshes and trades into repeat income, but its Blood Pact may help opponents contest Executive Order votes; Cabal’s Alliance can also supply extra plastic on builds, and Ghosts can be a technology-access partner for Gravity Drive.",
+      "conditions": "The episode’s deal examples depend on factions being present, mutually accepted transactions and the actual wording of their abilities; preserve the distinction between a proposed counter and observed synergy.",
+      "compatibility": "Episode 472 (2026-09-02); interaction claims are strategic hypotheses from the guide.",
+      "uncertainty": "Some names and timing are ASR-derived, and the speakers describe Blood Pact’s action-phase application as their reading rather than a confirmed ruling.",
+      "components": [
+        "faction:keleresa",
+        "faction:cabal",
+        "technology:gd",
+        "promissory:blood_pact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9881.56,
+          "end": 9889.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9901.86,
+          "end": 9902.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9905.82,
+          "end": 9908.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9971.96,
+          "end": 9976.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9991.52,
+          "end": 9994.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9997.68,
+          "end": 9999.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10009.16,
+          "end": 10015.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10022.56,
+          "end": 10026.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10035.8,
+          "end": 10042.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10045.26,
+          "end": 10050.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10056.28,
+          "end": 10061.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10066.06,
+          "end": 10071.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10077.1,
+          "end": 10087.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10092.12,
+          "end": 10096.16
+        }
+      ]
+    },
+    {
+      "id": "C36",
+      "segment_ids": [
+        "s001418",
+        "s001419",
+        "s001420",
+        "s001421",
+        "s001422",
+        "s001423",
+        "s001424",
+        "s002785",
+        "s002787",
+        "s002788",
+        "s002790",
+        "s002791",
+        "s002793",
+        "s002794",
+        "s002797",
+        "s002800",
+        "s002801",
+        "s002802",
+        "s002804",
+        "s002806",
+        "s002808",
+        "s002810",
+        "s002813",
+        "s002816",
+        "s002817",
+        "s002818",
+        "s002824"
+      ],
+      "statement": "Use Custodia Vigilia’s planet-card status carefully for scoring: the guide says it can help Push Boundaries and resource/influence secrets, but not Expand Borders or control-six-outside-home; it also counts as legendary for one secret while not satisfying Making History’s system condition.",
+      "conditions": "Check the exact objective wording and distinguish controlling the card/planet from occupying a system; Keleres may enter the Fracture late and need to overcome an existing holder.",
+      "compatibility": "Episode 472 (2026-09-02); scoring and Fracture advice are not rules-verified.",
+      "uncertainty": "The guide itself emphasizes that Custodia is a planet card outside a system and reports objective-specific exceptions.",
+      "components": [
+        "faction:keleresa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5447.84,
+          "end": 5459.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10132.0,
+          "end": 10137.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10143.4,
+          "end": 10154.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10158.5,
+          "end": 10168.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10172.4,
+          "end": 10180.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10189.96,
+          "end": 10195.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10200.0,
+          "end": 10213.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10219.98,
+          "end": 10224.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10228.88,
+          "end": 10234.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10240.88,
+          "end": 10247.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10249.18,
+          "end": 10254.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10259.54,
+          "end": 10261.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10266.52,
+          "end": 10274.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 10286.04,
+          "end": 10288.5
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:executiveorder",
+      "to": "promissory:riderm",
+      "relation": "enables",
+      "conditions": "Each Executive Order resolution creates another agenda outcome on which Keleres Rider may be offered; payment and buyer cooperation are required.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 3278.34,
+          "end": 3288.26
+        }
+      ]
+    },
+    {
+      "from": "technology:executiveorder",
+      "to": "technology:bs",
+      "relation": "synergizes-with",
+      "conditions": "Bio-Stims may refresh Executive Order for another use, increasing agenda opportunities when the timing and resources support it.",
+      "citations": [
+        {
+          "end": 4727.58,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4704.62
+        }
+      ]
+    },
+    {
+      "from": "technology:asn",
+      "to": "technology:st",
+      "relation": "synergizes-with",
+      "conditions": "Separate production resolutions can let Sarween Tools discount each build; value depends on available docks and resources.",
+      "citations": [
+        {
+          "end": 5025.5,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4994.88
+        }
+      ]
+    },
+    {
+      "from": "technology:asn",
+      "to": "faction:keleresa",
+      "relation": "enables",
+      "conditions": "The guide treats multiple production sources as a route to reinforce Mecatol Rex and prepare a later Fracture push, if access and time permit.",
+      "citations": [
+        {
+          "end": 4971.42,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 4963.58
+        }
+      ]
+    },
+    {
+      "from": "faction:keleresa",
+      "to": "faction:mentak",
+      "relation": "counters",
+      "conditions": "When Mentak is a separate faction in the game, Pillage can intercept Keleres trade goods; the Mentak home-system variant is unavailable if Mentak is already present.",
+      "citations": [
+        {
+          "end": 1834.08,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1822.4
+        },
+        {
+          "end": 1994.28,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1984.28
+        },
+        {
+          "end": 9400.7,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 9346.06
+        }
+      ]
+    },
+    {
+      "from": "faction:keleresa",
+      "to": "faction:keleresa",
+      "relation": "conflicts-with",
+      "conditions": "These are distinct Council Keleres starting variants; choose the Argent configuration only when the corresponding Argent faction is unused, and its hero advice does not automatically transfer to the Mentak configuration.",
+      "citations": [
+        {
+          "end": 1415.12,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1376.56
+        },
+        {
+          "end": 1994.28,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1984.28
+        }
+      ]
+    },
+    {
+      "from": "faction:keleresa",
+      "to": "faction:keleresx",
+      "relation": "conflicts-with",
+      "conditions": "These are distinct Council Keleres starting variants; Xxcha hero advice applies only if that start is chosen and Xxcha is unused.",
+      "citations": [
+        {
+          "end": 1415.12,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 1376.56
+        },
+        {
+          "end": 6516.1,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6477.86
+        }
+      ]
+    },
+    {
+      "from": "technology:executiveorder",
+      "to": "faction:keleresx",
+      "relation": "synergizes-with",
+      "conditions": "Only the Xxcha Keleres variant has the cited additional-votes hero interaction; the Executive Order vote remains dependent on other players’ choices.",
+      "citations": [
+        {
+          "end": 6663.76,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 6477.86
+        }
+      ]
+    },
+    {
+      "from": "technology:fl",
+      "to": "technology:executiveorder",
+      "relation": "enables",
+      "conditions": "When Fleet Logistics is available and an additional scoring action is possible, it can follow a component action such as Executive Order; this is a conditional late-game line.",
+      "citations": [
+        {
+          "end": 5947.44,
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 5930.54
+        }
+      ]
+    },
+    {
+      "from": "technology:sd2",
+      "to": "technology:asn",
+      "relation": "synergizes-with",
+      "conditions": "Space Dock II can add a useful production source when Keleres’ current network lacks production, but it can be redundant once multiple docks and Custodia production saturate the available actions.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8552.74,
+          "end": 8579.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8600.14,
+          "end": 8604.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-472-362b6046521f",
+          "start": 8612.04,
+          "end": 8614.86
+        }
+      ]
+    }
+  ],
+  "source_family": "Council Keleres shared guide; apply only claims whose explicit starting-variant conditions hold."
+}

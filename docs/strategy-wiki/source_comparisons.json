@@ -1,0 +1,148 @@
+{
+  "arborec": [
+    {
+      "document": "upstream-community",
+      "heading": "The Arborec (`arborec`)",
+      "kind": "Expansion-dependent disagreement",
+      "claims": [
+        "C01",
+        "C18"
+      ],
+      "text": "The community notes call Sarween Tools a common first technology in PoK; the TE guide makes Psycho Spore central and says Sarween is not compulsory. Keep these as different expansion/tempo plans, not one fixed opening."
+    }
+  ],
+  "hacan": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Emirates of Hacan (`hacan`)",
+      "kind": "Technology priority disagreement",
+      "claims": [
+        "C09",
+        "C10"
+      ],
+      "text": "The profile includes Production Biomes after the yellow route; the guide prioritizes Gravity Drive/QDN and usually skips Biomes because its costs buy income Hacan does not need. Do not append the entire profile list to the guide’s core path."
+    }
+  ],
+  "letnev": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Barony of Letnev (`letnev`)",
+      "kind": "Expansion-dependent fleet disagreement",
+      "claims": [
+        "C10",
+        "C12"
+      ],
+      "text": "The profile builds a dreadnought-heavy late fleet and researches Dreadnought II. The TE guide de-emphasizes that upgrade and elevates Destroyer II, backed by breakthrough movement. Fleet and research priorities must retain their source era."
+    }
+  ],
+  "sardakk": [
+    {
+      "document": "upstream-plans",
+      "heading": "Sardakk N'orr (`sardakk`)",
+      "kind": "Technology priority disagreement",
+      "claims": [
+        "C18",
+        "C21",
+        "C22"
+      ],
+      "text": "The profile centers Valkyrie Particle Weave and later Exotrireme II; the guide centers blue carrier mobility, usually avoids the red detour, and conditions Exotrireme II on skips that preserve Light/Wave. These are competing allocations of a limited technology budget."
+    }
+  ],
+  "yin": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Yin Brotherhood (`yin`)",
+      "kind": "Technology priority disagreement",
+      "claims": [
+        "C12",
+        "C27"
+      ],
+      "text": "The profile pursues Yin Spinner and Impulse Core; the guide discourages both by default and favors Gravity Drive/Carrier II. The alternatives remain visible rather than being combined into an unaffordable technology list."
+    }
+  ],
+  "winnu": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Winnu (`winnu`)",
+      "kind": "Survival and technology disagreement",
+      "claims": [
+        "C04",
+        "C11",
+        "C21"
+      ],
+      "text": "The profile stresses Mecatol and faction technologies; the guide rejects a default round-one Custodians rush, criticizes those technologies and limits the normal route to DET, Gravity Drive and Carrier II before buying units. A later Mecatol/Imperial finish does not require the profile’s entire research path."
+    }
+  ],
+  "xxcha": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Xxcha Kingdom (`xxcha`)",
+      "kind": "Technology priority disagreement",
+      "claims": [
+        "C17",
+        "C22"
+      ],
+      "text": "The profile centers Nullification Field and Instinct Training. The guide treats them as situational late purchases and discusses War Suns after the hero economy is online. Keep the hero, economy and timing prerequisites attached rather than treating either list as universal."
+    }
+  ],
+  "deepwrought": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Deepwrought Scholarate (`deepwrought`)",
+      "kind": "Conditional opening versus fixed profile",
+      "claims": [
+        "C01",
+        "C29"
+      ],
+      "text": "The profile supplies a green-led ordered path. The guide treats setup technology as a slice/breakthrough puzzle and highlights useful unit upgrades. Use the profile as a candidate sequence, not a replacement for the guide’s setup conditions."
+    }
+  ],
+  "firmament": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Firmament / The Obsidian (`firmament`, `obsidian`)",
+      "kind": "Transformation and technology disagreement",
+      "claims": [
+        "C17",
+        "C18"
+      ],
+      "text": "The profile puts Neural Parasite on its green path; the guide questions that investment and retains an ordinary blue mobility path with conditional Extract support. Advice before and after the flip must remain separate."
+    }
+  ],
+  "crimson": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Crimson Rebellion (`crimson`)",
+      "kind": "Optional versus scheduled technology",
+      "claims": [
+        "C11",
+        "C12"
+      ],
+      "text": "The profile schedules Subatomic Splicer and Exile II. The guide makes Splicer optional and slow in short games, while valuing Resonance Generator as another movement route. Preserve opportunity costs rather than scheduling every faction technology."
+    }
+  ],
+  "ralnel": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Ral Nel Consortium (`ralnel`)",
+      "kind": "Conditional versus specialized technology",
+      "claims": [
+        "C08",
+        "C22"
+      ],
+      "text": "The profile stresses Nanomachines/Linkship II. The guide keeps a practical red-blue movement path and marks PDS/Linkship reach as provisional. Do not make the disputed adjacent-system interpretation part of a baseline plan."
+    }
+  ],
+  "naaz": [
+    {
+      "document": "upstream-plans",
+      "heading": "The Naaz-Rokha Alliance (`naaz`)",
+      "kind": "Optional versus scheduled technology",
+      "claims": [
+        "C20",
+        "C21"
+      ],
+      "text": "The profile places Supercharge and Pre-Fab Arcologies in its ordered route; the guide conditions both on need, skips and remaining time. An exploration economy does not itself justify every faction-technology purchase."
+    }
+  ]
+}

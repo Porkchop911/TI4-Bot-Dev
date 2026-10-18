@@ -1,0 +1,2011 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "yin",
+  "claims": [
+    {
+      "id": "C01",
+      "claim_id": "C01",
+      "statement": "Treat Yin as a low-momentum faction whose defensive tricks rarely create a lead; plan for survival and scoring opportunities rather than assuming the kit will pull the faction into contention.",
+      "conditions": "Guide-level assessment based on three games and the hosts’ experience; outcomes depend heavily on table, map, objectives and luck.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is podcast judgment, not a faction win-rate measurement or current-rules conclusion.",
+      "components": [
+        "faction:yin"
+      ],
+      "segment_ids": [
+        "s000742",
+        "s000743",
+        "s000744",
+        "s000745",
+        "s000746",
+        "s000747",
+        "s000748",
+        "s000749",
+        "s000750",
+        "s000751",
+        "s000752",
+        "s000753",
+        "s000754",
+        "s000755"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2879.1,
+          "end": 2921.52
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "claim_id": "C02",
+      "statement": "Use Yin’s solid opening pieces and Sarween Tools as a modest platform, while remembering the two-commodity economy is tight. Darien’s 4/4 can fund either a round-one technology or tokens, but its values are spent one at a time.",
+      "conditions": "Round one and later turns where production discounts or home-planet spending matter; choose resources or influence for the immediate plan.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide calls the start respectable, then emphasizes that this does not erase later economic pressure.",
+      "components": [
+        "faction:yin",
+        "technology:st"
+      ],
+      "segment_ids": [
+        "s000113",
+        "s000114",
+        "s000115",
+        "s000116",
+        "s000117",
+        "s000118",
+        "s000119",
+        "s000120",
+        "s000121",
+        "s000122",
+        "s000123",
+        "s000124",
+        "s000125",
+        "s000126",
+        "s000127",
+        "s000128",
+        "s000129",
+        "s000130",
+        "s000131",
+        "s000132",
+        "s000133",
+        "s000134",
+        "s000135",
+        "s000136",
+        "s000137",
+        "s000138",
+        "s000139",
+        "s000140",
+        "s000141",
+        "s000142"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 480.78,
+          "end": 579.82
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "claim_id": "C03",
+      "statement": "Indoctrination is a one-time start-of-ground-combat choice: pay two influence to replace one opposing infantry with Yin infantry. It does not repeat each combat round and does not target arbitrary ground forces.",
+      "conditions": "Only when a ground combat begins, an opposing infantry is present, Yin has the influence and a replacement infantry available.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "Transcript paraphrase of the guide’s then-current component wording; check current official text before rules adjudication.",
+      "components": [
+        "ability:indoctrination"
+      ],
+      "segment_ids": [
+        "s000148",
+        "s000149",
+        "s000150",
+        "s000151",
+        "s000152",
+        "s000153",
+        "s000154",
+        "s000155",
+        "s000156",
+        "s000157",
+        "s000158",
+        "s000159",
+        "s000160",
+        "s000161",
+        "s000162",
+        "s000163",
+        "s000164",
+        "s000165",
+        "s000166",
+        "s000167"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 603.86,
+          "end": 672.7
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "claim_id": "C04",
+      "statement": "Use Indoctrination as a cheap-combat skip or offensive edge against a planet defended by a lone infantry. Do not count on it as a strong defensive wall: opponents can attack with mechs, bombard, or bring enough force to take the planet anyway.",
+      "conditions": "Most effective against small infantry-only garrisons; much weaker when the opponent can choose its invasion composition or has bombardment.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide’s defensive assessment is strategic opinion and depends on opposing units and local force ratios.",
+      "components": [
+        "ability:indoctrination",
+        "unit:yin_mech"
+      ],
+      "segment_ids": [
+        "s000280",
+        "s000281",
+        "s000282",
+        "s000283",
+        "s000284",
+        "s000285",
+        "s000286",
+        "s000287",
+        "s000288",
+        "s000289",
+        "s000290",
+        "s000291",
+        "s000292",
+        "s000293",
+        "s000294",
+        "s000295",
+        "s000296",
+        "s000297",
+        "s000298",
+        "s000299",
+        "s000300",
+        "s000301",
+        "s000302"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1104.9,
+          "end": 1207.12
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "claim_id": "C05",
+      "statement": "Moyin’s Ashes can turn the Indoctrination replacement into a mech for one additional influence, but the guide stresses that the replacement still has to be an enemy infantry and the mech must already be in reinforcements.",
+      "conditions": "Use when the opponent has an infantry to replace, Yin can pay three influence total, and a mech is available; the guide sees this as a narrow deploy.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts call the card’s ‘unit’ versus ‘infantry’ wording confusing; preserve that wording doubt rather than extending the target to mechs.",
+      "components": [
+        "unit:yin_mech",
+        "ability:indoctrination"
+      ],
+      "segment_ids": [
+        "s000233",
+        "s000234",
+        "s000235",
+        "s000236",
+        "s000237",
+        "s000238",
+        "s000239",
+        "s000240",
+        "s000241",
+        "s000242",
+        "s000243",
+        "s000244",
+        "s000245",
+        "s000246",
+        "s000247",
+        "s000248",
+        "s000249",
+        "s000250",
+        "s000251",
+        "s000252",
+        "s000253",
+        "s000254",
+        "s000255",
+        "s000256",
+        "s000257",
+        "s000258",
+        "s000259",
+        "s000260",
+        "s000261",
+        "s000262",
+        "s000263",
+        "s000264",
+        "s000265",
+        "s000266"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 946.08,
+          "end": 1045.88
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "claim_id": "C06",
+      "statement": "Devotion trades a Yin cruiser or destroyer for a hit after a space-combat round. It may help in a sustained fleet battle or close a firepower gap, but cannot trigger after the opponent retreats and ends combat. A lone destroyer is poor “gum”: it may die before the trigger, and sacrificing the blocker can reopen the space.",
+      "conditions": "Best when combat remains active and the sacrificed ship changes the outcome; a supported fleet makes the cost less painful. Avoid relying on a lone destroyer as a durable blocker.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts call Devotion weak overall, especially after retreat became easier in Prophecy of Kings; Fighter II may help some edge cases.",
+      "components": [
+        "ability:devotion",
+        "unit:destroyer",
+        "unit:cruiser",
+        "unit:fighter2"
+      ],
+      "segment_ids": [
+        "s000176",
+        "s000177",
+        "s000178",
+        "s000179",
+        "s000180",
+        "s000181",
+        "s000182",
+        "s000183",
+        "s000184",
+        "s000185",
+        "s000186",
+        "s000187",
+        "s000188",
+        "s000189",
+        "s000190",
+        "s000191",
+        "s000192",
+        "s000193",
+        "s000194",
+        "s000195",
+        "s000196",
+        "s000197",
+        "s000198",
+        "s000199",
+        "s000200",
+        "s000201",
+        "s000202",
+        "s000203",
+        "s000307",
+        "s000308",
+        "s000309",
+        "s000310",
+        "s000311",
+        "s000312",
+        "s000313",
+        "s000314",
+        "s000315",
+        "s000316",
+        "s000317",
+        "s000318",
+        "s000319",
+        "s000320",
+        "s000321",
+        "s000322",
+        "s000323",
+        "s000324",
+        "s000325",
+        "s000326",
+        "s000327",
+        "s000328",
+        "s000329",
+        "s000330",
+        "s000331"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 700,
+          "end": 786.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 786.44,
+          "end": 823.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1236.1,
+          "end": 1287.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1287.92,
+          "end": 1344.92
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "claim_id": "C07",
+      "statement": "Treat the Van Hauge as a defensive deterrent that can sit at home: its destruction also destroys the other ships in the system, making an attacker weigh the cost of clearing it before taking the ground.",
+      "conditions": "Most useful when defending home or another position where the opponent wants to remove Yin’s flagship; the guide does not present it as a fleet-leading active-use ship.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide calls it Yin’s best kit component, but also says it does not solve the faction’s tempo problem.",
+      "components": [
+        "unit:yin_flagship"
+      ],
+      "segment_ids": [
+        "s000209",
+        "s000210",
+        "s000211",
+        "s000212",
+        "s000213",
+        "s000214",
+        "s000215",
+        "s000216",
+        "s000217",
+        "s000218",
+        "s000219",
+        "s000220",
+        "s000221",
+        "s000222",
+        "s000223",
+        "s000224",
+        "s000225",
+        "s000226",
+        "s000227",
+        "s000228",
+        "s000229",
+        "s000230"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 849.68,
+          "end": 940.32
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "claim_id": "C08",
+      "statement": "Sell Greyfire Mutagen readily for whatever the table will pay, rather than waiting for an ideal moment; its narrow requirement for multiple opposing ground forces including infantry makes demand uncertain. More combative, non-planet-swap metas can raise its value.",
+      "conditions": "Negotiate openly around an imminent ground-combat window; prioritize completing the sale over extracting a premium, except where a buyer specifically fears a defensive use.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts report mixed sale results and warn that selling it to both sides can damage trust; the trading meta determines its price.",
+      "components": [
+        "promissory:greyfire"
+      ],
+      "segment_ids": [
+        "s000338",
+        "s000339",
+        "s000340",
+        "s000341",
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354",
+        "s000355",
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000372",
+        "s000373",
+        "s000374",
+        "s000375",
+        "s000391",
+        "s000392",
+        "s000393",
+        "s000394",
+        "s000395",
+        "s000396",
+        "s000397"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1356.76,
+          "end": 1398.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1399.34,
+          "end": 1486.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1543.2,
+          "end": 1573.74
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "claim_id": "C09",
+      "statement": "Brother Milor’s revised agent can add fighters after a ship dies or infantry after a ground force dies, for the affected player. The guide sees the ground-force trigger as a meaningful improvement and a possible sellable aid for combats others did not plan around.",
+      "conditions": "Agent must be available and the relevant unit must be destroyed; ship and ground-force cases place different units in the affected system or planet.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts disagree on how often Yin should use it personally, and defensive deals are non-binding; they want more games before calling its routine use settled.",
+      "components": [
+        "leader:yinagent"
+      ],
+      "segment_ids": [
+        "s000472",
+        "s000473",
+        "s000474",
+        "s000475",
+        "s000476",
+        "s000477",
+        "s000478",
+        "s000479",
+        "s000480",
+        "s000481",
+        "s000482",
+        "s000483",
+        "s000484",
+        "s000485",
+        "s000486",
+        "s000487",
+        "s000488",
+        "s000489",
+        "s000490",
+        "s000491",
+        "s000492",
+        "s000493",
+        "s000494",
+        "s000495",
+        "s000496",
+        "s000497",
+        "s000498",
+        "s000499",
+        "s000500",
+        "s000501",
+        "s000502",
+        "s000503",
+        "s000504",
+        "s000505",
+        "s000506"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1892.06,
+          "end": 1974.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1975.16,
+          "end": 2025.18
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "claim_id": "C10",
+      "statement": "Unlock Brother Omar by using either Indoctrination or Devotion; once unlocked, the commander can let Yin research another player’s technology while returning one Yin infantry to reinforcements to ignore that technology’s prerequisites.",
+      "conditions": "Requires the chosen faction ability to occur and an opponent to own the technology Yin wants at the relevant research timing.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide notes this is an Omega-era change and gives it a green skip; actual availability and wording should be checked against the applicable edition.",
+      "components": [
+        "leader:yincommander",
+        "ability:indoctrination",
+        "ability:devotion"
+      ],
+      "segment_ids": [
+        "s000515",
+        "s000516",
+        "s000517",
+        "s000518",
+        "s000519",
+        "s000520",
+        "s000521",
+        "s000522",
+        "s000523"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2060.08,
+          "end": 2105.46
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "claim_id": "C11",
+      "statement": "Value Omar as timing-dependent access to another player’s tech, not as an extra free research or a dependable route to Yin Spinner or Impulse Core. Since Technology resolves starting with its primary player then in speaker order, Yin may be behind the table’s latest research.",
+      "conditions": "Try to unlock early if a likely target tech matters, and plan around seat order and which players researched last round; a lucky position can make the ability much better.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide’s examples are from a few games; it reports useful catch-up tech but no game-changing benefit in its own tests.",
+      "components": [
+        "leader:yincommander",
+        "strategy-card:pok7technology",
+        "technology:yso",
+        "technology:ic"
+      ],
+      "segment_ids": [
+        "s000537",
+        "s000538",
+        "s000539",
+        "s000540",
+        "s000541",
+        "s000542",
+        "s000543",
+        "s000544",
+        "s000545",
+        "s000546",
+        "s000547",
+        "s000548",
+        "s000549",
+        "s000550",
+        "s000551",
+        "s000552",
+        "s000553",
+        "s000554",
+        "s000555",
+        "s000556",
+        "s000557",
+        "s000558",
+        "s000559",
+        "s000560",
+        "s000561",
+        "s000562",
+        "s000563",
+        "s000564",
+        "s000565",
+        "s000566",
+        "s000577",
+        "s000578",
+        "s000579",
+        "s000580",
+        "s000581",
+        "s000582",
+        "s000583",
+        "s000584",
+        "s000585",
+        "s000586",
+        "s000587",
+        "s000588",
+        "s000589",
+        "s000590",
+        "s000591",
+        "s000592",
+        "s000593",
+        "s000594",
+        "s000595",
+        "s000596",
+        "s000597",
+        "s000598",
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605",
+        "s000606",
+        "s000607",
+        "s000608",
+        "s000609"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2148.84,
+          "end": 2228.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2263.66,
+          "end": 2343.28
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "claim_id": "C12",
+      "statement": "The guide discourages pursuing Yin’s faction technologies by default: Yin Spinner is a useful post-production infantry placement but deep in green, while Impulse Core costs a cruiser or destroyer for a hit and sits deep in yellow.",
+      "conditions": "Reconsider Yin Spinner if a real green route or skip and a concrete infantry-placement need emerge; the hosts see little routine reason to invest in Impulse Core.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "‘Worst tech’ and ‘not helpful’ are the hosts’ opinions, not independently verified rankings; the source discusses an Omega faction suite.",
+      "components": [
+        "technology:yso",
+        "technology:ic",
+        "leader:yincommander"
+      ],
+      "segment_ids": [
+        "s000415",
+        "s000416",
+        "s000417",
+        "s000418",
+        "s000419",
+        "s000420",
+        "s000421",
+        "s000422",
+        "s000423",
+        "s000424",
+        "s000425",
+        "s000426",
+        "s000427",
+        "s000428",
+        "s000429",
+        "s000430",
+        "s000432",
+        "s000433",
+        "s000434",
+        "s000435",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439",
+        "s000440",
+        "s000441",
+        "s000442",
+        "s000443",
+        "s000444",
+        "s000445",
+        "s000446",
+        "s000447",
+        "s000448",
+        "s000449",
+        "s000450",
+        "s000451",
+        "s000452",
+        "s000453",
+        "s000454"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1654.78,
+          "end": 1723.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 1729,
+          "end": 1810.3
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "claim_id": "C13",
+      "statement": "Dannel of the Tenth commits up to three infantry from reinforcements to non-home planets and resolves invasions there; the guide notes the units cannot be hit by Space Cannon and invasion resolution can create Indoctrination opportunities.",
+      "conditions": "Use for a specific reachable non-home planet or several targets, with enough invasion force and influence for the follow-on ability; the hero is purged after use.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "This summarizes the hosts’ reading of the Omega hero; it is not a current-rules ruling.",
+      "components": [
+        "leader:yinhero",
+        "ability:indoctrination"
+      ],
+      "segment_ids": [
+        "s000624",
+        "s000625",
+        "s000626",
+        "s000627",
+        "s000628",
+        "s000629",
+        "s000630",
+        "s000631",
+        "s000632",
+        "s000633",
+        "s000634",
+        "s000635"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2400,
+          "end": 2480.18
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "claim_id": "C14",
+      "statement": "When possible, hold the hero until late in the round, then use it to contest a needed planet or prepare a control-objective attempt. The three infantry do not secure planets by themselves: Indoctrinating all three as mechs would cost nine influence, combats can fail, and opponents can retake planets.",
+      "conditions": "Use against a valuable reachable target when Yin can afford the influence and limit retaliation; the hosts suggest delaying until late in the round and do not treat the hero as a reliable stage-two scorer.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts describe the hero as situational and sometimes a whiff, not a reliable stage-two scoring engine.",
+      "components": [
+        "leader:yinhero",
+        "ability:indoctrination"
+      ],
+      "segment_ids": [
+        "s000637",
+        "s000638",
+        "s000639",
+        "s000640",
+        "s000641",
+        "s000642",
+        "s000643",
+        "s000644",
+        "s000645",
+        "s000646",
+        "s000647",
+        "s000648",
+        "s000649",
+        "s000650",
+        "s000651",
+        "s000652",
+        "s000653",
+        "s000654",
+        "s000655",
+        "s000656",
+        "s000657",
+        "s000658",
+        "s000659",
+        "s000660",
+        "s000661",
+        "s000662",
+        "s000663",
+        "s000664",
+        "s000696",
+        "s000697",
+        "s000698",
+        "s000699",
+        "s000700",
+        "s000701",
+        "s000702",
+        "s000703",
+        "s000704",
+        "s000705",
+        "s000706",
+        "s000707",
+        "s000708",
+        "s000709",
+        "s000710",
+        "s000711",
+        "s000712",
+        "s000713",
+        "s000714",
+        "s000715",
+        "s000716"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2483.56,
+          "end": 2533.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2533.66,
+          "end": 2598.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2701.96,
+          "end": 2779.42
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "claim_id": "C15",
+      "statement": "The hosts report that the hero’s commit action could attack a Support for the Throne partner without activating a system and therefore without losing that support, but they frame this as an unsettled interpretation that may change.",
+      "conditions": "Treat only as a table-specific rules question when a support swap and target planet make the interaction relevant; discuss it before relying on it.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The episode analogizes it to a past ceasefire interpretation that was later corrected; this summary does not resolve the rules interaction.",
+      "components": [
+        "leader:yinhero",
+        "promissory:<color>_sftt"
+      ],
+      "segment_ids": [
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679",
+        "s000680",
+        "s000681",
+        "s000682",
+        "s000683",
+        "s000684",
+        "s000685",
+        "s000686",
+        "s000687",
+        "s000688",
+        "s000689",
+        "s000690",
+        "s000691",
+        "s000692",
+        "s000693",
+        "s000694",
+        "s000695"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2610.42,
+          "end": 2701.96
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "claim_id": "C16",
+      "statement": "The hosts propose negotiating a no-retreat Devotion fight against a neighbor’s carrier to unlock Omar, using Devotion on one of that player’s fighters; an alternative version attacks with two Yin destroyers and gives the neighbor Milor so it can net fighters. Both plans depend on a willing partner and safe combat outcomes.",
+      "conditions": "Requires an agreed neighbor, a carrier/fighter combat that does not destroy the carrier, the no-retreat deal, and Devotion timing; the alternate two-destroyer plan is a separate proposed version.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is table diplomacy, not guaranteed or enforceable. The guide did not successfully unlock Omar and then sell the alliance for money in its own games.",
+      "components": [
+        "leader:yincommander",
+        "ability:devotion",
+        "unit:destroyer",
+        "leader:yinagent"
+      ],
+      "segment_ids": [
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000817",
+        "s000818",
+        "s000819",
+        "s000820",
+        "s000821",
+        "s000822",
+        "s000823",
+        "s000824",
+        "s000825",
+        "s000826",
+        "s000827",
+        "s000828",
+        "s000829",
+        "s000830",
+        "s000831",
+        "s000843",
+        "s000844",
+        "s000845",
+        "s000846",
+        "s000847",
+        "s000848",
+        "s000849",
+        "s000850",
+        "s000851",
+        "s000852",
+        "s000853",
+        "s000854",
+        "s000855",
+        "s000856",
+        "s000857",
+        "s000858",
+        "s000859",
+        "s000860"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3163.36,
+          "end": 3221.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3270.14,
+          "end": 3336.32
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "claim_id": "C17",
+      "statement": "Do not spend Yin’s only early trade ship—the starting destroyer—on an automatic round-one commander unlock. Its income role is valuable, and the guide prefers preserving that option before considering a first-action round-two play.",
+      "conditions": "Most relevant when Yin has not secured another trading route and the commander unlock is not certain to pay off immediately.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The source calls the round-one trade loss a poor exchange in its games; another map or negotiated deal could change the value.",
+      "components": [
+        "unit:destroyer",
+        "leader:yincommander"
+      ],
+      "segment_ids": [
+        "s000988",
+        "s000989",
+        "s000990",
+        "s000991",
+        "s000992",
+        "s000993",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000",
+        "s001001",
+        "s001002",
+        "s001003",
+        "s001004",
+        "s001005",
+        "s001006"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3816.56,
+          "end": 3904.02
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "claim_id": "C18",
+      "statement": "Put money first because command counters, plastic and Yin’s influence abilities all compete for a thin economy. A successful guide game took Trade twice; the practical aim is to fund useful fleets and abilities, not to save every coin indefinitely.",
+      "conditions": "Across the game, especially while Yin has only two commodities and few other economic tools.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The twice-Trade win is one anecdote; the recommendation is the hosts’ repeated economic priority.",
+      "components": [
+        "faction:yin",
+        "strategy-card:pok5trade",
+        "ability:indoctrination",
+        "ability:devotion"
+      ],
+      "segment_ids": [
+        "s001102",
+        "s001103",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4276.28,
+          "end": 4318.44
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "claim_id": "C19",
+      "statement": "A modest round-one alternative is to expand through the slice, take useful blue technology if available, retain some money, and build at home; the guide treats a stable opening as success even if Yin neither scores nor wins Custodians.",
+      "conditions": "Use when no high-confidence Custodians plan or special commander deal exists; adapt expansion to map and objective requirements.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts call round-one scoring difficult, not impossible; the example is a baseline rather than a fixed script.",
+      "components": [
+        "faction:yin",
+        "technology:gd",
+        "unit:carrier"
+      ],
+      "segment_ids": [
+        "s001112",
+        "s001113",
+        "s001114",
+        "s001115",
+        "s001116",
+        "s001117",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001121",
+        "s001122"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4318.44,
+          "end": 4368.64
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "claim_id": "C20",
+      "statement": "Leadership is attractive when Yin needs command counters. Following Technology, Warfare and Diplomacy secondaries can also be worthwhile if the table order and cash allow, but the guide labels that multi-secondary opening conditional rather than routine.",
+      "conditions": "Especially a six-player round where another player’s Diplomacy timing may refresh spending, and Yin can pay for selected secondaries.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The source describes a possible opening and admits it may not score; do not confuse following a secondary with taking a strategy card.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok6warfare",
+        "strategy-card:pok7technology"
+      ],
+      "segment_ids": [
+        "s001015",
+        "s001016",
+        "s001017",
+        "s001018",
+        "s001019",
+        "s001020",
+        "s001021",
+        "s001022",
+        "s001023",
+        "s001024",
+        "s001025",
+        "s001026",
+        "s001027"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3943.14,
+          "end": 4017.78
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "claim_id": "C21",
+      "statement": "If Custodians is not realistically available, the guide is willing to take Diplomacy for the cash and let the other players contest the point rather than give up Yin’s survival plan merely to deny it.",
+      "conditions": "When Yin is outside a credible Custodians race and cash or the resulting round-one development matters more than contesting the point.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "This is a seat- and table-dependent call; the guide’s phrase ‘for the cash’ is strategic shorthand, not a guaranteed exact resource yield.",
+      "components": [
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036",
+        "s001037",
+        "s001038",
+        "s001039",
+        "s001040",
+        "s001041",
+        "s001042",
+        "s001043",
+        "s001044",
+        "s001045"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4018.62,
+          "end": 4068.64
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "claim_id": "C22",
+      "statement": "Politics is a low round-one priority unless a specific line—such as a reachable Gravity Drive opportunity through an unlocked commander and Creuss access—makes speaker control actionable. Do not sacrifice staying on track just to hold speaker.",
+      "conditions": "The exception depends on faction mix, tech access, seat order, and whether taking Politics actually changes a scoring opportunity.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide calls the favorable opening ‘Christmasy’; its ordinary recommendation is to let Politics pass.",
+      "components": [
+        "strategy-card:pok3politics",
+        "technology:gd",
+        "leader:yincommander"
+      ],
+      "segment_ids": [
+        "s001046",
+        "s001047",
+        "s001048",
+        "s001049",
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001053",
+        "s001054",
+        "s001055",
+        "s001056",
+        "s001057",
+        "s001058",
+        "s001059",
+        "s001062",
+        "s001063",
+        "s001064",
+        "s001065",
+        "s001066",
+        "s001067",
+        "s001068",
+        "s001069"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4068.64,
+          "end": 4141.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4143.84,
+          "end": 4185.96
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "claim_id": "C23",
+      "statement": "Take Construction early only when a revealed structure objective makes it a credible scoring route; otherwise the hosts prefer Diplomacy and would defer the structure point rather than spend the round-one pick on Construction.",
+      "conditions": "The guide’s exception is a structure objective among the first revealed objectives and a realistic ability to meet it.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The categorical language is emphatic opinion; map, objective timing and pick order can change the tradeoff.",
+      "components": [
+        "strategy-card:pok4construction"
+      ],
+      "segment_ids": [
+        "s001071",
+        "s001072",
+        "s001073",
+        "s001074",
+        "s001075",
+        "s001076",
+        "s001077",
+        "s001078",
+        "s001079",
+        "s001080",
+        "s001081",
+        "s001082",
+        "s001083",
+        "s001084",
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001088"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4191.3,
+          "end": 4244.26
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "claim_id": "C24",
+      "statement": "Trade is a high-priority card for Yin, with extra value when a wormhole or accessible neighbors increase the number of trade partners. Use income to buy units, tech and counters; do not assume the two-commodity faction earns as much as richer Trade users.",
+      "conditions": "Especially early and in rounds where Yin can wash commodities or turn the primary into needed resources.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts repeatedly recommend Trade but still describe possible deals and returns as table-dependent.",
+      "components": [
+        "strategy-card:pok5trade",
+        "faction:yin"
+      ],
+      "segment_ids": [
+        "s000977",
+        "s000978",
+        "s000979",
+        "s000980",
+        "s000981",
+        "s000982",
+        "s000983",
+        "s000984",
+        "s000985",
+        "s000986",
+        "s001089",
+        "s001090",
+        "s001091",
+        "s001092",
+        "s001093",
+        "s001094",
+        "s001095",
+        "s001096",
+        "s001097",
+        "s001098",
+        "s001099",
+        "s001100",
+        "s001101",
+        "s001102",
+        "s001103",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001108",
+        "s001109",
+        "s001110",
+        "s001111"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3772.58,
+          "end": 3813.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4244.54,
+          "end": 4318.44
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "claim_id": "C25",
+      "statement": "Warfare is most compelling when it supports a concrete plan—Custodians, a rift gamble, an extra expansion or a home build after Diplomacy—rather than as an automatic extra move. Account for the destroyer’s separate trade and commander-unlock roles.",
+      "conditions": "Card value rises if Diplomacy was picked before Warfare or a real first-round timing line is available; otherwise preserving money and ships may matter more.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts disagree with taking Warfare by default and describe the timing window as uncommon.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "unit:destroyer",
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s001123",
+        "s001124",
+        "s001125",
+        "s001126",
+        "s001127",
+        "s001128",
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135",
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001147",
+        "s001148",
+        "s001149",
+        "s001150",
+        "s001151",
+        "s001152",
+        "s001153",
+        "s001154",
+        "s001155",
+        "s001156",
+        "s001157",
+        "s001158",
+        "s001159",
+        "s001160",
+        "s000988",
+        "s000989",
+        "s000990",
+        "s000991",
+        "s000992",
+        "s000993",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000",
+        "s001001",
+        "s001002",
+        "s001003",
+        "s001004",
+        "s001005",
+        "s001006"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4368.64,
+          "end": 4437
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4437,
+          "end": 4507.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 3816.56,
+          "end": 3904.02
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "claim_id": "C26",
+      "statement": "Technology is still a sound round-one pick: Yin starts with one yellow tech but wants a blue mobility and carrier path, and the source says the eventual value can justify early research even when it does not immediately change the turn.",
+      "conditions": "Choose it when resources and the first objective allow; pair the pick with Trade or another economy plan if possible.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide’s claim is about long-horizon usefulness; it does not guarantee a round-one score or a specific secondary.",
+      "components": [
+        "strategy-card:pok7technology",
+        "technology:st",
+        "technology:gd"
+      ],
+      "segment_ids": [
+        "s001160",
+        "s001161",
+        "s001162",
+        "s001163",
+        "s001164",
+        "s001165",
+        "s001166",
+        "s001167",
+        "s001168",
+        "s001169",
+        "s001170",
+        "s001171",
+        "s001172",
+        "s001173",
+        "s001174",
+        "s001175",
+        "s001176",
+        "s001177",
+        "s001178",
+        "s001179",
+        "s001180",
+        "s001181",
+        "s001182",
+        "s001183",
+        "s001184"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4502.72,
+          "end": 4592.26
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "claim_id": "C27",
+      "statement": "Prioritize Gravity Drive and Carrier II, with Dark Energy Tap or Antimass Deflectors as a route depending on the map. The guide favors the range and transport flexibility for inexpensive fleets carrying infantry to opportunistic planets.",
+      "conditions": "Most games, adjusted for available skips, frontier access, objectives and the need for combat support.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts call Gravity Drive and Carrier II their standard recommendation; it is not a mandatory tech order.",
+      "components": [
+        "technology:gd",
+        "technology:det",
+        "unit:carrier2",
+        "unit:infantry"
+      ],
+      "segment_ids": [
+        "s001220",
+        "s001221",
+        "s001222",
+        "s001223",
+        "s001224",
+        "s001225",
+        "s001226",
+        "s001227",
+        "s001228",
+        "s001229",
+        "s001230",
+        "s001231",
+        "s001232",
+        "s001233",
+        "s001234",
+        "s001235",
+        "s001236",
+        "s001237",
+        "s001238",
+        "s001239"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4717.04,
+          "end": 4799.93
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "claim_id": "C28",
+      "statement": "Prefer Carrier II to Cruiser II as the usual upgrade: the guide argues Yin gets useful transport and fighter support while progressing in blue. Dreadnought II can still work in a slower, richer fleet plan, but is not the default investment.",
+      "conditions": "Use Carrier II for broad mobility; consider Dreadnought II only if economy, objectives and fleet needs support it, and Cruiser II when a specific snipe case outweighs the blue route.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts acknowledge Cruiser II advocates and do not call Dreadnought II bad; this is a priority judgment.",
+      "components": [
+        "unit:carrier2",
+        "unit:cruiser2",
+        "unit:dreadnought2",
+        "technology:gd"
+      ],
+      "segment_ids": [
+        "s001230",
+        "s001231",
+        "s001232",
+        "s001233",
+        "s001234",
+        "s001235",
+        "s001236",
+        "s001237",
+        "s001238",
+        "s001239",
+        "s001240",
+        "s001241",
+        "s001242",
+        "s001243",
+        "s001244",
+        "s001245",
+        "s001246",
+        "s001247",
+        "s001248",
+        "s001317",
+        "s001318",
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001322",
+        "s001323",
+        "s001324",
+        "s001325",
+        "s001326",
+        "s001327",
+        "s001328"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4768.7,
+          "end": 4799.93
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4830,
+          "end": 4872.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 5170.38,
+          "end": 5225.42
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "claim_id": "C29",
+      "statement": "Fleet Logistics rises when Imperial and Yin’s hero can combine for a late Mecatol Rex play: take the planet, then use a second action to exploit Imperial timing. The guide sees this as a conditional scoring line against fleets that do not cover the space.",
+      "conditions": "Requires Fleet Logistics, an available Imperial opportunity, enough force or hero support to take Mecatol, and a window before opponents retake it.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts say the value depends on which factions hold Mecatol in space; the interaction is not a guaranteed score.",
+      "components": [
+        "technology:fl",
+        "strategy-card:pok8imperial",
+        "leader:yinhero"
+      ],
+      "segment_ids": [
+        "s001267",
+        "s001268",
+        "s001269",
+        "s001270",
+        "s001271",
+        "s001272",
+        "s001273",
+        "s001274",
+        "s001275",
+        "s001276",
+        "s001277",
+        "s001278",
+        "s001279",
+        "s001280",
+        "s001281",
+        "s001282",
+        "s001283",
+        "s001284",
+        "s001285",
+        "s001286"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4952.12,
+          "end": 5040.74
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "claim_id": "C30",
+      "statement": "Treat Light/Wave Deflector as a strong late-game technology, often accessible through Omar after another player researches it, while Sling Relay mainly buys a stall or occasional command-counter savings because the Van Hauge is usually a passive defender.",
+      "conditions": "Choose Light/Wave when its path or Omar makes it reachable; Sling Relay matters when a stall or second flagship use is worth the cost.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts call Light/Wave broadly valuable and Sling Relay situational; their examples are limited.",
+      "components": [
+        "technology:lwd",
+        "technology:sr",
+        "leader:yincommander",
+        "unit:yin_flagship"
+      ],
+      "segment_ids": [
+        "s001282",
+        "s001283",
+        "s001284",
+        "s001285",
+        "s001286",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001290",
+        "s001291",
+        "s001292",
+        "s001293",
+        "s001294",
+        "s001295",
+        "s001296",
+        "s001297",
+        "s001298",
+        "s001299",
+        "s001300",
+        "s001301",
+        "s001302",
+        "s001303",
+        "s001304",
+        "s001305",
+        "s001306",
+        "s001307",
+        "s001308",
+        "s001309",
+        "s001310",
+        "s001311",
+        "s001312",
+        "s001313",
+        "s001314",
+        "s001315",
+        "s001316"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 5017.72,
+          "end": 5068.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 5069.88,
+          "end": 5170.38
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "claim_id": "C31",
+      "statement": "Dark Energy Tap is a gamble Yin may accept for frontier draws, because the guide especially values possible command counters and trade goods. Its one successful Shard of the Throne draw is presented as luck, not a repeatable plan.",
+      "conditions": "Explore only where the ship’s route and frontier tokens are useful and the opportunity cost is acceptable.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The source itself calls the relic value questionable and its winning-game draw unusually lucky.",
+      "components": [
+        "technology:det",
+        "relic:shard"
+      ],
+      "segment_ids": [
+        "s001249",
+        "s001250",
+        "s001251",
+        "s001252",
+        "s001253",
+        "s001254",
+        "s001255",
+        "s001256",
+        "s001257",
+        "s001258",
+        "s001259",
+        "s001260",
+        "s001261",
+        "s001262",
+        "s001263",
+        "s001264",
+        "s001265",
+        "s001494",
+        "s001495",
+        "s001496",
+        "s001497",
+        "s001498",
+        "s001499"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4872.5,
+          "end": 4946.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 5889.14,
+          "end": 5924
+        }
+      ]
+    },
+    {
+      "id": "C32",
+      "claim_id": "C32",
+      "statement": "During slice or map selection, favor several planets of the same type and useful attachments or tech skips to improve the number of public objectives Yin may qualify for. These slice features create eligibility or a chance at favorable reveals; they do not score an objective by themselves.",
+      "conditions": "Most relevant to stage-two objectives while draft choices remain; the guide especially wants attachments if an attachment-control objective could appear.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts describe this as hoping for favorable objectives, not a reliable scoring engine; they note industrial exploration has fewer attachments but tech skips.",
+      "components": [
+        "faction:yin",
+        "technology:gd"
+      ],
+      "segment_ids": [
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001516",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524",
+        "s001525",
+        "s001526",
+        "s001527",
+        "s001528",
+        "s001529",
+        "s001530",
+        "s001531",
+        "s001532",
+        "s001533",
+        "s001534",
+        "s001535"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 5962.14,
+          "end": 6059.12
+        }
+      ]
+    },
+    {
+      "id": "C33",
+      "claim_id": "C33",
+      "statement": "Treat Mahact as a severe Yin counter in the guide’s assessment: its mobility can answer scattered hero planets, its hero can take the Van Hauge, and attacks can expose Yin’s commander for Mahact’s tech value. In a faction draft, the hosts warn against choosing Yin into that matchup.",
+      "conditions": "Apply as a matchup warning when Mahact is present and has relevant leaders/tech; evaluate actual seat positions, map and draft alternatives.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The hosts use categorical language based on a hypothetical matchup; this is advice, not a verified inevitability.",
+      "components": [
+        "faction:yin",
+        "faction:mahact",
+        "leader:yinhero",
+        "unit:yin_flagship",
+        "leader:yincommander"
+      ],
+      "segment_ids": [
+        "s001541",
+        "s001542",
+        "s001543",
+        "s001544",
+        "s001545",
+        "s001546",
+        "s001547",
+        "s001548",
+        "s001549",
+        "s001550",
+        "s001551",
+        "s001552",
+        "s001553",
+        "s001554",
+        "s001555",
+        "s001556",
+        "s001557",
+        "s001558",
+        "s001559",
+        "s001560",
+        "s001561",
+        "s001562",
+        "s001563",
+        "s001564",
+        "s001565",
+        "s001566",
+        "s001567",
+        "s001568",
+        "s001569",
+        "s001570"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6081.66,
+          "end": 6130.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6130.66,
+          "end": 6205.52
+        }
+      ]
+    },
+    {
+      "id": "C34",
+      "claim_id": "C34",
+      "statement": "In the last rounds, if Yin is behind, the guide suggests letting speaker control go, taking Trade when useful, blocking points and stretching the game without provoking annihilation. This is active spoiler play intended to buy time and disrupt opponents; it does not guarantee Yin points.",
+      "conditions": "Only when Yin cannot keep ordinary scoring pace and the board permits low-cost disruption; judge whether point-blocking creates retaliation that erases the benefit.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The plan is a bleak strategic opinion and may fail; the guide explicitly says the balance between annoyance and provoking a response is hard.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok5trade"
+      ],
+      "segment_ids": [
+        "s001573",
+        "s001574",
+        "s001575",
+        "s001576",
+        "s001577",
+        "s001578",
+        "s001579",
+        "s001580",
+        "s001581",
+        "s001582",
+        "s001583",
+        "s001584",
+        "s001585",
+        "s001586",
+        "s001587",
+        "s001588",
+        "s001589",
+        "s001590",
+        "s001591",
+        "s001601",
+        "s001602",
+        "s001603",
+        "s001604",
+        "s001605",
+        "s001606",
+        "s001607",
+        "s001608",
+        "s001609",
+        "s001610",
+        "s001611",
+        "s001612",
+        "s001613",
+        "s001614",
+        "s001615",
+        "s001616",
+        "s001617",
+        "s001618",
+        "s001619",
+        "s001620",
+        "s001621",
+        "s001622",
+        "s001623"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6212.62,
+          "end": 6291.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6327.78,
+          "end": 6416.62
+        }
+      ]
+    },
+    {
+      "id": "C35",
+      "claim_id": "C35",
+      "statement": "A rare Van Hauge–Milor interaction may help meet some space-combat secret objectives: the hosts propose letting the flagship explode, then using the agent to place fighters so Yin technically wins the combat. They call it an unusual opportunity, not a routine strategy.",
+      "conditions": "Requires the flagship to be destroyed in a qualifying combat, the agent available and its timing accepted, and a relevant objective whose requirements are actually satisfied.",
+      "compatibility": "SCPT 257 (2022-07-27), Codex 3-era guide; current ruleset compatibility not reviewed.",
+      "uncertainty": "The guide predicts the play would be extremely rare and does not establish current rules legality or objective eligibility.",
+      "components": [
+        "unit:yin_flagship",
+        "leader:yinagent",
+        "secret-objective:sar",
+        "secret-objective:btv",
+        "secret-objective:dts"
+      ],
+      "segment_ids": [
+        "s001724",
+        "s001725",
+        "s001726",
+        "s001727",
+        "s001728",
+        "s001729",
+        "s001730",
+        "s001731",
+        "s001732",
+        "s001733",
+        "s001734",
+        "s001735",
+        "s001736",
+        "s001737",
+        "s001738",
+        "s001739",
+        "s001740",
+        "s001741",
+        "s001742",
+        "s001743",
+        "s001744",
+        "s001745"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6772.72,
+          "end": 6833.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6833.76,
+          "end": 6885.52
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "leader:yinhero",
+      "to": "ability:indoctrination",
+      "relation": "synergizes-with",
+      "conditions": "The hero must target non-home planets where the small committed invasion force can survive; use resulting invasion windows only when Yin can afford the influence.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2400,
+          "end": 2480.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2483.56,
+          "end": 2533.66
+        }
+      ]
+    },
+    {
+      "from": "leader:yincommander",
+      "to": "technology:gd",
+      "relation": "enables",
+      "conditions": "Gravity Drive is useful only if another player has researched it and Omar's research timing reaches that player's choice in speaker order.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2060.08,
+          "end": 2105.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 2148.84,
+          "end": 2228.04
+        }
+      ]
+    },
+    {
+      "from": "technology:gd",
+      "to": "unit:carrier2",
+      "relation": "synergizes-with",
+      "conditions": "The guide's default blue route uses both for carrier reach and flexible infantry delivery; adapt to skips and objectives.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4717.04,
+          "end": 4799.93
+        }
+      ]
+    },
+    {
+      "from": "technology:fl",
+      "to": "strategy-card:pok8imperial",
+      "relation": "enables",
+      "conditions": "With Fleet Logistics and an actual Imperial opportunity, a successful Mecatol Rex take may be followed by an Imperial action; the planet must be taken and retained.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 4952.12,
+          "end": 5040.74
+        }
+      ]
+    },
+    {
+      "from": "leader:yinagent",
+      "to": "unit:yin_flagship",
+      "relation": "synergizes-with",
+      "conditions": "In the rare space-combat case discussed, the Van Hauge is destroyed and Milor places fighters so Yin may technically win combat for a qualifying secret objective.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6772.72,
+          "end": 6833.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-257-52a03a15f116",
+          "start": 6833.76,
+          "end": 6885.52
+        }
+      ]
+    }
+  ]
+}
