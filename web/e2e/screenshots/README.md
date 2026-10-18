@@ -150,7 +150,3 @@ Fixtures are synthetic, not captured engine states. Playwright starts and stops 
 ## Score Public Objective on a phone (EK-score-objective-compact)
 
 `EK-score-objective-compact` shows the scoring window (objectives modal in scoring mode, with and without the Imperial note) on 390x844, 360x740 and landscape 844x390, plus desktop unchanged. The `before-*` PNGs were taken with `TI4_SHOT_PREFIX=before` on the commit without the change; `npm run screenshots -- EK` regenerates the `after-*` PNGs and asserts a one-row header (<= 52 px, Minimize on it), >= 3 visible objective rows (2 in landscape), the footer inside the viewport and no horizontal overflow.
-
-## web2 effect previews (FJ-web2-effects)
-
-`FJ-web2-effects` is the first folder of web2 (not web/): its captures start web2's own vite (`web2.ts`, `startWeb2`) and play a real game of the engine in the page (`?scenario=late-game&humans=255`, every seat played here), so it needs `web2/scripts/build-wasm.sh` first. It shows the reaction rows with the engine's preview sentence (and one that would change nothing), the Sabotage window over a played card with its `pending_effect` and over one with none ("Not resolved yet."), and the effect chips of the toolbar (one, hover, the card's "?", several with copies), desktop 1920x1080 and 412x923. `hookEngine` listens to the Worker's messages; the several-chips shots append three effects to the engine's `active_effects`. `npm run screenshots -- FJ` regenerates it.

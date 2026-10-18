@@ -35,7 +35,6 @@ import { selectSecrets } from "./secrets";
 import { selectStrategy, showsStrategy } from "./strategy";
 import { selectTactical, tacticalFacts } from "./tactical";
 import { windowSystem } from "./reaction";
-import { activeEffects } from "./effects";
 
 function status(update: SessionUpdate, local: LocalState, printed: Catalog | null): string {
   const turn = update.turn_status;
@@ -250,7 +249,6 @@ export function selectShell(
         canApply: local.draft.canApply,
         applyHint: local.draft.applyHint,
       },
-      effects: activeEffects(update, printed),
     },
     players: { ...selectPlayers(update, printed, cards.modes), pick: seatTask(update, local) },
     board: history

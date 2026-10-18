@@ -445,7 +445,7 @@ export function selectAction(
     : (exploring ??
       (window || !asker || "StrategyCard" in asker ? null : printedSource(asker, printed)));
   // The window is on top of the action that it reacts to, which stays in view under it.
-  const reacted = window ? reactedAction(update, update.reaction?.trigger, printed, choice) : null;
+  const reacted = window ? reactedAction(update, update.reaction?.trigger, printed) : null;
   const own = !!choice && !window && !local.draft && componentAction(update, choice);
   const onBoard = choice ? boardPick(update, choice) : null;
   const seats = seatsOf(choice);

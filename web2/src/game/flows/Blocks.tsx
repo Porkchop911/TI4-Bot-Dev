@@ -276,20 +276,6 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
           </span>
         )}
       </span>
-      {row.effect && (
-        // What the row would do now is game state: in the text colour, before the printed text.
-        <span
-          className={cx(
-            "text-xs",
-            grouped
-              ? "[grid-column:3/-1] phone:[grid-column:2/-1]"
-              : "[grid-column:2/-1] phone:[grid-column:1/-1]",
-            row.disabled ? "text-faint" : "text-text",
-          )}
-        >
-          {row.effect}
-        </span>
-      )}
       {row.text && (
         // From the column of the name to the right edge; a phone has no column of the key.
         <span
