@@ -62,6 +62,7 @@ There are two layouts, and no others.
 - Exception to "no short variants of labels" (owner, 2026-10-10): the map views and the two fit buttons are icons on a phone, so that they are one row. The name is the tooltip and the accessible name. Desktop keeps the words.
 - The reference sheets, the draft menu and (in a local game) Dev are one menu in the toolbar. A sheet covers the pane.
 - Exception (owner, 2026-10-11): while a sheet covers the pane (a reference sheet, the sheet of a player, Dev), the footer and the tab bar are not shown. The sheet has their room, and its "×" gives them back. A sheet on the map (a fleet, the landings, a build) keeps the tab bar: the step sheet says what is staged when it is closed.
+- Exception to "no short variants of labels" (owner, 2026-10-18): Export, Import and Delete of the saved games on the start screen are icons on both layouts, so that a row keeps its room for the game. The name is the tooltip and the accessible name.
 - The app can be installed (`public/manifest.webmanifest`): fullscreen, locked to portrait. There is no service worker: the game is live, and the CDN already caused stale bundles once. The icons come from `scripts/make-icons.mjs`.
 - A new screen is checked in both layouts. Short variants of labels are still not allowed; restructure the row instead.
 

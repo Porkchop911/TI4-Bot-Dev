@@ -120,9 +120,14 @@ export function StartScreen({
           <div className="flex items-center gap-2 pt-1 pr-2.5 pl-4">
             <h2 className="mr-auto py-1 text-sm text-muted">Saved games</h2>
             {onImport && (
-              <Button tone="quiet" size="sm" onClick={() => file.current?.click()}>
-                Import
-              </Button>
+              <Button
+                tone="quiet"
+                size="icon"
+                icon="import"
+                aria-label="Import"
+                title="Import a saved game"
+                onClick={() => file.current?.click()}
+              />
             )}
           </div>
           {warning && (
@@ -158,21 +163,21 @@ export function StartScreen({
                 {onExport && (
                   <Button
                     tone="quiet"
-                    size="sm"
+                    size="icon"
+                    icon="export"
                     aria-label={`Export ${row.title}`}
+                    title="Export"
                     onClick={() => onExport(row.id)}
-                  >
-                    Export
-                  </Button>
+                  />
                 )}
                 <Button
                   tone="quiet"
-                  size="sm"
+                  size="icon"
+                  icon="trash"
                   aria-label={`Delete ${row.title}`}
+                  title="Delete"
                   onClick={() => setDeleting({ row })}
-                >
-                  Delete
-                </Button>
+                />
               </div>
             ))}
             {old > 0 && (
@@ -183,12 +188,12 @@ export function StartScreen({
                 </span>
                 <Button
                   tone="quiet"
-                  size="sm"
+                  size="icon"
+                  icon="trash"
                   aria-label="Delete the saved games of an older version"
+                  title="Delete"
                   onClick={() => setDeleting({ old })}
-                >
-                  Delete
-                </Button>
+                />
               </div>
             )}
           </div>

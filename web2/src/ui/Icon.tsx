@@ -54,6 +54,10 @@ const PATHS = {
   // The history mode: the screen shows a point of the past.
   history:
     '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7"/><path d="M12 8v4l3 2"/>',
+  // A saved game: its file out, a file in, and away.
+  export: '<path d="M12 15V3m-5 5 5-5 5 5"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
+  import: '<path d="M12 3v12m-5-5 5 5 5-5"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
+  trash: '<path d="M4 7h16M10 7V4h4v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6m4-6v6"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;
