@@ -212,6 +212,18 @@ impl<'a> Sheets<'a> {
 pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame) {
     let session = source.header;
     ui.heading("Omniscient players");
+    let version = frame.state.rules_version;
+    if version == ti4_model::state::RULES_VERSION {
+        ui.small(format!("Rules version {version}"));
+    } else {
+        ui.colored_label(
+            Color32::from_rgb(200, 60, 20),
+            format!(
+                "Rules version {version}, but this engine plays {}: this game replays under older rules.",
+                ti4_model::state::RULES_VERSION
+            ),
+        );
+    }
     egui::ScrollArea::vertical().show(ui, |ui| {
         let content = ContentStore::embedded();
         section(ui, "Current policy profiles", |ui| {
@@ -530,10 +542,26 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                         stat_badge(ui, "◆", "TG", player.trade_goods);
                         stat_badge(ui, "◇", "Com", player.commodities);
                     });
+                    let pools =
+                        ti4_engine::tokens::CommandPools::of(&frame.state, content, &player.id);
                     ui.horizontal_wrapped(|ui| {
-                        stat_badge(ui, "▲", "Tactic", player.tactic_tokens);
-                        stat_badge(ui, "⬟", "Fleet", player.fleet_tokens);
-                        stat_badge(ui, "●", "Strategy", player.strategic_tokens);
+                        stat_badge(ui, "▲", "Tactic", pools.tactic);
+                        if pools.fleet_supply_bonus > 0 {
+                            // Armada: the supply limit per system is the pool plus the bonus.
+                            stat_badge(
+                                ui,
+                                "⬟",
+                                "Fleet",
+                                format!(
+                                    "{} · supply limit {}",
+                                    pools.fleet,
+                                    ti4_engine::fleet::limit(&frame.state, content, &player.id)
+                                ),
+                            );
+                        } else {
+                            stat_badge(ui, "⬟", "Fleet", pools.fleet);
+                        }
+                        stat_badge(ui, "●", "Strategy", pools.strategic);
                     });
 
                     let strategy = player
@@ -910,6 +938,14 @@ pub fn decision_sheet(
                     ui.colored_label(colour, note);
                 }
                 ui.label(naming.apply(session, &row.prompt));
+                for line in crate::view::details_lines(session, &row.prompt, &row.details) {
+                    ui.small(line);
+                }
+                if let Some(effect) = &row.pending_effect {
+                    if let Some(said) = crate::view::say_effect(session, effect) {
+                        ui.small(format!("Pending effect: {said}"));
+                    }
+                }
                 if let Some(context) = &row.context {
                     ui.collapsing("Typed decision context", |ui| {
                         ui.monospace(context);
@@ -941,6 +977,15 @@ pub fn decision_sheet(
                         .default_open(option.selected)
                         .show(ui, |ui| {
                             ui.label(format!("id={} kind={}", option.id, option.kind));
+                            for line in crate::view::option_lines(
+                                session,
+                                &option.id,
+                                &option.label,
+                                &row.details,
+                                &row.previews,
+                            ) {
+                                ui.label(line);
+                            }
                             for line in &option.detail_lines {
                                 ui.strong(line);
                             }

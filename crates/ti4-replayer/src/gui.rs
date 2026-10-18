@@ -1573,6 +1573,9 @@ impl Replayer {
                         view::annotate(session, pending.actor.as_str())
                     ));
                     ui.strong(view::annotate(session, &pending.prompt));
+                    for line in pending.question_lines(session) {
+                        ui.small(line);
+                    }
                     // A vote names only its outcomes: show the agenda card being voted on.
                     if let Some(alias) = view::current_agenda(frames, frame) {
                         egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -1646,6 +1649,15 @@ impl Replayer {
                                         )
                                     }
                                 ));
+                                for line in view::option_lines(
+                                    session,
+                                    &option.id,
+                                    &option.label,
+                                    &pending.details,
+                                    pending.previews(),
+                                ) {
+                                    ui.small(line);
+                                }
                                 // What the option actually commits, when the engine put a bundle on
                                 // it. A diplomacy offer used to read as a label and a raw id, which
                                 // is not a thing anybody can accept or refuse knowingly: the terms

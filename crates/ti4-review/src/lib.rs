@@ -354,6 +354,16 @@ pub struct DecisionDetail {
     pub options: Vec<OptionDetail>,
     #[serde(default)]
     pub context: Option<Value>,
+    /// The display-only facts the engine put on the question (`Choice::details`): pools, fleet
+    /// supply, phrases, offer-card header. Never part of `context`, which is what replays bind.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub details: serde_json::Map<String, Value>,
+    /// What each reaction card of the window would do, worded by the engine (display only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previews: Vec<ti4_engine::decision_context::EffectPreview>,
+    /// What the card this window reacts to will do when it resolves (display only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_effect: Option<ti4_engine::decision_context::EffectPreview>,
 }
 
 /// Stable replay copy of one fully resolved engine timing event.
@@ -579,6 +589,16 @@ impl TraceBot {
                 .context
                 .as_ref()
                 .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
+            details: choice.details.clone(),
+            previews: choice
+                .context
+                .as_ref()
+                .map(|context| context.previews.clone())
+                .unwrap_or_default(),
+            pending_effect: choice
+                .context
+                .as_ref()
+                .and_then(|context| context.pending_effect.clone()),
         });
     }
 }
@@ -701,6 +721,16 @@ impl MlpTraceBot {
                 .context
                 .as_ref()
                 .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
+            details: choice.details.clone(),
+            previews: choice
+                .context
+                .as_ref()
+                .map(|context| context.previews.clone())
+                .unwrap_or_default(),
+            pending_effect: choice
+                .context
+                .as_ref()
+                .and_then(|context| context.pending_effect.clone()),
         });
     }
 }

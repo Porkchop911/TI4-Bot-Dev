@@ -349,6 +349,9 @@ fn choice(
     let mut action = None;
     ui.heading("You are asked");
     ui.strong(view::annotate(session, &pending.prompt));
+    for line in pending.question_lines(session) {
+        ui.small(line);
+    }
     if let Some(alias) = view::current_agenda(frames, tip) {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             for line in view::agenda_card(ContentStore::embedded(), &alias) {
@@ -374,6 +377,15 @@ fn choice(
                 );
                 if button.clicked() {
                     action = Some(Action::Submit(Box::new(pending.clone()), option.id.clone()));
+                }
+                for line in view::option_lines(
+                    session,
+                    &option.id,
+                    &option.label,
+                    &pending.details,
+                    pending.previews(),
+                ) {
+                    ui.small(line);
                 }
                 let terms = ti4_review::diplomacy::payload_lines(&tip.state, &option.payload);
                 ui.indent(("terms", option.id.clone()), |ui| {
