@@ -19,6 +19,7 @@ export default defineConfig({
     fs: { allow: [".."] },
     host: "127.0.0.1",
     port: 3000,
+    allowedHosts: ["ti4.beckermann-zibert.com"],
     proxy: {
       "/api": `http://127.0.0.1:${process.env.TI4_E2E_BACKEND_PORT ?? "8080"}`,
       "/ws": {
