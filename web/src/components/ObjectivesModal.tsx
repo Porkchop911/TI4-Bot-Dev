@@ -26,7 +26,7 @@ import {
 import { ValueUnit } from "./PlanetValueIcons.tsx";
 import { SecretObjectiveProgress } from "./SecretObjectiveProgress.tsx";
 import { NeighbourProgress } from "./NeighbourProgress.tsx";
-import { secretProgressOf } from "../presentation/secretProgress.ts";
+import { combatCapNote, secretProgressOf } from "../presentation/secretProgress.ts";
 import { homeBlockSentence, lostHomePlanets, lostHomeText } from "../presentation/publicScoringBlock.ts";
 import "./ObjectivesModal.css";
 
@@ -216,6 +216,16 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
     controlledSelectedOptionId !== undefined
       ? controlledSelectedOptionId || null
       : uncontrolledSelectedOptionId;
+
+  // The one-per-combat cap, worded from the card notes; the engine enforces it.
+  const capNote = useMemo(
+    () =>
+      combatCapNote(
+        secretOptions.filter((row) => !row.secret.plotToken).map((row) => row.secret.secretId),
+        secretOptions.find((row) => row.optionId === selectedOptionId)?.secret.secretId ?? null,
+      ),
+    [secretOptions, selectedOptionId],
+  );
 
   const setSelectedOptionId = useCallback(
     (id: string | null) => {
@@ -552,6 +562,11 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
                 board={board}
               />
             )}
+            {isScoreable && !plotToken && capNote.skipped.has(secretId) && (
+              <div className="objectives-matrix__cap-skipped" data-testid={`secret-skipped-${key}`}>
+                Skipped if you score the other: this window closes after one.
+              </div>
+            )}
             {plotToken && (
               <div className="objectives-matrix__plot-note" data-testid="secret-plot-note">
                 Plots Within Plots: scored by {display(plotToken).label}; it becomes a plot with
@@ -775,6 +790,19 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
                             data-testid="secret-objectives-header"
                           >
                             Your Secret Objectives
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {capNote.notice && (
+                      <tr>
+                        <td colSpan={playerList.length + 1}>
+                          <div
+                            className="objectives-matrix__cap-note"
+                            role="note"
+                            data-testid="secret-combat-cap-note"
+                          >
+                            {capNote.notice}
                           </div>
                         </td>
                       </tr>

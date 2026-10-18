@@ -1052,6 +1052,34 @@ impl<'a> Observed<'a> {
         })
     }
 
+    /// The agenda being voted on (public: it is revealed), while its vote is open.
+    #[must_use]
+    pub fn agenda_in_play(&self) -> Option<&str> {
+        self.state.agenda_in_play.as_deref()
+    }
+
+    /// How many agendas have already been resolved in the current round (public history).
+    #[must_use]
+    pub fn agendas_resolved_this_round(&self) -> usize {
+        self.state
+            .agenda_log
+            .iter()
+            .filter(|record| record.round == self.state.round)
+            // A card discarded without a vote is listed, but it was not resolved.
+            .filter(|record| record.discard_reason.is_none())
+            .count()
+    }
+
+    /// The outcome a seat predicted on the agenda in play with a rider card, if it did (public:
+    /// the card is played face up and the prediction is aloud).
+    #[must_use]
+    pub fn agenda_prediction_of(&self, player: &PlayerId) -> Option<&str> {
+        self.state
+            .agenda_predictions
+            .get(player)
+            .map(String::as_str)
+    }
+
     /// The seats, in seating order.
     #[must_use]
     pub fn players(&self) -> Vec<&'a PlayerId> {

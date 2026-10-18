@@ -4,6 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 import type { AutoResolvedNote, GameEvent, LeaderStatus } from "../protocol/types.ts";
 import { useCornerToasts } from "./useCornerToasts.ts";
 import type { AgendaRecordDto } from "../presentation/agendaToasts.ts";
+import type { RelicGainDto } from "../presentation/relicToasts.ts";
 import { TOAST_MUTE_KEY } from "./useToastMute.ts";
 
 const ev = (id: string, actor: string, detail: string): GameEvent =>
@@ -101,6 +102,25 @@ describe("useCornerToasts", () => {
     });
     spectator.rerender({ ...base, viewerSeat: null, agendas: [first] });
     expect(spectator.result.current.notifications[0].text).toContain("Mutiny: For wins");
+  });
+
+  it("toasts a relic gain once for every seat, highlighting the viewer's own, and lists it in the history", () => {
+    const mine: RelicGainDto = { round: 2, player: "p1", relic: "nanoforge" };
+    const theirs: RelicGainDto = { round: 2, player: "p2", relic: "shard", victory_points: 1 };
+    const { result, rerender } = renderHook((p: Props) => useCornerToasts(p), {
+      initialProps: { ...base, relics: [] as RelicGainDto[] },
+    });
+    rerender({ ...base, relics: [mine] });
+    expect(result.current.notifications[0]).toMatchObject({ kind: "relic", tag: "Relic", actor: "p1", emphasis: true });
+    expect(result.current.notifications[0].text).toContain("gained Nano-Forge");
+    rerender({ ...base, relics: [mine, theirs] });
+    expect(result.current.notifications).toHaveLength(2);
+    expect(result.current.notifications[1]).toMatchObject({ actor: "p2", emphasis: false });
+    expect(result.current.notifications[1].text).toContain("+1 victory point on gain");
+    expect(result.current.history.map((h) => h.tag)).toEqual(["Relic", "Relic"]);
+    // A reload (new generation) never re-toasts what the log already holds.
+    rerender({ ...base, relics: [mine, theirs], historyGeneration: 1 });
+    expect(result.current.notifications).toHaveLength(2);
   });
 
   it("says why the viewer's own Imperial scored nothing (home planet lost, 61.16)", () => {

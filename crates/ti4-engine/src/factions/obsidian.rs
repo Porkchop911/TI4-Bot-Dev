@@ -2913,6 +2913,12 @@ mod tests {
             state.system_mut(&system).set_control(planet.clone(), a());
             crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &a(), 1);
             crate::fixtures::put(&mut state, &system, "cruiser", &b(), 1);
+            // Not Antimass Deflectors' -1, which the target's faction may start with.
+            state
+                .player_mut(&b())
+                .unwrap()
+                .technologies
+                .remove(&ti4_model::id::TechnologyId::new("amd"));
             // Every die shows 5; a PDS hits on 6.
             let mut dice = crate::dice::Dice::from_faces(std::iter::repeat_n(5, 12));
             let mut rng = crate::rng::GameRng::new(0);

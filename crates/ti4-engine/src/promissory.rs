@@ -160,7 +160,7 @@ pub fn take(state: &mut GameState, content: &ContentStore, holder: &PlayerId, no
     // Antivirus is a play-area note, but its text places it ("At the start of a combat: Place this
     // card faceup"): it waits in hand until the holder does (`factions::nekro`).
     if is_play_area(content, note)
-        && !is_action_placed(alias_of(note))
+        && !is_action_placed(state, alias_of(note))
         && alias_of(note) != "antivirus"
     {
         state.promissory_faceup.insert(note.to_owned());
@@ -184,12 +184,17 @@ const SHARE_KNOWLEDGE: &str = "shareknowledge";
 /// sever token in a system that contains your units ...").
 const SEVER: &str = "sever";
 
+/// The Mentak's Promise of Protection ("ACTION: Place this card faceup in your play area"). Before
+/// rules version 16 it went faceup on receipt and the ACTION did not exist.
+const PROMISE_OF_PROTECTION: &str = "pop";
+
 /// Whether a note's own text places it faceup with an ACTION rather than on receipt.
-fn is_action_placed(alias: &str) -> bool {
+fn is_action_placed(state: &GameState, alias: &str) -> bool {
     matches!(
         alias,
         CONVOYS | BLOOD_PACT | DARK_PACT | SHARE_KNOWLEDGE | SEVER
-    )
+    ) || (alias == PROMISE_OF_PROTECTION
+        && state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS)
 }
 
 /// The notes `player` holds in hand (not yet faceup) whose ACTION places them in their play area
@@ -202,7 +207,7 @@ pub fn action_notes_in_hand(state: &GameState, player: &PlayerId) -> Vec<String>
         .iter()
         .filter(|(note, holder)| {
             *holder == player
-                && is_action_placed(alias_of(note))
+                && is_action_placed(state, alias_of(note))
                 && !state.promissory_faceup.contains(*note)
                 && owner_of(note).is_some_and(|name| name != faction_name(state, player))
         })

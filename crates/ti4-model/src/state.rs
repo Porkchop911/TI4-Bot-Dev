@@ -1155,7 +1155,7 @@ pub struct StartingTechPick {
 /// The rules version of a new game. Raise it when an engine decision changes in a way that an
 /// older game log would not replay under (and gate the change on
 /// [`GameState::rules_version`]); see `docs/RULES_VERSION.md`.
-pub const RULES_VERSION: u32 = 11;
+pub const RULES_VERSION: u32 = 16;
 
 /// The first rules version with the Infiltrate fix: offered only to the gaining player and only
 /// when a rival PDS or space dock can be replaced; the previous holder's structures are
@@ -1212,6 +1212,36 @@ pub const RULES_ACTION_CARD_TARGETS: u32 = 10;
 /// The first rules version where a retreat obeys the movement rules for entering the destination:
 /// no asteroid field without Antimass Deflectors, no supernova.
 pub const RULES_RETREAT_HAZARDS: u32 = 11;
+
+/// The first rules version where a command token gained without a named pool (the exploration
+/// cards Volatile Fuel Source, the Entropic Field frontier rewards and the Keleres ones, and the
+/// Leadership Rider) is placed into a pool of the player's choice (52.4). Before,
+/// exploration put them in the strategy pool and Leadership Rider in the fleet pool.
+pub const RULES_COMMAND_TOKEN_POOL: u32 = 12;
+
+/// The first rules version where Self-Assembly Routines works: after a use of PRODUCTION that
+/// produced units, its owner may exhaust it to place 1 mech from reinforcements on a planet they
+/// control in that system. Before, the technology could be owned and did nothing.
+pub const RULES_SELF_ASSEMBLY: u32 = 13;
+
+/// The first rules version where (1) Research Grant Reallocation asks the elected player which
+/// technology to gain and removes one fleet token per prerequisite, and (2) an agenda revealed
+/// with nothing to elect ("if there are no scored secret objectives / laws in play, discard this
+/// card and reveal another") is replaced by the next card instead of costing the phase one of its
+/// two agendas; discards (that and Veto / Quash / Political Favor) are listed in `agenda_log`.
+pub const RULES_AGENDA_GRANT_REVEAL: u32 = 14;
+
+/// The first rules version with the missing technology effects: Infantry II returns on a 6,
+/// Antimass Deflectors' -1 to Space Cannon rolls, Magen Defense Grid (infantry on activation, a
+/// free hit at the start of ground combat), Psychoarchaeology's free specialties, AI Development
+/// Algorithm's skipped prerequisite and Predictive Intelligence's 3 extra votes.
+pub const RULES_TECH_EFFECTS: u32 = 15;
+
+/// The first rules version with the missing faction effects: Gravleash Maneuvers' +X to one
+/// ship's combat roll, the Sol agent's extra ground die, Promise of Protection's ACTION, the
+/// Ral Nel commander's unlock, an optional Letnev commander trade good and the Shard of the
+/// Throne VP when the Naaz purge a relic fragment.
+pub const RULES_FACTION_EFFECTS: u32 = 16;
 
 /// The whole game, as a value.
 ///
@@ -1314,6 +1344,11 @@ pub struct GameState {
     /// corner notification "Agenda: ... For wins"); no rule reads it, so it is not compared.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agenda_log: Vec<AgendaRecord>,
+    /// Every relic a player gained, in order, by any route (fragment purge, exploration, agenda,
+    /// faction ability). History for viewers (the corner notification "gained Nano-Forge"); no
+    /// rule reads it, so it is not compared and not written while empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relic_log: Vec<RelicGainRecord>,
     pub relic_deck: Vec<RelicId>,
     pub agenda_deck: Vec<String>,
     pub action_card_deck: Vec<ActionCardId>,
@@ -1660,6 +1695,11 @@ pub struct GameState {
     /// Set when the agenda is revealed and read by anything played into that window, which is
     /// what lets Imperial Rider predict one of them without reaching into the vote.
     pub agenda_choices: Vec<String>,
+    /// The alias of the agenda being voted on, set with [`Self::agenda_choices`] and cleared with
+    /// it. A read-only view for deciders (a rider's prediction question names no agenda); no rule
+    /// reads it, it is not compared and not written while empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agenda_in_play: Option<String>,
     /// Imperial Rider: the outcome each player predicted for the agenda being voted on.
     ///
     /// Held on the game rather than the seat because it belongs to one agenda, not to a player,
@@ -1879,6 +1919,7 @@ impl GameState {
             legacy_device_ids: false,
             starting_tech_picks: Vec::new(),
             agenda_log: Vec::new(),
+            relic_log: Vec::new(),
             relic_deck: Vec::new(),
             agenda_deck: Vec::new(),
             action_card_deck: Vec::new(),
@@ -1946,6 +1987,7 @@ impl GameState {
             production_value_swapped_planet: None,
             gravleash_move_values: BTreeMap::new(),
             agenda_choices: Vec::new(),
+            agenda_in_play: None,
             agenda_predictions: BTreeMap::new(),
             transactions_this_turn: BTreeMap::new(),
             traded_goods: BTreeMap::new(),
@@ -3201,6 +3243,27 @@ pub struct AgendaRecord {
     /// Confusing / Confounding Legal Text: who the agenda's effect went to instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redirected_to: Option<String>,
+    /// Set on a card that was revealed and discarded without a vote (rules version 14): `no_choice`
+    /// (nothing to elect, the next agenda was revealed) or `replaced` (Veto, Quash, Political
+    /// Favor). Such a record has `discarded` and no outcome, and is not a resolved agenda.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discard_reason: Option<String>,
+}
+
+/// One relic gained by one player. Display only: no rule reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelicGainRecord {
+    pub round: u32,
+    pub player: PlayerId,
+    /// The relic's alias.
+    pub relic: String,
+    /// Victory points the gain itself awarded (the Shard of the Throne's 1); absent for none.
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub victory_points: i32,
+}
+
+fn is_zero_i32(n: &i32) -> bool {
+    *n == 0
 }
 
 /// Negotiations one player may initiate during one action (operator limit, 2026-09-22).

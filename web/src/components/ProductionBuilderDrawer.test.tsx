@@ -761,3 +761,55 @@ describe("ProductionBuilderDrawer staged fleet supply", () => {
     expect(build()).not.toHaveAttribute("data-over-fleet-supply");
   });
 });
+
+describe("ProductionBuilderDrawer capacity meter", () => {
+  const cap = (unit: string, role: string, provided: number, needed: number, placement = "always") => ({
+    id: `build|${unit}|1`,
+    kind: "produce",
+    label: unit,
+    payload: {
+      unit,
+      production_spent: 1,
+      cost: 1,
+      available_resources: 20,
+      capacity_provided: provided,
+      capacity_needed: needed,
+      capacity_role: role,
+      space_placement: placement,
+    },
+  });
+  const open = (capacity: Record<string, unknown>) => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "capacity-meter",
+      prompt: "produce a unit",
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 6, paid: 0 }] }),
+      details: { fleet_supply: { used: 0, limit: 9 }, capacity },
+      options: [cap("carrier", "none", 4, 0), cap("fighter", "fighter", 0, 2)],
+    };
+    render(
+      <ProductionBuilderDrawer isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} onClose={vi.fn()} />,
+    );
+  };
+  const add = (id: string) => fireEvent.click(screen.getByTestId(`produce-unit-btn-${id}`));
+
+  it("warns in orange when queued fighters pass the capacity, and lifts it when a carrier is queued", () => {
+    open({ transport: 2, consumed: 2, fighters: 2, unused_support: 0 });
+    expect(screen.getByTestId("capacity-counter")).toHaveTextContent("Capacity 2 / 2");
+    add("build|fighter|1");
+    expect(screen.getByTestId("capacity-counter")).toHaveTextContent(
+      "Capacity 4 / 2 (2 fighters over: they would be removed)",
+    );
+    expect(screen.getByTestId("capacity-counter")).toHaveAttribute("data-over", "true");
+    expect(screen.getByTestId("produce-option-build|fighter|1")).toHaveAttribute("data-capacity-over", "true");
+    expect(screen.getByRole("button", { name: "Confirm builds" })).toHaveAttribute("data-over-capacity", "true");
+    add("build|carrier|1");
+    expect(screen.getByTestId("capacity-counter")).toHaveTextContent(/^Capacity 4 \/ 6$/);
+    expect(screen.getByTestId("capacity-counter")).not.toHaveAttribute("data-over");
+  });
+
+  it("is absent when the host sends no capacity detail", () => {
+    open({});
+    expect(screen.queryByTestId("capacity-meter")).toBeNull();
+  });
+});

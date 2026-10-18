@@ -1,0 +1,16 @@
+{
+  "title": "Versions of the game in the menu",
+  "description": "The phone menu (and, on desktop, a Versions button next to Technologies and Objectives) lists the bot version and the rules version the game plays, the newest rules version this build knows, and the page build and engine. A game that keeps older rules or an older bot says so. Real offline games on the real engine (seed 11, 4 players, seat 3); the older games are the same game with its stored save set to bot 3 and rules 9 (or to neither field) and opened again.",
+  "tag": "web/e2e/screenshots/FK-version-info",
+  "shots": [
+    { "file": "out/1-current-desktop.png", "heading": "A new game, desktop", "caption": "Bot and rules are the newest this build knows; no note." },
+    { "file": "out/1-current-390x844.png", "heading": "A new game, phone", "caption": "The Versions block at the bottom of the menu sheet." },
+    { "file": "out/2-older-desktop.png", "heading": "A game on older rules, desktop", "caption": "Bot version 3 and rules version 9 against a build that knows more: both are flagged, the rules note says the game keeps the older rules it was started with." },
+    { "file": "out/2-older-390x844.png", "heading": "A game on older rules, phone", "caption": "The same at 390x844." },
+    { "file": "out/3-before-the-fields-desktop.png", "heading": "A save from before the fields", "caption": "No bot version in the save: it plays bot version 1, and the note says so. No rules version: the legacy rules." }
+  ],
+  "notes": [
+    { "title": "Reproduce", "text": "cd web && rm -rf node_modules/.vite && npm run build:wasm && npm run screenshots -- FK (needs cargo with the wasm32-unknown-unknown target; TI4_WASM_FILE=<file> reuses a prebuilt engine)." },
+    { "title": "Online games", "text": "Online the list shows the rules version from the game state, the server commit from /health and says the bot version is not reported. Not captured here: the online capture needs a mocked server and shows the same block." }
+  ]
+}

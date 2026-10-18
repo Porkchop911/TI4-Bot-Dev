@@ -418,11 +418,18 @@ pub fn stage_for(subtype: &str) -> Option<&'static str> {
         "draft_strategy_card" => "draft",
         "starting_technology" => "setup",
         "score_objective" | "score_secret_objective" => "scoring",
-        "cast_vote" | "vote_exhaust_planet" | "vote_tiebreak" => "voting",
+        "cast_vote"
+        | "vote_exhaust_planet"
+        | "vote_predictive_intelligence"
+        | "vote_tiebreak" => "voting",
         "propose_transaction" | "answer_transaction" => "transactions",
         "activate_system" => "activation",
         "movement_step" | "load_cargo" => "movement",
-        "assign_casualty" | "sustain_damage" | "announce_retreat" | "retreat_to" => "combat",
+        "assign_casualty"
+        | "sustain_damage"
+        | "letnev_commander_trade_good"
+        | "announce_retreat"
+        | "retreat_to" => "combat",
         "assign_ground_casualty"
         | "fight_ground_combat_round"
         | "start_next_ground_combat"

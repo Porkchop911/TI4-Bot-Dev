@@ -144,28 +144,27 @@ tuning! {
     bw_production: bool = true, "v4 (B): planners of the production secrets (gamf, mtm, pem; with bw_enabled)";
     mecatol_guard: bool = false, "v5 candidate (off in v1-v4): the warships on a held Mecatol Rex stay while they deter the fleet a rival can bring (no activation counts them as movable, no move takes them away)";
     mecatol_imperial_priority: bool = false, "v5 candidate (off in v1-v4): a seat that holds Mecatol Rex (or could take it) drafts an unclaimed Imperial before anything else, and plays it at once when it holds it";
-    agenda_value: bool = false, "v5 candidate: every agenda outcome valued for the seat (agenda_vote.rs); a small margin is no opinion";
-    agenda_budget: bool = false, "v5 candidate: cast only the votes that make the outcome likely, keep planets for the second agenda";
-    agenda_riders: bool = false, "v5 candidate: rider cards played only when the outcome is predictable and the seat's votes are not needed";
-    agenda_rival_weight: f64 = 0.5, "v5 candidate: weight of the rivals' change in an outcome's value (agenda_value)";
-    agenda_min_margin: f64 = 1.5, "v5 candidate: value points the best outcome must lead by, else no opinion (agenda_value)";
-    agenda_rival_share: f64 = 0.6, "v5 candidate: chance that a rival without an opinion votes against the seat";
-    agenda_second_prior: f64 = 2.0, "v5 candidate: assumed stake of an unknown second agenda, in value points (agenda_budget)";
-    rider_min_p: f64 = 0.7, "v5 candidate: least probability that the predicted outcome wins for a rider to be played (agenda_riders)";
+    agenda_value: bool = false, "v5: every agenda outcome valued for the seat (agenda_vote.rs); a small margin is no opinion";
+    agenda_budget: bool = false, "v5: cast only the votes that make the outcome likely, keep planets for the second agenda";
+    agenda_riders: bool = false, "v5: rider cards played only when the outcome is predictable and the seat's votes are not needed";
+    agenda_rival_weight: f64 = 0.5, "v5: weight of the rivals' change in an outcome's value (agenda_value)";
+    agenda_min_margin: f64 = 1.5, "v5: value points the best outcome must lead by, else no opinion (agenda_value)";
+    agenda_rival_share: f64 = 0.6, "v5: chance that a rival without an opinion votes against the seat";
+    agenda_second_prior: f64 = 2.0, "v5: assumed stake of an unknown second agenda, in value points (agenda_budget)";
+    rider_min_p: f64 = 0.7, "v5: least probability that the predicted outcome wins for a rider to be played (agenda_riders)";
     land_all: bool = false, "v5 (off in v1-v4): the landing step commits every ground force aboard to a planet of the system (never leaves them in space)";
 }
 
 /// The rule bot's behaviour version that new games play. Version 1 is the bot before the
 /// `v2:` knobs, version 2 the bot before the `v3:` knobs, version 3 adds them, version 4 adds the `v4:` knobs (backward planning) and changes `planner_gap` and `nekro_tech`; a saved offline game records the
 /// version it was played with (`ti4_wasm::host_setup::Setup::bot_version`) and is resumed with it.
-pub const BOT_VERSION: u32 = 4;
+pub const BOT_VERSION: u32 = 5;
 
-/// The highest version [`for_version`] knows: version 5 is the staging table of the next bot
-/// release ([`v5`]); a game can name it (`bot_version` 5, `--bot bot_version=5`) but new games
-/// still play [`BOT_VERSION`].
+/// The highest version [`for_version`] knows: version 5 ([`v5`]) is the current bot that new games
+/// play ([`BOT_VERSION`]); the `Tuning::default()` table stays version 4.
 pub const MAX_BOT_VERSION: u32 = 5;
 
-/// The tuning of bot version `version` (1 to 4; anything else: the current one).
+/// The tuning of bot version `version` (1 to 5; anything else: the current one).
 ///
 /// Version 1 is written out in full (every field, no `..`), so a new knob cannot slip into it
 /// with a changed default: the compiler asks for its version-1 value. Version 2 is version 1 plus
@@ -176,13 +175,21 @@ pub fn for_version(version: u32) -> Tuning {
         1 => v1(),
         2 => v2(),
         3 => v3(),
-        5 => v5(),
-        _ => Tuning::default(),
+        4 => Tuning::default(),
+        _ => v5(),
     }
 }
 
-/// Version 5, the **staging table for the next bot release**: version 4 plus the knobs decided
-/// for it so far. Nothing ships from it yet ([`BOT_VERSION`] stays 4). Members: `land_all` (the
+/// The shipped bot: the tuning of [`BOT_VERSION`] (what new games, the server bots and the
+/// self-play harness play unless told otherwise). `Tuning::default()` is version 4.
+#[must_use]
+pub fn current() -> Tuning {
+    for_version(BOT_VERSION)
+}
+
+/// Version 5, the **current bot** ([`BOT_VERSION`], user decision 2026-10-17): version 4 plus the
+/// knobs decided for it. The agenda decisions keep no memory between decisions (they are a pure
+/// function of the observation, so undo / rewind / resume replay them; docs/BOT_AGENDA_VOTING.md). Members: `land_all` (the
 /// landing step commits every ground force aboard) and the three agenda-voting knobs
 /// `agenda_value`, `agenda_budget`, `agenda_riders` (docs/BOT_AGENDA_VOTING.md). Other candidate
 /// knobs are NOT in it yet, pending decisions: `mecatol_guard` and `mecatol_imperial_priority`
@@ -337,7 +344,7 @@ fn v1() -> Tuning {
 }
 
 thread_local! {
-    static CURRENT: Cell<Tuning> = Cell::new(Tuning::default());
+    static CURRENT: Cell<Tuning> = Cell::new(for_version(BOT_VERSION));
 }
 
 /// Install `tuning` for this thread.
@@ -379,7 +386,7 @@ mod tests {
         let mut t = Tuning::default();
         t.set_key("bot_version", "1").unwrap();
         assert_eq!(t, for_version(1));
-        assert_eq!(for_version(BOT_VERSION), Tuning::default());
+        assert_eq!(for_version(4), Tuning::default());
         assert!(!for_version(1).vote_rule && !for_version(1).casualty_rule);
         assert!(
             for_version(2).vote_rule && !for_version(2).r1_tech && !for_version(2).tech_pick_rule

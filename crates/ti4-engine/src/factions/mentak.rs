@@ -38,6 +38,8 @@ pub const MODULE: FactionModule = FactionModule {
     breakthroughs: &["mentakbt"],
     hooks: Hooks {
         commander_unlocked: Some(commander_unlocked),
+        component_actions: Some(component_actions),
+        perform_component: Some(perform_component),
         timing_abilities: Some(timing_abilities),
         combat: CombatHooks {
             produced_hits: Some(produced_hits),
@@ -923,8 +925,8 @@ fn salvage_effect(
 /// Mentak player's units, return this card to the Mentak player." The bar on Pillage is in
 /// [`pillage_targets`].
 ///
-/// The note reaches a play area the moment it changes hands (`promissory::take`, 69.3), so the
-/// printed "ACTION: Place this card faceup" step is not a separate action here (see the evidence).
+/// Before rules version 16 the note reached a play area the moment it changed hands
+/// (`promissory::take`, 69.3); from 16 the holder places it with its ACTION ([`component_actions`]).
 fn pop_to_return(event: &Event, state: &GameState, holder: &PlayerId) -> Vec<String> {
     if event.text("player") != Some(holder.as_str()) {
         return Vec::new();
@@ -953,6 +955,41 @@ fn pop_to_return(event: &Event, state: &GameState, holder: &PlayerId) -> Vec<Str
         })
         .map(|(note, _)| note.clone())
         .collect()
+}
+
+/// Promise of Protection's ACTION ("Place this card faceup in your play area"), rules version 16:
+/// offered to the holder as `faction|mentak|pop`, one option while any copy waits in hand.
+fn component_actions(
+    state: &GameState,
+    _content: &ContentStore,
+    player: &PlayerId,
+) -> Vec<ChoiceOption> {
+    if crate::promissory::action_notes_in_hand(state, player)
+        .iter()
+        .any(|note| crate::promissory::alias_of(note) == "pop")
+    {
+        vec![ChoiceOption::labelled(
+            "faction|mentak|pop",
+            "component_action",
+            "Promise of Protection: place it faceup in your play area",
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+fn perform_component(
+    context: &mut TimingContext<'_>,
+    player: &PlayerId,
+    option: &ChoiceOption,
+) -> bool {
+    if option.id != "faction|mentak|pop" {
+        return false;
+    }
+    let note = crate::promissory::action_notes_in_hand(context.state, player)
+        .into_iter()
+        .find(|note| crate::promissory::alias_of(note) == "pop");
+    note.is_some_and(|note| crate::promissory::play_action_note(context.state, player, &note))
 }
 
 fn promise_of_protection(owner_name: &str, seat: &PlayerId) -> Ability {
@@ -1736,6 +1773,7 @@ mod tests {
         state.player_mut(&b()).unwrap().trade_goods = 5;
         let note = crate::promissory::note_id("pop", "mentak");
         crate::promissory::take(&mut state, ContentStore::embedded(), &b(), &note);
+        assert!(crate::promissory::play_action_note(&mut state, &b(), &note));
         assert!(state.promissory_faceup.contains(&note), "a play-area note");
         emit(&mut state, &[], "TRADE_GOODS_GAINED", &gained("b")).unwrap();
         assert_eq!(state.player(&b()).unwrap().trade_goods, 5);
@@ -2152,6 +2190,7 @@ mod tests {
         let (mut state, system) = arena();
         let note = crate::promissory::note_id("pop", "mentak");
         crate::promissory::take(&mut state, ContentStore::embedded(), &b(), &note);
+        assert!(crate::promissory::play_action_note(&mut state, &b(), &note));
         let activate = |system: &SystemId| {
             vec![
                 ("player", "b".into()),
@@ -2168,6 +2207,7 @@ mod tests {
         assert!(!state.promissory_faceup.contains(&note));
         // The Mentak player activating their own system never returns anything.
         crate::promissory::take(&mut state, ContentStore::embedded(), &b(), &note);
+        assert!(crate::promissory::play_action_note(&mut state, &b(), &note));
         let own = vec![
             ("player", "a".into()),
             ("system", system.to_string().into()),

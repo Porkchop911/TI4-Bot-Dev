@@ -2679,6 +2679,13 @@ fn asked_rider_payoff(
             place_diplomacy_rider_tokens(state, player, &ti4_model::id::SystemId::new(system));
             true
         }
+        // "gain 3 command tokens" names no pool: three 52.4 questions (rules version 12).
+        "lead_rider" if state.rules_version >= ti4_model::state::RULES_COMMAND_TOKEN_POOL => {
+            let _ = crate::strategy_cards::gain_tokens(
+                state, content, sources, galaxy, table, player, 3,
+            );
+            true
+        }
         "war_rider" => {
             let systems: Vec<String> = state
                 .board
@@ -13710,5 +13717,46 @@ mod hidden_hands {
         );
         assert_eq!(state.board, board);
         assert!(table.log.records.is_empty());
+    }
+
+    #[test]
+    fn a_correct_leadership_rider_asks_where_each_token_goes() {
+        let content = ContentStore::embedded();
+        for (version, asked_expected) in [
+            (ti4_model::state::RULES_COMMAND_TOKEN_POOL, 3),
+            (ti4_model::state::RULES_COMMAND_TOKEN_POOL - 1, 0),
+        ] {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state.rules_version = version;
+            let a = PlayerId::new("a");
+            let before = {
+                let seat = state.player(&a).unwrap();
+                (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+            };
+            state
+                .agenda_predictions
+                .insert(a.clone(), "FOR|lead_rider".to_owned());
+            let (decider, seen) = crate::choice::Capturing::new(Box::new(
+                crate::choice::Scripted::new(["strategic_tokens", "tactic_tokens", "fleet_tokens"]),
+            ));
+            let mut table = Table::with_default(Box::new(decider));
+            let paid = resolve_predictions_asking(
+                &mut state,
+                content,
+                ti4_model::content_types::POK,
+                None,
+                &mut table,
+                "FOR",
+            );
+            assert_eq!(paid, vec![a.clone()]);
+            assert_eq!(seen.borrow().len(), asked_expected);
+            let seat = state.player(&a).unwrap();
+            let after = (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens);
+            if asked_expected == 3 {
+                assert_eq!(after, (before.0 + 1, before.1 + 1, before.2 + 1));
+            } else {
+                assert_eq!(after, (before.0, before.1 + 3, before.2));
+            }
+        }
     }
 }

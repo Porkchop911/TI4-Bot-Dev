@@ -9,7 +9,7 @@ import "./AutoResolveToast.css";
 export interface AutoResolveNotification {
   id: string;
   /** "auto-resolve" (default): the game took the only legal option. "action": another player acted. "recap": a summary of another player's finished turn. "agenda": the result of an agenda vote, for every seat. "invasion": the result of a bombardment, Space Cannon Defense or a whole invasion. "notice": something the viewer's own play did not do and why (Imperial scored nothing). */
-  kind?: "auto-resolve" | "action" | "recap" | "invasion" | "agenda" | "notice";
+  kind?: "auto-resolve" | "action" | "recap" | "invasion" | "agenda" | "notice" | "relic";
   decisionType: string;
   selectedValue: string;
   /** Auto-resolve toasts: why there was only one choice (default "the only legal option"). */
@@ -19,6 +19,8 @@ export interface AutoResolveNotification {
   text?: string;
   /** Invasion toasts: the small heading ("Bombardment", "Invasion"). */
   tag?: string;
+  /** Relic toasts: the viewer's own gain, drawn stronger. */
+  emphasis?: boolean;
   /** Overrides how long the toast stays (ms). */
   durationMs?: number;
   /** Bumped when a toast absorbs another action, so its timer starts over. */
@@ -26,7 +28,19 @@ export interface AutoResolveNotification {
 }
 
 /** How long a toast stays, in ms. */
-export const TOAST_DURATION_MS = { "auto-resolve": 3500, action: 5000, recap: 8000, invasion: 10000, agenda: 10000, notice: 12000 } as const;
+export const TOAST_DURATION_MS = { "auto-resolve": 3500, action: 5000, recap: 8000, invasion: 10000, agenda: 10000, notice: 12000, relic: 10000 } as const;
+
+/** "gained X" on the first line, the effect (clamped to two lines), then a subtle note. */
+const RelicLines: React.FC<{ text: string }> = ({ text }) => {
+  const [headline, effect, note] = text.split("\n");
+  return (
+    <>
+      <span className="toast-relic-headline"> {headline}</span>
+      {effect && <span className="toast-relic-effect">{effect}</span>}
+      {note && <span className="toast-relic-note">{note}</span>}
+    </>
+  );
+};
 
 interface AutoResolveToastProps {
   notification: AutoResolveNotification;
@@ -79,7 +93,7 @@ export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
       title="Click or swipe to dismiss"
       className={`auto-resolve-toast auto-resolve-toast--${kind} ${isDismissing ? "dismissing" : ""}${
         swipedOut ? ` dismissing--${swipedOut}` : ""
-      }${swipe.dragging ? " auto-resolve-toast--dragging" : ""}${touched ? " auto-resolve-toast--touched" : ""}`}
+      }${swipe.dragging ? " auto-resolve-toast--dragging" : ""}${notification.emphasis ? " auto-resolve-toast--own" : ""}${touched ? " auto-resolve-toast--touched" : ""}`}
       style={
         {
           ...(actor ? { "--toast-accent": actor.color } : {}),
@@ -103,6 +117,21 @@ export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
             {notification.tag ?? (kind === "agenda" ? "Agenda" : kind === "notice" ? "Note" : "Invasion")}
           </span>
           <span className="toast-value toast-value--lines">{present(notification.text ?? "")}</span>
+        </>
+      ) : kind === "relic" ? (
+        <>
+          <span className="toast-recap-tag" data-testid="toast-relic-tag">
+            {notification.tag ?? "Relic"}
+          </span>
+          {actor && (
+            <span className="toast-actor" data-testid="toast-actor">
+              <span aria-hidden="true" className="toast-actor__symbol">
+                {actor.symbol}
+              </span>
+              {actor.label}
+            </span>
+          )}
+          <RelicLines text={notification.text ?? ""} />
         </>
       ) : (kind === "action" || kind === "recap") && actor ? (
         <>

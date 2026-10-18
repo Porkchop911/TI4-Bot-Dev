@@ -3204,7 +3204,14 @@ mod tests {
     }
 
     fn hero_state() -> (GameState, SystemId, PlanetId, ti4_content::galaxy::Galaxy) {
-        let state = seated_game(&[("a", "yin"), ("b", "sol")], DEFAULT);
+        let mut state = seated_game(&[("a", "yin"), ("b", "sol")], DEFAULT);
+        // Sol's own agent has a ground-combat window since rules version 16; these scripts do not
+        // answer it.
+        state
+            .player_mut(&b())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("solagent"), LeaderStatus::Exhausted);
         let centre = ti4_content::galaxy::all_planets(ContentStore::embedded(), DEFAULT)
             .iter()
             .find(|(_, planet)| {
@@ -3429,6 +3436,11 @@ mod tests {
     fn timed_dannel_fights_every_rival_and_invalid_placement_is_atomic() {
         let (_, system, planet, galaxy) = hero_state();
         let mut state = seated_game(&[("a", "yin"), ("b", "sol"), ("c", "hacan")], DEFAULT);
+        state
+            .player_mut(&b())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("solagent"), LeaderStatus::Exhausted);
         unlock_hero(&mut state);
         put_on_planet(&mut state, &system, &planet, "infantry", &b(), 1);
         put_on_planet(&mut state, &system, &planet, "infantry", &c(), 1);

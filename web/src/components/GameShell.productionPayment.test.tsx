@@ -5,6 +5,7 @@ import type { BasketPlan } from "../protocol/client.ts";
 import type { PendingChoiceDto } from "../protocol/types.ts";
 import { SINGLE_PAYMENT_KEY } from "../hooks/useSinglePaymentSetting.ts";
 import { partialContext } from "../test/wire.ts";
+import { useProductionPayment } from "../presentation/ProductionPaymentContext.tsx";
 
 const produce = (nonce: string): PendingChoiceDto => ({
   actor: "p1",
@@ -64,13 +65,18 @@ const JORD = planet("jord", "Jord", 3);
 const VEGA = planet("vega", "Vega", 3);
 const LODOR = planet("lodor", "Lodor", 2);
 
+/** Stands in for the board: shows the production plan it can read. */
+function BoardProbe() {
+  return <div data-testid="board-probe">{useProductionPayment()?.plan?.mode ?? "none"}</div>;
+}
+
 function setup() {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   const onBatch = vi.fn<(plan: BasketPlan) => Promise<void>>().mockResolvedValue(undefined);
   const view = (choice: PendingChoiceDto | null) => (
     <GameShell
       header={null}
-      board={null}
+      board={<BoardProbe />}
       playerSheet={null}
       events={[]}
       choice={choice}
@@ -133,6 +139,17 @@ describe("one payment for a whole production", () => {
     rerender(view(produce("p-3")));
     await waitFor(() => expect(onBatch).toHaveBeenCalledTimes(5));
     expect(payments(onBatch)).toHaveLength(2);
+  });
+
+  // Run s2-04-2345: the map kept offering planets for a payment the plan answered.
+  it("lets the board see the production plan, so the map can stand aside while it pays", async () => {
+    const { view } = setup();
+    const { rerender } = render(view(produce("p-1")));
+    stageAndConfirm(2);
+    rerender(view(pay("q-1", 2, [JORD, VEGA, LODOR])));
+    expect(screen.getByTestId("board-probe")).toHaveTextContent("ask");
+    await confirmPanel();
+    await waitFor(() => expect(screen.getByTestId("board-probe")).toHaveTextContent("auto"));
   });
 
   it("stops at an interruption, shows it, and resumes at the next matching payment", async () => {

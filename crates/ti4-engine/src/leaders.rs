@@ -140,6 +140,16 @@ pub fn commander_unlocked(
                     })
             })
         }
+        // Watchful Ojz (rules version 16): "Be the last person to pass during the Action Phase".
+        // `Game` records `Feat::LastToPass` on the pass that closes the phase; the check made at
+        // the next step opens the commander, and an unlocked leader is never locked again.
+        "ralnelcommander" if state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS => state
+            .player(player)
+            .is_some_and(|seat| {
+                seat.event_feats
+                    .iter()
+                    .any(|(feat, _)| *feat == ti4_model::state::Feat::LastToPass)
+            }),
         other => {
             return crate::factions::commander_unlocked(
                 state,

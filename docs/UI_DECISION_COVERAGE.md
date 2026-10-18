@@ -258,6 +258,8 @@ Found by comparing every `DecisionContext::new` subtype before (`2b49782`) and a
 | Research Waiver | `/research-waiver` | `research_waiver` | technology.rs | research waiver offer | Shared specialised (OfferCardPanel) | Built 2026-10-07 (`febd08d`) |
 | Waiver Pay | `/waiver-pay` | `research_waiver_payment` | strategy_cards.rs | payment for a waived research | Shared specialised (OfferCardPanel) | Built 2026-10-07 (`febd08d`) |
 | Vote TG | `/vote-tg` | `vote_spend_trade_goods` | vote.rs | Hacan commander: spend trade goods while voting | Dedicated (VoteGoodsPanel) | Built 2026-10-07 (`40d01d0`) |
+| Predictive Intelligence | n/a | `vote_predictive_intelligence` | vote.rs | cast 3 additional votes (option kind `vote_predictive`), rules version 15 | Generic fallback (kept in the agenda strip) | Engine 2026-10-18 |
+| Magen Defense Hit | n/a | `magen_defense_hit` | magen_defense.rs | assign the free hit to one of the opponent's ground forces (payload unit, damaged, kills, cost), rules version 15 | Generic fallback | Engine 2026-10-18 |
 | PDS Alternative | `/pds-alternative` | `place_structure_pds_alternative` | strategy_cards.rs | place a PDS or an alternative | Shared specialised (OfferCardPanel) | Built 2026-10-07 (`b21efdb`) |
 | Reinforce Place | `/reinforce-place` | `place_units_from_reinforcements` | action_cards.rs | place units (kind `place_unit`, system and count) | Shared specialised (OfferCardPanel) | Built 2026-10-07 (`b46ceff`) |
 | Take Revealed | `/take-revealed` | `take_revealed_action_card` | action_cards.rs | take a revealed action card | Shared specialised (card tiles) | Built 2026-10-07 (`c80e99a`) |

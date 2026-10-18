@@ -54,6 +54,7 @@ mod session_e2e_game;
 mod session_recovery_replay;
 mod session_rejections;
 mod size_bounds;
+mod slow_subscriber;
 mod smart_bot_objectives_survey;
 mod smart_bot_survey;
 mod smart_bots;

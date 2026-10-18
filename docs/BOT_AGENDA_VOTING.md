@@ -61,11 +61,25 @@ with every vote it casts nothing (or the one vote that Mutiny-type agendas need)
 of readied planets with the smallest total influence that reaches `v` (smallest overshoot, so the most influence is
 left for the second agenda), ties by the lowest resource value (they matter for Checks and Balances).
 
-*Knowing the second agenda.* The observation exposes no queue. Honest sources: (1) the bot itself played Politics (or
-Insider Information) in that round and placed agendas on top: the rule remembers its own placement (the engine reveals
-the last card placed on top first) and checks the first revealed agenda against the memory; (2) the Naalu commander
-look (`agenda_deck_ends`) shows the card *after* the second agenda, so it is not used. When the next agenda is known,
-`stake2` is computed with the same valuation on it (and a known harmful agenda, e.g. Execution against me, makes the bot keep its votes).
+*Knowing the second agenda.* The observation exposes no queue, and the engine draws both agendas of the phase before the
+first is voted on, so the deck shows nothing of the second one. An earlier draft remembered the seat's own Politics
+placements (a thread-local memory) to know it; that was dropped (see "No memory" below): the stake of the second agenda is
+`agenda_second_prior`. The naalu commander look (`agenda_deck_ends`) shows the card *after* the second agenda and is not used.
+
+*No memory.* Every agenda decision is a pure function of the observation (+ seat, seed); the module keeps no state between
+decisions, so an undo, a rewind and redo, a resumed offline game, a server restart and the alpha preflight replay the same
+decisions. What used to be remembered is read from the game instead:
+
+| was remembered | now read from |
+| --- | --- |
+| "second agenda of the round" | `Observed::agendas_resolved_this_round()` (the public `agenda_log`) |
+| the vote plan (outcome, target votes, votes cast) | recomputed at every planet question from `details.tally` (the ledger before this seat's votes) and `details.votes_so_far`, added read-only to the engine's `vote_exhaust_planet` question; the plan is the same optimisation over the totals still reachable with the planets left |
+| rider already played on this agenda | `Observed::agenda_prediction_of(seat)` (`agenda_predictions`) |
+| agenda of the prediction question | `Observed::agenda_in_play()` (`GameState::agenda_in_play`, in-flight, not compared, not serialised while empty) |
+| Politics placements (second agenda known) | dropped: the prior stands for it |
+
+A rider is played only from a slot that holds exactly that card: a slot with several cards (a card question behind it can
+come back without the rider) made the window ask for ever once the "already played" mark was gone (6p golden seed 21).
 
 ## 4. Riders
 
@@ -947,7 +961,7 @@ without a vote.
 ### Decision for a version 5
 
 Felix decided to enable all three knobs (`agenda_value`, `agenda_budget`, `agenda_riders`) in the v5 staging table
-(`tuning::v5()`, selectable as `bot_version=5`). They stay off in bots 1 to 4 and `BOT_VERSION` stays 4. The
+(`tuning::v5()`, selectable as `bot_version=5`). They stay off in bots 1 to 4; `BOT_VERSION` is 5 since 2026-10-17 (user decision: enable all three agenda knobs and `land_all`). The
 recommendation below, written before that decision, advised leaving `agenda_riders` off; the risk it names is accepted.
 
 ### Recommendation for a version 5 (earlier analysis)

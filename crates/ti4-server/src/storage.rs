@@ -1557,6 +1557,8 @@ fn state_checksum(state: &GameState) -> Result<String, StorageError> {
     let mut state = state.clone();
     // The action-phase turn counter (added 2026-10-15) is absent from an older snapshot.
     state.action_turn = 0;
+    // The relic gain log is display only and newer than older snapshots.
+    state.relic_log.clear();
     for record in &mut state.exploration_log {
         record.gains.clear();
         record.placed.clear();

@@ -2692,6 +2692,11 @@ impl<'a> Game<'a> {
                         let occurrence = self.state.begin_feat_occurrence();
                         self.state
                             .record_event_feat(&active, Feat::LastToPass, occurrence);
+                        // Watchful Ojz: "Be the last person to pass during the Action Phase".
+                        // Opened at the pass itself rather than at some later step.
+                        if self.state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS {
+                            self.refresh_commander_unlocks(&active);
+                        }
                         self.open_occurrence_event_scoring(
                             crate::secrets::Timing::Action,
                             occurrence,
@@ -5846,13 +5851,29 @@ impl<'a> Game<'a> {
             let choices = outcomes(&self.state, self.content, self.sources, &alias);
             if choices.is_empty() {
                 self.emit(&format!("AGENDA_DISCARDED:{alias}"));
-                return Ok(None);
+                if self.state.rules_version < ti4_model::state::RULES_AGENDA_GRANT_REVEAL {
+                    return Ok(None);
+                }
+                // "If there are no scored secret objectives / laws in play, discard this card and
+                // reveal another agenda from the top of the deck": the replacement takes the slot.
+                self.note_discarded_agenda(&alias, false);
+                let Some(next) = ti4_model::deck_reserve::take_top(
+                    &mut self.state.deck_reserve,
+                    "agenda",
+                    &mut self.state.agenda_deck,
+                    None,
+                ) else {
+                    return Ok(None);
+                };
+                alias = next;
+                continue;
             }
 
             // The outcomes have to be on the state before the window opens, because a card
             // played into it predicts one of them. Nineteen action cards read "when" or "after
             // an agenda is revealed", and this is the event they hang off.
             self.state.agenda_choices.clone_from(&choices);
+            self.state.agenda_in_play = Some(alias.clone());
             let mut payload = BTreeMap::new();
             payload.insert(
                 "agenda".to_owned(),
@@ -5876,7 +5897,20 @@ impl<'a> Game<'a> {
                 return Ok(Some((alias, choices)));
             };
             self.emit(&format!("AGENDA_DISCARDED:{alias}"));
+            if self.state.rules_version >= ti4_model::state::RULES_AGENDA_GRANT_REVEAL {
+                self.note_discarded_agenda(&alias, true);
+            }
             alias = replacement;
+        }
+    }
+
+    /// List an agenda that was revealed and discarded without a vote in `agenda_log`, so the
+    /// table is told (rules version 14). It is not a resolved agenda: it has no outcome.
+    fn note_discarded_agenda(&mut self, alias: &str, replaced: bool) {
+        let reason = if replaced { "replaced" } else { "no_choice" };
+        self.push_agenda_record(alias, None, BTreeMap::new(), false, true);
+        if let Some(record) = self.state.agenda_log.last_mut() {
+            record.discard_reason = Some(reason.to_owned());
         }
     }
 
@@ -6579,6 +6613,7 @@ impl<'a> Game<'a> {
                     .map(ToString::to_string)
                     .filter(|to| Some(to.as_str()) != outcome)
             },
+            discard_reason: None,
         };
         self.state.agenda_log.push(record);
     }
@@ -6589,6 +6624,7 @@ impl<'a> Game<'a> {
         };
         let alias = window.alias().to_owned();
         self.state.agenda_choices.clear();
+        self.state.agenda_in_play = None;
         if window.winner().is_none() {
             self.log_agenda(&window, None, false);
             // No outcome, so nobody predicted correctly — but the cards were still spent, and a
@@ -9761,6 +9797,43 @@ mod tests {
             Some(&b),
             "the card went home"
         );
+    }
+
+    #[test]
+    fn an_agenda_with_nothing_to_elect_is_replaced_by_the_next_card() {
+        // Classified Document Leaks with no scored secret objective: "discard this card and
+        // reveal another agenda from the top of the deck" (rules version 14).
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL;
+        let (alias, choices) = game
+            .reveal_agenda("classified")
+            .expect("revealed")
+            .expect("the replacement goes to a vote");
+        assert_eq!(alias, "committee");
+        assert!(!choices.is_empty());
+        assert_eq!(game.state.agenda_deck, vec!["conventions".to_owned()]);
+        let record = game.state.agenda_log.last().expect("the discard is listed");
+        assert_eq!(record.agenda, "classified");
+        assert!(record.discarded && record.outcome.is_none());
+        assert_eq!(record.discard_reason.as_deref(), Some("no_choice"));
+    }
+
+    #[test]
+    fn an_agenda_with_nothing_to_elect_is_just_dropped_below_rules_version_14() {
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL - 1;
+        assert!(game.reveal_agenda("classified").expect("revealed").is_none());
+        assert_eq!(game.state.agenda_deck.len(), 2, "no card is drawn");
+        assert!(game.state.agenda_log.is_empty(), "and nothing is listed");
+    }
+
+    #[test]
+    fn a_discarded_card_is_not_a_resolved_agenda_for_the_bot() {
+        let mut game = quash_game(0, &[]);
+        game.state.rules_version = ti4_model::state::RULES_AGENDA_GRANT_REVEAL;
+        game.reveal_agenda("classified").expect("revealed");
+        let seen = crate::choice::Observed::new(&game.state, game.content, game.sources, None);
+        assert_eq!(seen.agendas_resolved_this_round(), 0);
     }
 
     fn quash_game(tokens: i32, script: &[&str]) -> Game<'static> {
@@ -13964,6 +14037,38 @@ mod tests {
                 .iter()
                 .any(|alias| alias.as_str() == "pe")
         );
+    }
+
+    #[test]
+    fn the_last_to_pass_unlocks_the_ral_nel_commander_when_the_phase_closes() {
+        let play = |version: u32| {
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            let mut state =
+                start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+            state.rules_version = version;
+            state.phase = Phase::Action;
+            state.active = Some(b.clone());
+            state.player_mut(&a).unwrap().passed = true;
+            let seat = state.player_mut(&b).unwrap();
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("ralnelcommander"),
+                ti4_model::state::LeaderStatus::Locked,
+            );
+            let table = Table::with_default(Box::new(Scripted::new(["pass".to_owned()])));
+            let mut game = Game::with_table(state, ContentStore::embedded(), table);
+            assert_eq!(game.step().error, None, "the final pass resolves");
+            let ojz = ti4_model::id::LeaderId::new("ralnelcommander");
+            (
+                crate::leaders::status(&game.state, &b, &ojz),
+                crate::leaders::status(&game.state, &a, &ojz),
+            )
+        };
+        let (last, first) = play(ti4_model::state::RULES_FACTION_EFFECTS);
+        assert_eq!(last, Some(ti4_model::state::LeaderStatus::Unlocked));
+        assert_eq!(first, None, "the seat that passed earlier has no such commander");
+        let (old, _) = play(ti4_model::state::RULES_FACTION_EFFECTS - 1);
+        assert_eq!(old, Some(ti4_model::state::LeaderStatus::Locked));
     }
 
     #[test]

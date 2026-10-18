@@ -1252,6 +1252,8 @@ fn fleet_groups(
     let mut borrower_used = false;
     let mut groups: std::collections::BTreeMap<(i64, u8), FleetGroup> =
         std::collections::BTreeMap::new();
+    // (hit number, roll tag, dice, ship type) per ship, grouped once Gravleash Maneuvers is in.
+    let mut contributions: Vec<(i64, u8, i64, String)> = Vec::new();
     for (unit_index, unit) in ships_of(state, content, sources, player, system)
         .into_iter()
         .enumerate()
@@ -1307,14 +1309,72 @@ fn fleet_groups(
             JOLNAR_FLAGSHIP,
         );
         let tag = roll_tag(*kind, jolnar_text, forced);
+        contributions.push((value, tag, dice, unit.type_id.to_string()));
+    }
+    gravleash_maneuvers(state, content, sources, player, system, &mut contributions);
+    for (value, tag, dice, type_id) in contributions {
         let group = groups.entry((value, tag)).or_insert(FleetGroup {
             dice: 0,
             types: std::collections::BTreeMap::new(),
         });
         group.dice += dice;
-        *group.types.entry(unit.type_id.to_string()).or_insert(0) += 1;
+        *group.types.entry(type_id).or_insert(0) += 1;
     }
     groups
+}
+
+/// Letnev, Gravleash Maneuvers (`letnevbt`, rules version 16): "Before you roll dice during
+/// space combat, apply +X to the results of 1 of your ship's rolls, where X is the number of
+/// ship types you have in the combat." The bonus is applied to one die of one ship, kept apart
+/// from its group with a hit number lowered by X (never below 1), so the staged roll, the
+/// rerolls and the hit count all see it.
+///
+/// Which ship is the choice the card gives the Letnev player; every die is equal before the
+/// roll, so it goes to the die the bonus helps most (a hit number above 10 gains less, a
+/// number of 1 nothing) and, among equals, to the first ship in board order.
+fn gravleash_maneuvers(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    contributions: &mut Vec<(i64, u8, i64, String)>,
+) {
+    if state.rules_version < ti4_model::state::RULES_FACTION_EFFECTS
+        || !state
+            .player(player)
+            .and_then(|seat| seat.breakthrough.as_ref())
+            .is_some_and(|alias| alias.as_str() == "letnevbt")
+    {
+        return;
+    }
+    let kinds: std::collections::BTreeSet<String> = ships_of(state, content, sources, player, system)
+        .into_iter()
+        .map(|unit| unit.type_id.to_string())
+        .collect();
+    let bonus = i64::try_from(kinds.len()).unwrap_or(0);
+    let chance = |hit_on: i64| (11 - hit_on).clamp(0, 10);
+    let mut best: Option<(usize, i64)> = None;
+    for (index, (value, _, dice, _)) in contributions.iter().enumerate() {
+        if *dice <= 0 {
+            continue;
+        }
+        let gain = chance((value - bonus).max(1)) - chance(*value);
+        if best.is_none_or(|(_, top)| gain > top) {
+            best = Some((index, gain));
+        }
+    }
+    let Some((index, gain)) = best else { return };
+    if bonus <= 0 || gain <= 0 {
+        return;
+    }
+    let (value, tag, dice, type_id) = contributions[index].clone();
+    if dice > 1 {
+        contributions[index].2 = dice - 1;
+        contributions.push(((value - bonus).max(1), tag, 1, type_id));
+    } else {
+        contributions[index].0 = (value - bonus).max(1);
+    }
 }
 
 /// Roll one player's fleet and count the hits (78.5).
@@ -2233,6 +2293,16 @@ pub fn space_cannon_offense(
         let value = (value
             - crate::factions::firmament_plots::assail_against(state, &unit.owner, target.iter()))
         .max(1);
+        // Antimass Deflectors: -1 to other players' SPACE CANNON rolls against the owner's units,
+        // the same as asking 1 more of the die.
+        let value = value
+            + i64::from(
+                state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
+                    && target.as_ref().is_some_and(|victim| {
+                        *victim != unit.owner
+                            && crate::technology::owns_technology(state, victim, "amd")
+                    }),
+            );
         let roll = dice.roll_by(
             rng,
             count,
@@ -2418,6 +2488,49 @@ fn pay_sustain_commander(state: &mut GameState, content: &ContentStore, player: 
         seat.trade_goods += 1;
         crate::supply::note_trade_goods_gained(state, player, 1, "letnevcommander");
     }
+}
+
+/// Rear Admiral Farran from rules version 16: "After 1 of your units uses SUSTAIN DAMAGE: You may
+/// gain 1 trade good." Asked once per use, only of an unlocked commander's holder.
+fn ask_sustain_commander(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    player: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    if !crate::leaders::pays_on_sustain(state, content, player) || state.player(player).is_none() {
+        return Ok(());
+    }
+    let choice = Choice::new(
+        player.clone(),
+        "Rear Admiral Farran: gain 1 trade good for the sustained damage",
+        vec![
+            ChoiceOption::labelled("gain", "letnev_commander_trade_good", "Gain 1 trade good"),
+            ChoiceOption::decline(),
+        ],
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("letnevcommander".to_owned()),
+        "letnev_commander_trade_good",
+        state.phase,
+        state.round,
+    ));
+    if crate::neutral_units::is_neutral(player) {
+        return Ok(());
+    }
+    let answer = ctx
+        .table
+        .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+    if answer.id == "gain"
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.trade_goods += 1;
+        crate::supply::note_trade_goods_gained(state, player, 1, "letnevcommander");
+    }
+    Ok(())
 }
 
 /// Barony of Letnev, Non-Euclidean Shielding: each use of SUSTAIN DAMAGE cancels two hits.
@@ -2740,7 +2853,11 @@ fn offer_sustain(
             *unit = unit.sustained();
             let exact_target = unit.clone();
             remember_sustain_target(state, system, location, &exact_target);
-            pay_sustain_commander(state, content, player);
+            if state.rules_version >= ti4_model::state::RULES_FACTION_EFFECTS {
+                ask_sustain_commander(state, ctx, content, sources, galaxy, player)?;
+            } else {
+                pay_sustain_commander(state, content, player);
+            }
             emit_sustain_used(
                 state,
                 ctx,

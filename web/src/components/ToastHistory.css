@@ -42,3 +42,7 @@
   border-left: 3px solid var(--toast-accent, rgba(255, 255, 255, 0.35));
   overflow-wrap: anywhere;
 }
+
+.toast-history__item > span:last-child {
+  white-space: pre-line;
+}

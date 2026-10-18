@@ -587,7 +587,15 @@ mod tests {
         PlayerId::new("b")
     }
     fn game() -> GameState {
-        crate::fixtures::seated_game(&[("a", "mahact"), ("b", "sol")], DEFAULT)
+        let mut state = crate::fixtures::seated_game(&[("a", "mahact"), ("b", "sol")], DEFAULT);
+        // Sol's own agent has a ground-combat window since rules version 16; these scripts do not
+        // answer it.
+        state
+            .player_mut(&b())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("solagent"), LeaderStatus::Exhausted);
+        state
     }
     fn scripted(answers: &[&str]) -> Table {
         Table::with_default(Box::new(Scripted::new(answers.iter().copied())))

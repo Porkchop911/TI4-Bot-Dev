@@ -883,6 +883,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // Rear Admiral Farran (letnevcommander, rules version 16): "You may gain 1 trade good".
+        module: "combat.rs",
+        function: "ask_sustain_commander",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         // War Funding: offered to the holder after both sides have rolled a combat round.
         module: "combat.rs",
         function: "roll_round",
@@ -1261,7 +1268,7 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "relics.rs",
-        function: "grant_chosen_technology",
+        function: "ask_technology",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1453,6 +1460,12 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "technology.rs",
+        function: "self_assembly_after_production",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "technology.rs",
         function: "production_used",
         count: 1,
         delivery: Delivery::ObservedHere,
@@ -1524,11 +1537,18 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step_tactical"),
     },
     Producer {
+        // Magen Defense Grid (md): the owner names the opponent's ground force that takes the hit.
+        module: "magen_defense.rs",
+        function: "combat_start",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "vote.rs",
         function: "pending_choice_bare",
         // Outcome, planets, Gila's trade goods (hacancommander), tiebreak, Mahact's Recombine
-        // and Tribute stages.
-        count: 6,
+        // and Tribute stages, Predictive Intelligence's extra votes.
+        count: 7,
         delivery: Delivery::ObservedVia("game.rs::step_vote"),
     },
 ];
@@ -1536,6 +1556,7 @@ const PRODUCERS: &[Producer] = &[
 const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     // BF faction modules (crates/ti4-engine/src/factions/).
     ("invasion.rs", "fight_committed_planet", 1),
+    ("magen_defense.rs", "combat_start", 1),
     ("invasion.rs", "assign_selected_ground_hit_in_timing", 1),
     ("yssaril.rs", "borrowed_stall_tactics", 1),
     ("argent.rs", "ask_option_for", 1),
@@ -1641,6 +1662,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("combat.rs", "choose_reroll_dice", 1),
     ("combat.rs", "heart_ixth", 1),
     ("combat.rs", "offer_sustain", 1),
+    ("combat.rs", "ask_sustain_commander", 1),
     ("combat.rs", "roll_round", 1),
     ("combat.rs", "wrath_of_kenara_buy", 1),
     ("exploration.rs", "ask_decorated", 1),
@@ -1685,7 +1707,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("reactions.rs", "slot", 1),
     ("relics.rs", "codex", 1),
     ("relics.rs", "crown_of_emphidia_explore_with", 1),
-    ("relics.rs", "grant_chosen_technology", 1),
+    ("relics.rs", "ask_technology", 1),
     ("relics.rs", "offer_dominus_orb", 1),
     ("relics.rs", "stellar_converter", 1),
     ("relics.rs", "titan_prototype", 1),
@@ -1711,6 +1733,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("strategy_cards.rs", "ask", 1),
     ("technology.rs", "end_turn", 2),
     ("technology.rs", "production_used", 1),
+    ("technology.rs", "self_assembly_after_production", 1),
     ("technology.rs", "start_turn", 3),
     ("thunders_edge.rs", "ask_seeing", 1),
     ("timing.rs", "ask_seeing", 1),
