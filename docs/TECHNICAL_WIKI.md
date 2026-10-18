@@ -9,7 +9,7 @@ Source scope: `wp/base-factions` at `1f3556d1`, inspected 2026-10-18. This is a 
 | Task | Reading route |
 |---|---|
 | Find where a rule offers or resolves a choice | [Engine and content](TECHNICAL_WIKI_ENGINE.md) |
-| Explain a bot decision, simulate, train or evaluate | [Bots and learning](TECHNICAL_WIKI_BOTS.md), then [benchmark evidence](TECHNICAL_WIKI_BENCHMARKS.md) |
+| Explain a bot decision, simulate, train or evaluate | [Bots and learning](TECHNICAL_WIKI_BOTS.md), [battle and trade arenas](TECHNICAL_WIKI_ARENAS.md), then [benchmark evidence](TECHNICAL_WIKI_BENCHMARKS.md) |
 | Trace a browser update, native review, replay or bridge request | [Interfaces and hosting](TECHNICAL_WIKI_INTERFACES.md) |
 | Check a design assumption before editing state, choices or views | [Invariants and failure modes](TECHNICAL_WIKI_INVARIANTS.md) |
 | Pick a focused regression test and avoid an expensive unrelated run | [Tests and verification](TECHNICAL_WIKI_TESTS.md) |
