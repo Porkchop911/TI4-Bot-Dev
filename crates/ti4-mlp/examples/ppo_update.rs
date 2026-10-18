@@ -288,6 +288,10 @@ const VALUE_FLAGS: &[&str] = &[
     "--sil-keep",
     "--faction-focus",
     "--gae-lambda",
+    "--async-batch-games",
+    "--async-publish-games",
+    "--async-queue-batches",
+    "--rollout-workers",
 ];
 /// Every flag that stands alone.
 const BOOLEAN_FLAGS: &[&str] = &[
@@ -1491,6 +1495,46 @@ mod cadence_tests {
     }
 }
 
+/// One finished game of the async rollout: job index, policy version it was played with, result.
+type Finished = (usize, usize, Result<Played, String>);
+
+/// Shared state of `--async-batch-games`: the rollout workers, which play games continuously, and
+/// the optimiser, which trains on the batches they cut.
+#[derive(Default)]
+struct AsyncState {
+    next_job: usize,
+    /// Batches the optimiser has taken off the queue.
+    consumed: usize,
+    pending: Vec<Finished>,
+    ready: std::collections::VecDeque<Vec<Finished>>,
+    stop: bool,
+    failure: Option<String>,
+    warned: bool,
+    // Since the optimiser last took a batch, summed over workers.
+    blocked: Duration,
+    finished: usize,
+}
+
+struct AsyncShared {
+    state: std::sync::Mutex<AsyncState>,
+    changed: std::sync::Condvar,
+    /// The policy version (optimiser steps done) the packed weights are from, and the weights.
+    weights: std::sync::RwLock<(usize, Vec<Arc<ti4_mlp::infer::InferModel>>)>,
+    focus: std::sync::RwLock<Option<Arc<BTreeMap<&'static str, u32>>>>,
+    batch_games: usize,
+    queue_batches: usize,
+}
+
+fn flag_count(name: &str) -> Option<usize> {
+    argument(name).map(|value| {
+        value
+            .parse()
+            .ok()
+            .filter(|count| *count > 0)
+            .unwrap_or_else(|| refuse(&format!("{name} expects a positive integer")))
+    })
+}
+
 fn main() {
     let process_started = Instant::now();
     check_flags();
@@ -2330,6 +2374,182 @@ fn main() {
     let mut smoothed_vp: BTreeMap<String, f64> = BTreeMap::new();
     let wide_entries = ti4_engine::seating::wide_roster(content, DEFAULT);
 
+    // The current weights packed once per model for ti4-infer, shared by every worker.
+    let pack_models = |models: &[(ti4_mlp::Actor, ti4_mlp::ppo::Adam)]| -> Vec<Arc<ti4_mlp::infer::InferModel>> {
+        models
+            .iter()
+            .map(|(actor, _)| {
+                Arc::new(
+                    ti4_mlp::infer::InferModel::from_actor(actor, &slots_text, infer_backend)
+                        .unwrap_or_else(|error| {
+                            refuse(&format!("packing the actor for ti4-infer: {error}"))
+                        }),
+                )
+            })
+            .collect()
+    };
+
+    // ---- --async-batch-games: rollouts and optimisation run concurrently ----
+    //
+    // `--rollout-workers` threads (default: one per core) play games back to back; each starts its
+    // next game the moment the last ends, with no barrier at a batch boundary. Every
+    // `--async-batch-games` finished games are cut into a batch for the optimiser, which trains one
+    // update per batch and, every `--async-publish-games` games it has processed, publishes new
+    // weights; workers pick them up at their next game start, never mid-game. PPO already records
+    // behaviour log-probs per step, so slightly stale batches are handled by the importance ratio
+    // and clipping. Staleness is bounded: a worker may start game j only while
+    // j < (batches taken + queue depth + 1) x batch, so when the optimiser falls behind the queue
+    // fills and workers block (their blocked time is reported, never games dropped).
+    let async_batch = flag_count("--async-batch-games");
+    let async_rt: Option<Arc<AsyncShared>> = async_batch.map(|batch_games| {
+        if !matches!(rollout_backend, RolloutBackend::Infer(_)) {
+            refuse("--async-batch-games needs --rollout-backend infer");
+        }
+        if collect_only || require_faction.is_some() || curriculum_seeds.is_some() {
+            refuse(
+                "--async-batch-games does not combine with --collect-only, --require-faction or --curriculum-seeds",
+            );
+        }
+        if batch_games != seeds_per_update as usize * rotations {
+            refuse("--async-batch-games must equal --seeds-per-update x --rotations");
+        }
+        let publish = flag_count("--async-publish-games").unwrap_or(2 * batch_games);
+        if publish % batch_games != 0 {
+            refuse("--async-publish-games must be a multiple of --async-batch-games");
+        }
+        Arc::new(AsyncShared {
+            state: std::sync::Mutex::new(AsyncState::default()),
+            changed: std::sync::Condvar::new(),
+            weights: std::sync::RwLock::new((0, pack_models(&models))),
+            focus: std::sync::RwLock::new((faction_focus > 0.0).then(|| {
+                Arc::new(self::focus_weights(
+                    &wide_entries,
+                    &BTreeMap::new(),
+                    faction_focus,
+                ))
+            })),
+            batch_games,
+            queue_batches: flag_count("--async-queue-batches").unwrap_or(2),
+        })
+    });
+    if async_rt.is_none()
+        && (argument("--async-publish-games").is_some()
+            || argument("--async-queue-batches").is_some()
+            || argument("--rollout-workers").is_some())
+    {
+        refuse("--async-publish-games, --async-queue-batches and --rollout-workers need --async-batch-games");
+    }
+    let async_publish_updates = async_rt.as_ref().map_or(0, |shared| {
+        flag_count("--async-publish-games").unwrap_or(2 * shared.batch_games) / shared.batch_games
+    });
+    let async_workers = flag_count("--rollout-workers")
+        .unwrap_or_else(|| rayon::current_num_threads().max(1));
+    if let Some(shared) = &async_rt {
+        println!(
+            "  async       {async_workers} rollout workers, batch {} games, publish every {} games, queue {} batches; optimiser on {}",
+            shared.batch_games,
+            async_publish_updates * shared.batch_games,
+            shared.queue_batches,
+            if matches!(models[0].0.device(), ti4_tensor::Device::Cuda(_)) { "the GPU (1 CPU thread)" } else { "the CPU" },
+        );
+    }
+    let mut async_last_take = Instant::now();
+
+    std::thread::scope(|scope| {
+    if let Some(shared) = &async_rt {
+        for _ in 0..async_workers {
+            scope.spawn(|| {
+                loop {
+                    // Claim the next game, waiting while the queue is full.
+                    let waiting = Instant::now();
+                    let job = {
+                        let mut state = shared.state.lock().expect("async state");
+                        loop {
+                            if state.stop || state.failure.is_some() {
+                                return;
+                            }
+                            if state.next_job
+                                < (state.consumed + shared.queue_batches + 1) * shared.batch_games
+                            {
+                                break;
+                            }
+                            if !state.warned {
+                                state.warned = true;
+                                eprintln!(
+                                    "ROLLOUT QUEUE FULL: workers are waiting for the optimiser (reported per update as blocked)"
+                                );
+                            }
+                            state = shared.changed.wait(state).expect("async state");
+                        }
+                        let job = state.next_job;
+                        state.next_job += 1;
+                        state.blocked += waiting.elapsed();
+                        job
+                    };
+                    let (version, models) = {
+                        let weights = shared.weights.read().expect("async weights");
+                        (weights.0, weights.1.clone())
+                    };
+                    let focus = shared.focus.read().expect("async focus").clone();
+                    let local: Vec<WorkerScopedInference> =
+                        models.into_iter().map(WorkerScopedInference::Infer).collect();
+                    let frozen = frozen_infer
+                        .as_ref()
+                        .map(|model| FrozenInference::Infer(Arc::clone(model)));
+                    let (seed, rotation) = (seed_base + (job / rotations) as u64, job % rotations);
+                    let played = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        play_one(
+                            &local,
+                            frozen.as_ref(),
+                            rotation,
+                            content,
+                            &players,
+                            &vocabulary,
+                            &pool,
+                            &reward,
+                            critic_mode,
+                            rounds,
+                            seed,
+                            rotation,
+                            temperature,
+                            &waste_penalties,
+                            waste_penalty,
+                            roster,
+                            diplomacy,
+                            hash_games,
+                            sil_margin,
+                            focus.as_deref(),
+                            gae_lambda,
+                            recorder.as_ref(),
+                            job / shared.batch_games,
+                        )
+                    }));
+                    let mut state = shared.state.lock().expect("async state");
+                    match played {
+                        Ok(result) => {
+                            state.finished += 1;
+                            state.pending.push((job, version, result));
+                            if state.pending.len() == shared.batch_games {
+                                let mut batch = std::mem::take(&mut state.pending);
+                                batch.sort_by_key(|game| game.0);
+                                state.ready.push_back(batch);
+                            }
+                        }
+                        Err(panic) => {
+                            let what = panic
+                                .downcast_ref::<String>()
+                                .cloned()
+                                .or_else(|| panic.downcast_ref::<&str>().map(|text| (*text).to_owned()))
+                                .unwrap_or_default();
+                            state.failure = Some(format!("rollout worker panicked on game {job}: {what}"));
+                        }
+                    }
+                    shared.changed.notify_all();
+                }
+            });
+        }
+    }
+
     for update in 0..updates {
         let focus_weights = (faction_focus > 0.0)
             .then(|| focus_weights(&wide_entries, &smoothed_vp, faction_focus));
@@ -2339,6 +2559,81 @@ fn main() {
         // The optimiser's leaves never act. Every backend takes a frozen inference copy before
         // workers start, then the service is stopped before Adam can mutate the training actor.
         let update_started = Instant::now();
+        let mut steps: Vec<Step> = Vec::new();
+        let mut seated_decisions = 0usize;
+        let mut games = 0usize;
+        let mut wasted_activations = 0usize;
+        let mut tactical_actions = 0usize;
+        let mut game_lines = Vec::new();
+        let mut async_report = None;
+        let (
+            inference_copy_time,
+            rolled,
+            rollout_lock,
+            chunk_copy_time,
+            harvest_time,
+            merge_started,
+            workers_json,
+            by_job,
+            jobs_len,
+            gpu_stats,
+            service_shutdown_time,
+        ) = if let Some(shared) = &async_rt {
+            // Wait for the next batch: this wait is the optimiser's idle time.
+            let rolled = Instant::now();
+            let (batch, queued, blocked, finished) = {
+                let mut state = shared.state.lock().expect("async state");
+                let batch = loop {
+                    if let Some(failure) = state.failure.clone() {
+                        drop(state);
+                        refuse(&failure);
+                    }
+                    if let Some(batch) = state.ready.pop_front() {
+                        state.consumed += 1;
+                        break batch;
+                    }
+                    state = shared.changed.wait(state).expect("async state");
+                };
+                let taken = (
+                    batch,
+                    state.ready.len(),
+                    std::mem::take(&mut state.blocked),
+                    std::mem::take(&mut state.finished),
+                );
+                shared.changed.notify_all();
+                taken
+            };
+            let idle = rolled.elapsed();
+            let interval = async_last_take.elapsed();
+            async_last_take = Instant::now();
+            let lags = batch.iter().map(|game| update.saturating_sub(game.1)).collect::<Vec<_>>();
+            async_report = Some((
+                idle,
+                interval,
+                blocked,
+                finished,
+                queued,
+                lags.iter().copied().max().unwrap_or(0),
+                lags.iter().sum::<usize>() as f64 / lags.len().max(1) as f64,
+            ));
+            let by_job: Vec<Option<Result<Played, String>>> =
+                batch.into_iter().map(|game| Some(game.2)).collect();
+            let merge_started = Instant::now();
+            let jobs_len = by_job.len();
+            (
+                Duration::ZERO,
+                rolled,
+                None,
+                Duration::ZERO,
+                Duration::ZERO,
+                merge_started,
+                Vec::new(),
+                by_job,
+                jobs_len,
+                None,
+                Duration::ZERO,
+            )
+        } else {
         let mut infer_model = None;
         let (cpu_inference, mut gpu_service) = match &rollout_backend {
             RolloutBackend::Cpu => (
@@ -2391,9 +2686,6 @@ fn main() {
         let inference_copy_time = update_started.elapsed();
         let rollout_lock = phase_lock("rollout");
         let rolled = Instant::now();
-        let mut steps: Vec<Step> = Vec::new();
-        let mut seated_decisions = 0usize;
-        let mut games = 0usize;
 
         // §6.3's unit of work as a job list. Self-play is embarrassingly parallel — every game is
         // an independent seed — and once the optimizer stopped being launch-bound it was 87% of an
@@ -2569,12 +2861,9 @@ fn main() {
         });
         let service_shutdown_time = service_shutdown_started.elapsed();
 
-        let mut wasted_activations = 0usize;
-        let mut tactical_actions = 0usize;
         let merge_started = Instant::now();
         let harvest_time = merge_started.duration_since(harvest_started);
         let mut workers_json = Vec::new();
-        let mut game_lines = Vec::new();
         let mut by_job: Vec<Option<Result<Played, String>>> =
             (0..jobs.len()).map(|_| None).collect();
         for (played, stages, worker_wall) in harvest {
@@ -2596,6 +2885,20 @@ fn main() {
                 by_job[job] = Some(result);
             }
         }
+        (
+            inference_copy_time,
+            rolled,
+            rollout_lock,
+            chunk_copy_time,
+            harvest_time,
+            merge_started,
+            workers_json,
+            by_job,
+            jobs.len(),
+            gpu_stats,
+            service_shutdown_time,
+        )
+        };
         // Job order, whatever order the games finished in.
         // This update's self-imitation picks, in job order (deterministic), and the seats they
         // came from. Built before `Batch::freeze` consumes the steps.
@@ -2609,7 +2912,7 @@ fn main() {
             // long run survives it; anything else, or more than a tenth of the update, still refuses.
             let (game, outcomes, wasted, tactical, record, qualifying) = match played {
                 Err(error)
-                    if error.contains("without progress") && stalled_games < jobs.len() / 10 =>
+                    if error.contains("without progress") && stalled_games < jobs_len / 10 =>
                 {
                     stalled_games += 1;
                     eprintln!("SKIPPED (no-progress guard, update {update}): {error}");
@@ -2666,6 +2969,10 @@ fn main() {
                 .entry(faction.clone())
                 .and_modify(|value| *value = FOCUS_SMOOTHING.mul_add(mean - *value, *value))
                 .or_insert(mean);
+        }
+        if let Some(shared) = &async_rt {
+            *shared.focus.write().expect("async focus") = (faction_focus > 0.0)
+                .then(|| Arc::new(self::focus_weights(&wide_entries, &smoothed_vp, faction_focus)));
         }
         // Each faction row's picks share one unit of weight, so a strong faction that qualifies
         // more often does not dominate the imitation.
@@ -2989,15 +3296,47 @@ fn main() {
         let optimise_time = optimised.elapsed();
         drop(optimise_lock);
         let phases = ti4_mlp::perf::take_phases();
+        // Every `--async-publish-games` games processed, hand the rollout workers new weights.
+        let mut published = None;
+        if let Some(shared) = &async_rt
+            && (update + 1) % async_publish_updates == 0
+        {
+            let packing = Instant::now();
+            let packed = pack_models(&models);
+            *shared.weights.write().expect("async weights") = (update + 1, packed);
+            published = Some((update + 1, packing.elapsed()));
+        }
 
-        println!(
-            "  update {:>3}  games {games}  decisions {:>7}  rollout {:>6.1?}  optimise {:>6.1?}  total {:>6.1?}",
-            update,
-            decisions,
-            rollout_time,
-            optimise_time,
-            rollout_time + optimise_time
-        );
+        if let Some((idle, interval, blocked, finished, queued, lag_max, lag_mean)) = async_report {
+            let workers = async_workers as f64;
+            let lost = blocked.as_secs_f64() / workers;
+            println!(
+                "  update {update:>3}  games {games}  decisions {decisions:>7}  optimiser idle {idle:>6.1?}  merge {merge_time:>5.1?}  freeze {freeze_time:>5.1?}  optimise {optimise_time:>6.1?}  lag max {lag_max} mean {lag_mean:.2}  queued {queued}",
+            );
+            println!(
+                "              rollout {:.2} games/s  workers blocked {:.1}% ({lost:.1} s/update of {:.1} s)",
+                finished as f64 / interval.as_secs_f64().max(1e-9),
+                100.0 * lost / interval.as_secs_f64().max(1e-9),
+                interval.as_secs_f64()
+            );
+            if lost > 0.05 * interval.as_secs_f64() {
+                println!(
+                    "              OPTIMISER IS THE BOTTLENECK: workers lost {lost:.1} s/update; try --async-queue-batches 3 or a larger --async-publish-games"
+                );
+            }
+            if let Some((version, time)) = published {
+                println!("              published weights v{version} (packed in {time:.1?})");
+            }
+        } else {
+            println!(
+                "  update {:>3}  games {games}  decisions {:>7}  rollout {:>6.1?}  optimise {:>6.1?}  total {:>6.1?}",
+                update,
+                decisions,
+                rollout_time,
+                optimise_time,
+                rollout_time + optimise_time
+            );
+        }
         if let Some((before, after)) = gpu_memory {
             #[expect(clippy::cast_precision_loss, reason = "bytes shown in GB")]
             let gb = |bytes: i64| bytes as f64 / f64::from(1_u32 << 30);
@@ -3189,6 +3528,12 @@ fn main() {
             }
         }
     }
+
+    if let Some(shared) = &async_rt {
+        shared.state.lock().expect("async state").stop = true;
+        shared.changed.notify_all();
+    }
+    });
 
     for ((after_parameters, after_state), (before_parameters, before_state)) in fingerprints(&models)
         .into_iter()

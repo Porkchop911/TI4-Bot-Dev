@@ -56,7 +56,8 @@ $allowed = @(
     'waste-penalties', 'overpay-penalty', 'unused-resources-weight', 'build-weight',
     'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
     'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'faction-focus', 'gae-lambda',
-    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'factions', 'record-best', 'record-vp', 'sftt-weight', 'phase-lock'
+    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'factions', 'record-best', 'record-vp', 'sftt-weight', 'phase-lock',
+    'async-batch-games', 'async-publish-games', 'async-queue-batches', 'rollout-workers'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })
