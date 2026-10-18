@@ -2131,6 +2131,12 @@ fn main() {
     actor = actor.to_device(device);
     let mut optimizer = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
         .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
+    // Optimiser state sits beside a checkpoint as `<checkpoint>.adam`; older ones have none.
+    let adam_file = format!("{}.adam", bundle_path.trim_end_matches(['/', '\']));
+    match optimizer.load_state(std::path::Path::new(&adam_file)) {
+        Ok(()) => println!("  optimiser   resumed from {adam_file} at step {}", optimizer.steps()),
+        Err(error) => println!("  optimiser   fresh ({error})"),
+    }
     if faction_rows_only {
         if critic_mode == ti4_mlp::bundle::CriticMode::Separate {
             refuse("--faction-rows-only covers the shared and batch-mean critics");
@@ -3060,6 +3066,12 @@ fn main() {
                     },
                     &fingerprint,
                 );
+                if models.len() == 1 {
+                    let file = directory.join(format!("checkpoint-{}.adam", optimizer.steps()));
+                    if let Err(error) = optimizer.save_state(&file) {
+                        println!("  optimiser   state not saved: {error}");
+                    }
+                }
             }
             previous = Some(std::mem::take(&mut window));
         }

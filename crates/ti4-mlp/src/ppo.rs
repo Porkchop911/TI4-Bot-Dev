@@ -1248,6 +1248,22 @@ impl Adam {
         self.inner.state_fingerprint()
     }
 
+    /// Write the optimiser state next to a checkpoint; see [`crate::distill::Adam::save_state`].
+    ///
+    /// # Errors
+    /// Returns an error when the state cannot be read or written.
+    pub fn save_state(&self, path: &std::path::Path) -> Result<(), String> {
+        self.inner.save_state(path)
+    }
+
+    /// Restore state written by [`Adam::save_state`].
+    ///
+    /// # Errors
+    /// Returns an error for a missing or mismatched file; the optimiser is then unchanged.
+    pub fn load_state(&mut self, path: &std::path::Path) -> Result<(), String> {
+        self.inner.load_state(path)
+    }
+
     /// Move Adam's moments to the optimizer device without resetting its step counter.
     pub fn move_to(&mut self, device: ti4_tensor::Device) {
         self.inner.move_to(device);
