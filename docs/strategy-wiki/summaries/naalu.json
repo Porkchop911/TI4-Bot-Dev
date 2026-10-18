@@ -1,0 +1,1171 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "naalu",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat Telepathic’s initiative and status-phase timing as a round-five scoring advantage, not a reason to force an early Custodians grab.",
+      "conditions": "The hosts say acting first is awkward in early rounds and identify round five as the payoff; early Custodians is not recommended by default.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Expected pace varies with game length, objectives, and table.",
+      "components": [
+        "ability:telepathic"
+      ],
+      "segment_ids": [
+        "s000189",
+        "s000201",
+        "s000207",
+        "s000209"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 851.52,
+          "end": 912.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 943.9,
+          "end": 958.74
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Naalu’s strong but thin position rewards restraint: bold offensive moves invite responses that may cost more than they gain.",
+      "conditions": "Especially before the fleet and economy are established; consider an aggressive line only when the gain warrants the attention and response risk.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Table-specific strategic opinion.",
+      "components": [
+        "faction:naalu"
+      ],
+      "segment_ids": [
+        "s000051",
+        "s000067",
+        "s000077",
+        "s000085"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 211.1,
+          "end": 293.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 335.66,
+          "end": 383.7
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Prioritize money and plastic before optional round-one technology; adding a carrier addresses the starting one-carrier bottleneck.",
+      "conditions": "When resources are tight; take tech early only if unusually wealthy and it does not displace useful units.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Episode assumes Codex 3 agent-era kit.",
+      "components": [
+        "unit:carrier",
+        "technology:st",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000174",
+        "s000186",
+        "s000729",
+        "s000743",
+        "s000769",
+        "s000770"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 771.76,
+          "end": 846.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2898.34,
+          "end": 2941.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3045.02,
+          "end": 3052.46
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use Z’eu early to extend the starting carrier’s reach or perform a token-free non-home tactical action that fills out the slice.",
+      "conditions": "The player chosen performs a tactical action without placing a token, but that system still counts as activated; plan movement and follow-up.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Episode’s verbal description is not full rules text.",
+      "components": [
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000493",
+        "s000499",
+        "s000519",
+        "s000526",
+        "s000536",
+        "s000540"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1992.32,
+          "end": 2018.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2110.16,
+          "end": 2152.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2188.24,
+          "end": 2213.64
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "A forward dock can make Z’eu a continuing production tool; place it where later ships matter and account for movement timing.",
+      "conditions": "After securing a forward dock, move again as needed before the dock locks the system.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Round-one sequencing is discussed as awkward and situational.",
+      "components": [
+        "leader:naaluagent",
+        "strategy-card:pok4construction"
+      ],
+      "segment_ids": [
+        "s000528",
+        "s000535",
+        "s000753",
+        "s000764"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2161.0,
+          "end": 2188.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2971.3,
+          "end": 3019.66
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Do not make Custodians an automatic round-two first action: an early bonus point attracts heat and may leave your slice or dock exposed.",
+      "conditions": "Take it if the table is already distributing early points or a safe line warrants the risk; otherwise another faction can take the spotlight.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Recommendation, not a prohibition.",
+      "components": [
+        "ability:telepathic",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000789",
+        "s000797",
+        "s000799",
+        "s000812"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3157.7,
+          "end": 3211.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3219.38,
+          "end": 3273.04
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Reduce heat by making a rival more threatening than you; another player’s Custodians point can split attention and create a support-swap partner.",
+      "conditions": "Only boost a rival while monitoring their score; stop if they approach a win. The hosts warn that this political tactic can backfire.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Boosting a rival can backfire.",
+      "components": [
+        "ability:telepathic",
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s000836",
+        "s000855",
+        "s001153",
+        "s001163",
+        "s001401",
+        "s001406"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3384.58,
+          "end": 3479.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4675.53,
+          "end": 4731.79
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5640.22,
+          "end": 5664.32
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Do not overvalue speaker just because Naalu act first; value it when it secures a specific later card plan.",
+      "conditions": "Politics may line up Imperial or an action-phase finish; taking it solely for Custodians timing is usually unnecessary.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Card value depends on objectives and available picks.",
+      "components": [
+        "ability:telepathic",
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial"
+      ],
+      "segment_ids": [
+        "s000950",
+        "s000957",
+        "s001410",
+        "s001418"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3902.74,
+          "end": 3943.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5679.36,
+          "end": 5726.4
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Diplomacy is a strong round-one economic pick and helps counter the frustration of acting first in later rounds.",
+      "conditions": "Prefer it when planets and action order let you spend refreshed resources; speakers disagree about whether it beats Trade.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Episode references a Codex 1 Diplomacy version.",
+      "components": [
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s000891",
+        "s000900",
+        "s000921",
+        "s000948"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3649.44,
+          "end": 3709.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3761.84,
+          "end": 3897.66
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Compare Trade and Diplomacy using the actual slice, neighbors, and primary/secondary value.",
+      "conditions": "Trade is attractive early if you can reach partners; its primary differs greatly from following its secondary, and another player’s Diplomacy can complement it.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "The source presents varying preferences and map dependencies.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s001017",
+        "s001029",
+        "s001030",
+        "s001040",
+        "s001043",
+        "s001045"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4152.94,
+          "end": 4225.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4225.54,
+          "end": 4279.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4284.66,
+          "end": 4292.08
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Warfare is a round-one fallback for a second carrier, while its secondary may be more efficient if someone else takes it.",
+      "conditions": "If late pick and Warfare remains, one host favors taking it; the other argues Construction may be better because Z’eu eases movement.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts disagree on the no-Warfare table.",
+      "components": [
+        "leader:naaluagent",
+        "strategy-card:pok6warfare",
+        "unit:carrier"
+      ],
+      "segment_ids": [
+        "s000964",
+        "s000981",
+        "s000994",
+        "s001001",
+        "s001046",
+        "s001068"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3976.0,
+          "end": 4049.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4073.58,
+          "end": 4110.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4292.54,
+          "end": 4370.86
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Construction matters if no one else will provide a forward dock; check whether you can afford to exploit it before preferring it to Diplomacy.",
+      "conditions": "Useful when a safe productive location exists; round-one cash and build timing can make the line awkward.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts disagree in late-pick cases.",
+      "components": [
+        "strategy-card:pok4construction"
+      ],
+      "segment_ids": [
+        "s000915",
+        "s000918",
+        "s000959",
+        "s000970",
+        "s000997",
+        "s001000"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3739.06,
+          "end": 3752.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3947.86,
+          "end": 4013.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4087.02,
+          "end": 4105.24
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Round-one Technology is less urgent than cash and units; Antimass or Dark Energy Tap can be useful, while Z’eu covers some early movement needs.",
+      "conditions": "Take Tech if the economy supports it or an objective specifically rewards the primary or secondary; consider asteroid access for Antimass.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "No objective legality/current-rules audit.",
+      "components": [
+        "strategy-card:pok7technology",
+        "technology:amd",
+        "technology:det",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s001082",
+        "s001109",
+        "s000953",
+        "s000956",
+        "s000769",
+        "s000776"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4422.76,
+          "end": 4531.35
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3918.22,
+          "end": 3937.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3045.02,
+          "end": 3084.5
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Build toward Hybrid Crystal Fighter II as the signature combat investment: the upgrade improves fighters and lets them move independently.",
+      "conditions": "Prioritize once resources and prerequisites allow; gather dispersed fighters for a late decisive maneuver.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts use emphatic comparisons; “better than War Suns” is rhetoric.",
+      "components": [
+        "unit:naalu_fighter",
+        "unit:naalu_fighter2",
+        "technology:hcf2"
+      ],
+      "segment_ids": [
+        "s000355",
+        "s000362",
+        "s000379",
+        "s000391"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1520.04,
+          "end": 1556.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1617.64,
+          "end": 1682.08
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "A stocked Hybrid Crystal Fighter II force can make a space attack on Naalu home look prohibitively costly.",
+      "conditions": "The hosts illustrate the deterrent with ten fighters; this is an anecdote, not a universal minimum, and it does not guarantee ground defense.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "The cited ten-fighter example is not a universal threshold.",
+      "components": [
+        "unit:naalu_fighter2"
+      ],
+      "segment_ids": [
+        "s000367",
+        "s000376"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1570.24,
+          "end": 1607.18
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Keep Neuroglaive optional rather than forcing a triple-green path: opponents can budget fleet tokens around its tax, while blue tech offers useful reach and tempo.",
+      "conditions": "Consider with convenient skips or when the table’s token economy makes the deterrent meaningful; do not expect it to stop coordinated win-slay.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts acknowledge some early-round deterrent potential.",
+      "components": [
+        "technology:ng",
+        "technology:fl",
+        "technology:lwd"
+      ],
+      "segment_ids": [
+        "s000394",
+        "s000403",
+        "s000405",
+        "s000412",
+        "s000439",
+        "s000446",
+        "s000451",
+        "s000472"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1686.08,
+          "end": 1729.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1732.12,
+          "end": 1751.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1853.9,
+          "end": 1880.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1901.78,
+          "end": 1966.58
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Gravity Drive is useful for a late Matriarch or decisive reach, but the hosts do not recommend rushing it merely for early slice expansion.",
+      "conditions": "Acquire when it advances a concrete late move; Z’eu already covers some early movement needs.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Assumes episode’s agent kit.",
+      "components": [
+        "technology:gd",
+        "unit:naalu_flagship",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000293",
+        "s000298",
+        "s000769",
+        "s000776",
+        "s001210",
+        "s001210"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1243.26,
+          "end": 1277.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3045.02,
+          "end": 3084.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4935.9,
+          "end": 4941.62
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Treat Fleet Logistics as a finisher enabler, especially for a final-round Imperial line, rather than permission for repeated flashy double actions.",
+      "conditions": "Use when the extra action creates a decisive score or win-slay; consider acting first and giving opponents time to answer.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts warn against overuse but acknowledge strong specific lines.",
+      "components": [
+        "technology:fl",
+        "strategy-card:pok8imperial"
+      ],
+      "segment_ids": [
+        "s001278",
+        "s001305",
+        "s001306",
+        "s001314"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5183.06,
+          "end": 5272.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5272.4,
+          "end": 5306.64
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Z’eu can enable an allied attack or win-slay; consider selling its use when that changes who can stop the leader.",
+      "conditions": "Compare the deal with your own need for its build or movement action; the hosts say its price and value vary.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "No unconditional sale value implied.",
+      "components": [
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000545",
+        "s000550",
+        "s000557",
+        "s000565"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2231.2,
+          "end": 2259.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2290.38,
+          "end": 2328.5
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Foresight is an emergency pre-combat escape that costs a strategy-pool token; reserve it for fights that must be avoided or positions worth preserving.",
+      "conditions": "It may deny a secret or preserve ships, but a normal retreat can be better when the token is needed for a secondary.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts differ about whether the unusual Mecatol use justifies the cost.",
+      "components": [
+        "ability:foresight"
+      ],
+      "segment_ids": [
+        "s000210",
+        "s000230",
+        "s000233",
+        "s000248",
+        "s000249",
+        "s000258"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 958.74,
+          "end": 1050.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1058.52,
+          "end": 1105.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1105.04,
+          "end": 1131.76
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "The Matriarch combines capacity and invasion flexibility: carry a real ground force to start combat, then commit fighters as temporary ground combatants.",
+      "conditions": "Strong for a late offensive swing; plan how to defend the planet after fighters return to space.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Informal explanation; no separate rules audit.",
+      "components": [
+        "unit:naalu_flagship",
+        "unit:naalu_fighter"
+      ],
+      "segment_ids": [
+        "s000263",
+        "s000285",
+        "s000290",
+        "s000291"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1141.88,
+          "end": 1208.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1227.52,
+          "end": 1239.14
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Pair a mech with fighters where anti-fighter barrage threatens the fleet; the episode describes Iconoclast Omega as shutting off that interaction in its system.",
+      "conditions": "Relevant against Argent or Destroyer II plans and when Matriarch needs a lone invader.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Codex/Omega/TE-era variants exist; edition must be resolved.",
+      "components": [
+        "unit:naalu_mech",
+        "unit:naalu_flagship",
+        "unit:naalu_fighter2"
+      ],
+      "segment_ids": [
+        "s000667",
+        "s000675",
+        "s000678",
+        "s000682",
+        "s000685",
+        "s000695"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2676.24,
+          "end": 2723.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2731.32,
+          "end": 2757.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2758.58,
+          "end": 2805.42
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "M’aban’s described Omega unlock requires ground forces in or adjacent to Mecatol Rex; the hosts say Z’eu plus a nearby planet can make the unlock possible in round one.",
+      "conditions": "This route depends on the map providing the necessary nearby planets and on the discussed Omega commander version.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "ASR renders Mecatol as “mek atoll”; the intended name is clear in context, but the ability/version is not independently rules-checked.",
+      "components": [
+        "leader:naalucommander",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000566",
+        "s000571"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2328.5,
+          "end": 2353.68
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Use M’aban’s agenda peek for planning, and wait until another agenda ability fully resolves before checking again.",
+      "conditions": "The hosts value agenda information more than inspecting neighbors’ promissory notes in routine high-level play.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Some interface details are TTPG-specific.",
+      "components": [
+        "leader:naalucommander"
+      ],
+      "segment_ids": [
+        "s000572",
+        "s000590",
+        "s000596",
+        "s000606"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2354.24,
+          "end": 2419.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2443.74,
+          "end": 2502.92
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "The Oracle hero is low-value on average; use it promptly because earlier forced promissory notes are more likely to matter.",
+      "conditions": "Political secrets may be a strong result; late Trade Agreements or weak alliances may be worth little.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Hosts give edge cases, not a dependable outcome.",
+      "components": [
+        "leader:naaluhero"
+      ],
+      "segment_ids": [
+        "s000607",
+        "s000611",
+        "s000618",
+        "s000642",
+        "s000645",
+        "s000665"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2502.92,
+          "end": 2515.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2527.5,
+          "end": 2599.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2610.9,
+          "end": 2674.82
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Keep Gift of Prescience: its temporary initiative advantage disables Telepathic that round, and the hosts see little reason to trade away Naalu’s defining tempo tool.",
+      "conditions": "Avoid Custodians-sale lines based on old early-game assumptions; Z’eu now creates other movement and deal options.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Discussion explicitly contrasts older pre-PoK thinking with the agent-era view; text’s return timing may be base-game context.",
+      "components": [
+        "promissory:gift",
+        "ability:telepathic",
+        "leader:naaluagent"
+      ],
+      "segment_ids": [
+        "s000306",
+        "s000319",
+        "s000325",
+        "s000338",
+        "s000536",
+        "s000542"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1311.08,
+          "end": 1390.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1408.16,
+          "end": 1456.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2188.24,
+          "end": 2224.36
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Use Z’eu and a strong air fleet for late win-slay plans, but consider saving the agent instead of spending it on an early build.",
+      "conditions": "In rounds four and five, track rivals’ action-phase win lines and retain enough movement and ships to intervene.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Naalu can also lose by waiting while another rival wins first.",
+      "components": [
+        "leader:naaluagent",
+        "unit:naalu_flagship",
+        "technology:cv2",
+        "technology:gd"
+      ],
+      "segment_ids": [
+        "s001407",
+        "s001431",
+        "s001432",
+        "s001446"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5664.78,
+          "end": 5783.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5783.16,
+          "end": 5837.36
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Plan round-four/five scoring from revealed objectives and secret progress; a stage-two flip or late Imperial point can turn a quiet game into a win.",
+      "conditions": "Choose between status-phase scoring and action-phase finish using the table’s actual pace; do not assume the round-five point is victory if someone can win sooner.",
+      "compatibility": "SCPT episode 270 (2022-10-26), discussing Codex 3 / Prophecy of Kings era; compatibility not independently rules-checked.",
+      "uncertainty": "Tempo advantage is not guaranteed victory.",
+      "components": [
+        "ability:telepathic",
+        "strategy-card:pok8imperial",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s000857",
+        "s000873",
+        "s000832",
+        "s000835",
+        "s001420",
+        "s001430",
+        "s001471",
+        "s001474"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3485.7,
+          "end": 3569.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 3363.78,
+          "end": 3383.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5732.1,
+          "end": 5777.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 5933.92,
+          "end": 5949.88
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "N01",
+      "from": "leader:naaluagent",
+      "to": "unit:naalu_fighter2",
+      "relation": "enables",
+      "conditions": "The chosen tactical action moves the fleet without adding a command token and can extend the carrier route.",
+      "segment_ids": [
+        "s000497",
+        "s000499",
+        "s000519",
+        "s000521"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1998.94,
+          "end": 2018.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2110.16,
+          "end": 2126.18
+        }
+      ]
+    },
+    {
+      "id": "N02",
+      "from": "unit:naalu_fighter2",
+      "to": "unit:naalu_flagship",
+      "relation": "synergizes-with",
+      "conditions": "The Matriarch lets fighters join an invasion as ground combatants, then returns them to space.",
+      "segment_ids": [
+        "s000263",
+        "s000275",
+        "s000280",
+        "s000285",
+        "s000290",
+        "s000291"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1141.88,
+          "end": 1188.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1197.54,
+          "end": 1208.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1227.52,
+          "end": 1239.14
+        }
+      ]
+    },
+    {
+      "id": "N03",
+      "from": "unit:naalu_mech",
+      "to": "unit:naalu_fighter2",
+      "relation": "counters",
+      "conditions": "Iconoclast is described as preventing anti-fighter barrage in its system, protecting the fighter force.",
+      "segment_ids": [
+        "s000667",
+        "s000675",
+        "s000678",
+        "s000680"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2676.24,
+          "end": 2723.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2731.32,
+          "end": 2743.96
+        }
+      ]
+    },
+    {
+      "id": "N04",
+      "from": "strategy-card:pok4construction",
+      "to": "leader:naaluagent",
+      "relation": "enables",
+      "conditions": "Construction can place the forward dock that Z’eu later activates for production.",
+      "segment_ids": [
+        "s000528",
+        "s000535",
+        "s000745",
+        "s000753",
+        "s000757",
+        "s000759"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2161.0,
+          "end": 2188.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2944.54,
+          "end": 2975.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 2986.0,
+          "end": 2995.06
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "from": "technology:gd",
+      "to": "unit:naalu_flagship",
+      "relation": "enables",
+      "conditions": "Gravity Drive supports the late Matriarch movement described by the hosts.",
+      "segment_ids": [
+        "s000293",
+        "s000298",
+        "s001210",
+        "s001210"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1243.26,
+          "end": 1277.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 4935.9,
+          "end": 4941.62
+        }
+      ]
+    },
+    {
+      "id": "N06",
+      "from": "promissory:gift",
+      "to": "ability:telepathic",
+      "relation": "conflicts-with",
+      "conditions": "Gift of Prescience gives its holder first initiative while disabling Telepathic for that round.",
+      "segment_ids": [
+        "s000308",
+        "s000310",
+        "s000318",
+        "s000319"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1321.96,
+          "end": 1337.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-270-e95e0606677c",
+          "start": 1378.1,
+          "end": 1390.36
+        }
+      ]
+    }
+  ]
+}

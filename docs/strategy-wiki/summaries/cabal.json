@@ -1,0 +1,1686 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "cabal",
+  "claims": [
+    {
+      "id": "C03",
+      "statement": "Devour captures enemy non-structure units destroyed during combat. Captured pieces go to Cabal’s sheet and feed faction abilities; captured fighters and infantry do not remove the opponent’s plastic.",
+      "conditions": "Captured pieces are separate from trade goods and do not themselves remove opponent pieces.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Current rules and edge cases are unchecked.",
+      "components": [
+        "ability:devour",
+        "faction:cabal"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 968.6,
+          "end": 974.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 997.14,
+          "end": 1002.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1031.52,
+          "end": 1037.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1048.22,
+          "end": 1053.62
+        }
+      ],
+      "segment_ids": [
+        "s000344",
+        "s000349",
+        "s000356",
+        "s000359"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "In the hosts’ blockade explanation, enemy ships above a Cabal dock with no Cabal ships blockade that dock. Cabal ships entering end that local blockade; while an opponent maintains it, that player gets their captured units back and Cabal cannot capture that blocker’s units.",
+      "conditions": "Treat this as the episode’s rules interpretation: a blockade is local to the dock system, and the blocker must remain in the defined state.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The speakers call the interaction rulesy; verify the current rule text before relying on it.",
+      "components": [
+        "unit:cabal_spacedock",
+        "ability:devour"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1127.46,
+          "end": 1132.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1132.24,
+          "end": 1135.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1171.64,
+          "end": 1175.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1175.38,
+          "end": 1177.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1177.54,
+          "end": 1179.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1179.68,
+          "end": 1182.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1183.06,
+          "end": 1184.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1200.0,
+          "end": 1204.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1204.74,
+          "end": 1207.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1208.66,
+          "end": 1213.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1213.36,
+          "end": 1217.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1217.86,
+          "end": 1221.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1221.08,
+          "end": 1226.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1226.08,
+          "end": 1233.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1233.08,
+          "end": 1238.64
+        }
+      ],
+      "segment_ids": [
+        "s000384",
+        "s000385",
+        "s000398",
+        "s000399",
+        "s000400",
+        "s000401",
+        "s000402",
+        "s000406",
+        "s000407",
+        "s000408",
+        "s000409",
+        "s000410",
+        "s000411",
+        "s000412",
+        "s000413"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Amalgamation converts a matching captured unit into production without spending resources; Riftmeld consumes a matching captured unit to skip upgrade prerequisites. Technology still costs resources, so the abilities compete for captured plastic.",
+      "conditions": "Choose the use that best serves the current build or research need.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Wording and costs are not checked against current text.",
+      "components": [
+        "ability:amalgamation",
+        "ability:riftmeld",
+        "ability:devour"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1053.62,
+          "end": 1056.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1056.82,
+          "end": 1062.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1067.28,
+          "end": 1071.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1071.68,
+          "end": 1076.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1076.74,
+          "end": 1082.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1082.72,
+          "end": 1086.78
+        }
+      ],
+      "segment_ids": [
+        "s000360",
+        "s000361",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "A Dimensional Tear creates a gravity rift, gives Cabal ships special exit movement, stores up to six fighters outside capacity and has flat production five in the hosts’ description. Its location shapes both movement and builds.",
+      "conditions": "Stored fighters are not general fleet capacity; value depends on dock placement.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Component description is not an independent rules check.",
+      "components": [
+        "unit:cabal_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1251.78,
+          "end": 1257.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1257.42,
+          "end": 1260.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1260.36,
+          "end": 1266.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1267.1,
+          "end": 1271.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1272.65,
+          "end": 1273.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1281.64,
+          "end": 1286.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1286.52,
+          "end": 1292.56
+        }
+      ],
+      "segment_ids": [
+        "s000418",
+        "s000419",
+        "s000420",
+        "s000421",
+        "s000422",
+        "s000425",
+        "s000426"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "The Terror Between captures non-structure units destroyed in its system, including Cabal’s own losses; its bombardment can capture too. It can refill plastic after a large fight, but cannot capture itself when it dies.",
+      "conditions": "Its payoff depends on combat losses in its system.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The hosts’ tier rating is opinion.",
+      "components": [
+        "unit:cabal_flagship",
+        "ability:devour"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1412.56,
+          "end": 1417.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1417.72,
+          "end": 1420.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1452.26,
+          "end": 1456.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1456.96,
+          "end": 1460.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1517.38,
+          "end": 1520.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1520.82,
+          "end": 1522.38
+        }
+      ],
+      "segment_ids": [
+        "s000473",
+        "s000474",
+        "s000488",
+        "s000489",
+        "s000514",
+        "s000515"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "After another player replenishes commodities, the agent can exhaust to convert available commodities into trade goods and capture one unit costing no more than that player’s commodity value. The hosts say a Trade Agreement taking the commodities first does not prevent the capture.",
+      "conditions": "The captured unit’s cost is limited by commodity value; the speakers describe the Trade Agreement timing as an after-step interaction.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The hosts’ timing explanation is not checked against a current FAQ.",
+      "components": [
+        "leader:cabalagent",
+        "ability:devour",
+        "unit:dreadnought",
+        "unit:carrier"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1783.61,
+          "end": 1787.77
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1787.77,
+          "end": 1794.97
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1794.97,
+          "end": 1799.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1800.0,
+          "end": 1829.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1829.98,
+          "end": 1834.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1834.32,
+          "end": 1838.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1838.48,
+          "end": 1841.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1841.78,
+          "end": 1845.62
+        }
+      ],
+      "segment_ids": [
+        "s000595",
+        "s000596",
+        "s000597",
+        "s000598",
+        "s000599",
+        "s000600",
+        "s000601",
+        "s000602"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "The commander unlocks with Cabal units in three gravity rifts; the hosts count each Dimensional Tear as one. Its bonus lets up to two fighters or infantry exceed production limits, but Cabal still pays for them.",
+      "conditions": "Use when resources and unit needs justify it; extra capacity is not free plastic.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Unlock examples are episode explanations, not rules verification.",
+      "components": [
+        "leader:cabalcommander",
+        "unit:cabal_spacedock",
+        "unit:fighter",
+        "unit:infantry"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2015.48,
+          "end": 2017.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2017.94,
+          "end": 2019.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2019.72,
+          "end": 2021.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2041.5,
+          "end": 2044.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2044.82,
+          "end": 2047.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2047.52,
+          "end": 2050.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2050.82,
+          "end": 2052.64
+        }
+      ],
+      "segment_ids": [
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000690",
+        "s000691",
+        "s000692",
+        "s000693"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "The hero is an action that randomly captures eligible units around Dimensional Tears. The hosts call it unreliable but recommend using it as a stall when delay matters; late captures may arrive too late to spend. Treat it as an action-phase stall, not as if you had formally passed.",
+      "conditions": "Use it when waiting has value and targets are in or adjacent to a Tear; do not plan around a high roll.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The rules timing follows the hosts’ action description; impact is anecdotal.",
+      "components": [
+        "leader:cabalhero",
+        "unit:cabal_spacedock",
+        "ability:devour"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2157.64,
+          "end": 2160.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2160.88,
+          "end": 2164.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2164.56,
+          "end": 2166.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2166.7,
+          "end": 2168.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2168.26,
+          "end": 2171.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2171.18,
+          "end": 2176.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2213.48,
+          "end": 2215.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2231.66,
+          "end": 2234.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2244.24,
+          "end": 2246.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2246.3,
+          "end": 2247.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2247.72,
+          "end": 2249.6
+        }
+      ],
+      "segment_ids": [
+        "s000729",
+        "s000730",
+        "s000731",
+        "s000732",
+        "s000733",
+        "s000734",
+        "s000750",
+        "s000758",
+        "s000763",
+        "s000764",
+        "s000765"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Construction is the hosts’ near-automatic round-one pick because Cabal wants its second dock and fears the table may avoid taking the card. Passing needs an unusually strong slice-specific reason.",
+      "conditions": "Assumes the card is available; the map or objective can change the pick.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Strong podcast advice, not a tested universal order.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:cabal_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3066.06,
+          "end": 3067.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3067.98,
+          "end": 3068.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3088.96,
+          "end": 3095.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3096.52,
+          "end": 3103.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3103.14,
+          "end": 3108.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3108.84,
+          "end": 3114.24
+        }
+      ],
+      "segment_ids": [
+        "s001034",
+        "s001035",
+        "s001046",
+        "s001047",
+        "s001048",
+        "s001049"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Leadership supports repeated activations and builds. Cabal should spend planets before round end and turn captured plastic into board presence; its high command-token demand can constrain that plan.",
+      "conditions": "Favor tokens when builds and movement compete, especially with resource-heavy, low-influence slices.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Token needs are experiential.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "unit:cabal_spacedock",
+        "ability:amalgamation"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3180.58,
+          "end": 3183.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3183.62,
+          "end": 3188.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3222.52,
+          "end": 3226.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3226.44,
+          "end": 3232.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3232.8,
+          "end": 3233.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3245.58,
+          "end": 3248.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3248.62,
+          "end": 3252.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3252.8,
+          "end": 3253.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5140.74,
+          "end": 5145.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5145.24,
+          "end": 5147.32
+        }
+      ],
+      "segment_ids": [
+        "s001072",
+        "s001073",
+        "s001080",
+        "s001081",
+        "s001082",
+        "s001087",
+        "s001088",
+        "s001089",
+        "s001671",
+        "s001672"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "The hosts compare Trade and Diplomacy as ways to fund plastic. Diplomacy can turn Cabal’s four-resource home into a build; compare the likely proceeds from Diplomacy with Trade rather than assuming either pays more.",
+      "conditions": "Actual value depends on map, timing and table.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The episode does not settle a fixed ranking.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3313.32,
+          "end": 3317.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3317.8,
+          "end": 3322.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3322.5,
+          "end": 3324.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3335.46,
+          "end": 3337.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3337.96,
+          "end": 3345.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3345.76,
+          "end": 3353.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3509.2,
+          "end": 3513.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3514.34,
+          "end": 3518.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3518.7,
+          "end": 3523.22
+        }
+      ],
+      "segment_ids": [
+        "s001113",
+        "s001114",
+        "s001115",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001167",
+        "s001168",
+        "s001169"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Do not delay the third dock while seeking a perfect site. It opens Vortex and hero targets, broadens movement and creates more build options; adjacency to useful systems matters most.",
+      "conditions": "Place to expand reach and objective options; exact placement is map-dependent.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The guide rejects one universal location.",
+      "components": [
+        "strategy-card:pok4construction",
+        "unit:cabal_spacedock",
+        "leader:cabalcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3689.28,
+          "end": 3691.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4987.04,
+          "end": 4989.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5003.76,
+          "end": 5007.8
+        }
+      ],
+      "segment_ids": [
+        "s001215",
+        "s001622",
+        "s001629"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Vortex is the usual early technology because it captures a unit from reinforcements adjacent to a dock without winning combat. Delay it if nearby targets are low value and another upgrade better serves the opening.",
+      "conditions": "Research early when a worthwhile target improves the build plan.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Target value is board-specific; ranking is opinion.",
+      "components": [
+        "technology:vtx",
+        "ability:devour",
+        "unit:cabal_spacedock"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2337.72,
+          "end": 2341.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2346.48,
+          "end": 2353.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2383.62,
+          "end": 2387.42
+        }
+      ],
+      "segment_ids": [
+        "s000791",
+        "s000793",
+        "s000801"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Carrier II plus Fighter II is the guide’s core upgrade package: carriers extend reach and the hosts call the pair Cabal’s bread and butter. This is a practical mainline after Vortex, not a universal requirement.",
+      "conditions": "Favor it when reach matters and Cabal can support fleets with fighters, infantry and tokens.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Preference depends on skips, captures and objectives.",
+      "components": [
+        "unit:carrier2",
+        "unit:fighter2",
+        "leader:cabalcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3805.98,
+          "end": 3810.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3810.84,
+          "end": 3816.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3816.5,
+          "end": 3820.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3820.16,
+          "end": 3823.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3823.88,
+          "end": 3827.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3827.02,
+          "end": 3827.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3827.98,
+          "end": 3830.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3831.1,
+          "end": 3832.82
+        }
+      ],
+      "segment_ids": [
+        "s001254",
+        "s001255",
+        "s001256",
+        "s001257",
+        "s001258",
+        "s001259",
+        "s001260",
+        "s001261"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Avoid spending every capture on dreadnoughts. Mixing carriers and dreads keeps carriers available for Cabal’s plans, while captured carriers can deny opponents a unit they may need.",
+      "conditions": "Choose around transport, capacity and the next objective.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "No fixed ratio is recommended.",
+      "components": [
+        "ability:amalgamation",
+        "ability:devour",
+        "unit:carrier",
+        "unit:dreadnought"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2452.8,
+          "end": 2458.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2458.1,
+          "end": 2464.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2464.76,
+          "end": 2468.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2468.76,
+          "end": 2474.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2474.3,
+          "end": 2479.54
+        }
+      ],
+      "segment_ids": [
+        "s000821",
+        "s000822",
+        "s000823",
+        "s000824",
+        "s000825"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "The commander’s Alliance has a time-sensitive sale window: factions may value extra fighter or infantry production, but value falls when Cabal delays the unlock. The hosts describe it as worth roughly one or two trade goods to a buyer who needs the capacity.",
+      "conditions": "Unlock early enough for a buyer to use it; price against remaining rounds and actual need.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Buyer interest and price are anecdotal.",
+      "components": [
+        "leader:cabalcommander",
+        "unit:cabal_spacedock",
+        "faction:cabal"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4174.24,
+          "end": 4179.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4179.48,
+          "end": 4181.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4200.0,
+          "end": 4204.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4204.14,
+          "end": 4211.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4211.74,
+          "end": 4216.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4221.94,
+          "end": 4226.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4226.16,
+          "end": 4230.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4230.82,
+          "end": 4236.02
+        }
+      ],
+      "segment_ids": [
+        "s001363",
+        "s001364",
+        "s001369",
+        "s001370",
+        "s001371",
+        "s001373",
+        "s001374",
+        "s001375"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Crucible can be traded for payment or favors, and its movement can help an ally reach a useful rift route. The hosts frame a promissory note’s best trade as one that helps the buyer score.",
+      "conditions": "Seek payment when it mainly enables another player’s point; shared tactics may justify a favor.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The examples are situational and do not guarantee a price.",
+      "components": [
+        "promissory:crucible",
+        "unit:cabal_spacedock",
+        "faction:cabal"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4307.92,
+          "end": 4310.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4310.44,
+          "end": 4314.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4381.0,
+          "end": 4383.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4383.4,
+          "end": 4386.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4386.56,
+          "end": 4388.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4451.64,
+          "end": 4457.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4457.3,
+          "end": 4464.84
+        }
+      ],
+      "segment_ids": [
+        "s001399",
+        "s001400",
+        "s001426",
+        "s001427",
+        "s001428",
+        "s001445",
+        "s001446"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "The speakers preserve two negotiating styles: one sees the fleet as a credible threat; another prefers small asks that accumulate value without uniting the table. Bargain around real timing or access instead of assuming intimidation earns support.",
+      "conditions": "Set a proportionate ask against benefit; aggression can cost cooperation Cabal lacks.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The hosts openly differ on threatening and fighting.",
+      "components": [
+        "faction:cabal",
+        "unit:cabal_spacedock",
+        "unit:cabal_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4694.14,
+          "end": 4698.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4783.82,
+          "end": 4787.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4861.54,
+          "end": 4866.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 4911.36,
+          "end": 4913.44
+        }
+      ],
+      "segment_ids": [
+        "s001521",
+        "s001550",
+        "s001577",
+        "s001595"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Cabal’s early budget leans toward plastic: the hosts describe using the four-resource home for units and say they make few trade goods. They also stress command-token demand and value a high-influence slice.",
+      "conditions": "Use influence and tokens deliberately; account for the revealed objective’s actual requirement.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "This economic comparison is experiential, not measured.",
+      "components": [
+        "faction:cabal",
+        "ability:devour",
+        "ability:amalgamation",
+        "strategy-card:pok1leadership"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3226.44,
+          "end": 3232.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3232.8,
+          "end": 3233.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3245.58,
+          "end": 3248.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3248.62,
+          "end": 3252.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3252.8,
+          "end": 3253.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3313.32,
+          "end": 3317.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3317.8,
+          "end": 3322.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3322.5,
+          "end": 3324.42
+        }
+      ],
+      "segment_ids": [
+        "s001081",
+        "s001082",
+        "s001087",
+        "s001088",
+        "s001089",
+        "s001113",
+        "s001114",
+        "s001115"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Cabal can prepare for stage-one control and upgrade objectives through movement, docks and captured units, but preparation is not a point until the requirement is met. Ground control needs more planning than fleets in empty space.",
+      "conditions": "Match units and timing to the objective; do not count likely access as scoring.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Broad advice, not a claim every stage one is easy.",
+      "components": [
+        "faction:cabal",
+        "unit:cabal_spacedock",
+        "unit:carrier2",
+        "unit:dreadnought2",
+        "unit:cabal_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5451.32,
+          "end": 5456.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5468.0,
+          "end": 5475.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5486.3,
+          "end": 5489.74
+        }
+      ],
+      "segment_ids": [
+        "s001779",
+        "s001782",
+        "s001785"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Cabal can be hard to remove once spread across the board, but the hosts say finding the 10th point is difficult and stage twos can be harder; they identify no reliable late-game closer.",
+      "conditions": "Keep a route to bonus points or stage twos, adapting to revealed objectives; extra plastic does not force a win.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Tournament review is selective and anecdotal; no repeatable Cabal line is claimed.",
+      "components": [
+        "faction:cabal",
+        "unit:cabal_spacedock",
+        "secret-objective:dts"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5517.64,
+          "end": 5522.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5604.34,
+          "end": 5609.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5688.58,
+          "end": 5689.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5876.24,
+          "end": 5879.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 5984.72,
+          "end": 5989.3
+        }
+      ],
+      "segment_ids": [
+        "s001793",
+        "s001823",
+        "s001851",
+        "s001909",
+        "s001953"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Target access is a Cabal constraint: Vortex selects an opponent’s non-structure unit adjacent to a Dimensional Tear and captures a matching unit from their reinforcements, while the hero checks units in or adjacent to a Tear. The hosts note Vortex can be poor when opponents keep their units away.",
+      "conditions": "Assess nearby targets and dock placement before valuing either capture effect.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "The Vortex example is one game; target availability is map-dependent.",
+      "components": [
+        "unit:cabal_spacedock",
+        "ability:devour",
+        "technology:vtx",
+        "leader:cabalhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2157.64,
+          "end": 2160.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2160.88,
+          "end": 2164.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2164.56,
+          "end": 2166.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2166.7,
+          "end": 2168.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2168.26,
+          "end": 2171.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2171.18,
+          "end": 2176.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2333.2,
+          "end": 2337.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2337.72,
+          "end": 2341.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2341.64,
+          "end": 2346.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2374.78,
+          "end": 2377.96
+        }
+      ],
+      "segment_ids": [
+        "s000729",
+        "s000730",
+        "s000731",
+        "s000732",
+        "s000733",
+        "s000734",
+        "s000790",
+        "s000791",
+        "s000792",
+        "s000798"
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "The guide does not settle whether Cabal should fight or wait: one host values force for unusual points, while another recounts success with good objectives and restraint. Read fleet projection as leverage, not an order to attack every neighbor.",
+      "conditions": "Fight for points or useful captures when responses are manageable; otherwise economy and timing may preserve a route.",
+      "compatibility": "SCPT 302 (2023-06-07); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "This is an explicit disagreement shaped by different play styles.",
+      "components": [
+        "faction:cabal",
+        "unit:cabal_flagship",
+        "unit:cabal_spacedock",
+        "ability:devour"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2695.88,
+          "end": 2700.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2725.22,
+          "end": 2732.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2834.36,
+          "end": 2836.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2982.06,
+          "end": 2989.92
+        }
+      ],
+      "segment_ids": [
+        "s000900",
+        "s000906",
+        "s000951",
+        "s001012"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "leader:cabalagent",
+      "to": "technology:vtx",
+      "relation": "synergizes-with",
+      "conditions": "The speakers call Vortex and the agent the faction’s actual economic power; Vortex is target-dependent, while the agent resolves after another player replenishes commodities.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2346.48,
+          "end": 2353.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2353.18,
+          "end": 2356.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2374.78,
+          "end": 2377.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1783.61,
+          "end": 1787.77
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1787.77,
+          "end": 1794.97
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1794.97,
+          "end": 1799.87
+        }
+      ]
+    },
+    {
+      "from": "unit:cabal_spacedock",
+      "to": "leader:cabalcommander",
+      "relation": "enables",
+      "conditions": "The commander unlock requires Cabal units in three gravity rifts, and each Dimensional Tear is a gravity rift.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2017.94,
+          "end": 2019.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 2019.72,
+          "end": 2021.42
+        }
+      ]
+    },
+    {
+      "from": "ability:amalgamation",
+      "to": "ability:riftmeld",
+      "relation": "conflicts-with",
+      "conditions": "Both use a captured unit of the matching type: Amalgamation pays it to produce without resources, while Riftmeld returns it to ignore upgrade prerequisites; the technology still costs resources.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1053.62,
+          "end": 1056.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1056.82,
+          "end": 1062.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1067.28,
+          "end": 1071.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1071.68,
+          "end": 1076.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1076.74,
+          "end": 1082.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1082.72,
+          "end": 1086.78
+        }
+      ]
+    },
+    {
+      "from": "promissory:crucible",
+      "to": "unit:cabal_spacedock",
+      "relation": "enables",
+      "conditions": "Crucible’s movement bonus can combine with a Dimensional Tear’s gravity-rift movement to extend a route.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1624.3,
+          "end": 1630.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1630.86,
+          "end": 1637.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1637.08,
+          "end": 1641.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1655.76,
+          "end": 1660.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1660.46,
+          "end": 1667.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1667.88,
+          "end": 1672.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1677.92,
+          "end": 1683.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 1683.94,
+          "end": 1688.32
+        }
+      ]
+    },
+    {
+      "from": "strategy-card:pok4construction",
+      "to": "unit:cabal_spacedock",
+      "relation": "enables",
+      "conditions": "Construction gives the early second dock the hosts call a need, and they recommend taking the card round one if available.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3066.06,
+          "end": 3067.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3067.98,
+          "end": 3068.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3088.96,
+          "end": 3095.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3096.52,
+          "end": 3103.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3103.14,
+          "end": 3108.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-302-c05a11081f20",
+          "start": 3108.84,
+          "end": 3114.24
+        }
+      ]
+    }
+  ]
+}

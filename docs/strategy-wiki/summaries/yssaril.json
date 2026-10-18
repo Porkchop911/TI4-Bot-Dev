@@ -1,0 +1,2087 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "yssaril",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "The action-card engine compounds over time: cards answer problems across movement, combat, economy, technology, and agendas, while Scheming lets Yssaril prune toward useful options. The hosts describe a tailored late-game toolkit, not a guaranteed win.",
+      "conditions": "Best over a longer game; results still depend on cards, board, scoring pace, and player decisions.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Podcast strategy opinion.",
+      "components": [
+        "faction:yssaril",
+        "ability:scheming",
+        "technology:nm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2619.81,
+          "end": 2627.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2630.47,
+          "end": 2634.09
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2712.99,
+          "end": 2715.07
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2716.77,
+          "end": 2719.03
+        }
+      ],
+      "segment_ids": [
+        "s000853",
+        "s000855",
+        "s000880",
+        "s000882"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "The opening has two carriers, a cruiser, two fighters, five infantry, and a home PDS. The hosts call this broadly useful but describe the early ground position as thin until mechs can be deployed.",
+      "conditions": "Expand with the fleet while accounting for the action cards required to place mechs.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "ASR proper nouns are noisy.",
+      "components": [
+        "faction:yssaril",
+        "unit:yssaril_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 807.65,
+          "end": 813.71
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 813.73,
+          "end": 819.11
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1511.83,
+          "end": 1515.89
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1524.61,
+          "end": 1528.01
+        }
+      ],
+      "segment_ids": [
+        "s000245",
+        "s000246",
+        "s000492",
+        "s000495"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Neural Motivator is a natural starting technology: it draws an extra action card, and Scheming adds a card when drawing then permits a discard. That supports selection rather than a simple draw-and-keep pattern.",
+      "conditions": "Most useful when there are weak cards to prune or several new choices; it does not promise a particular card.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Rules text unchecked.",
+      "components": [
+        "technology:nm",
+        "ability:scheming"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 828.71,
+          "end": 830.13
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1153.79,
+          "end": 1160.13
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1160.15,
+          "end": 1163.79
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1189.75,
+          "end": 1196.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1200.01,
+          "end": 1206.69
+        }
+      ],
+      "segment_ids": [
+        "s000251",
+        "s000365",
+        "s000366",
+        "s000380",
+        "s000382"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Politics secondary is attractive because additional cards can build a large hand without the ordinary limit forcing Yssaril to prune down to seven. The hosts describe card draw as positive momentum.",
+      "conditions": "Not an automatic follow; command tokens, timing, and card utility still matter.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Informal hand-limit discussion.",
+      "components": [
+        "ability:scheming",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1326.25,
+          "end": 1331.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1343.41,
+          "end": 1345.93
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1356.31,
+          "end": 1360.21
+        }
+      ],
+      "segment_ids": [
+        "s000417",
+        "s000422",
+        "s000428"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Stall Tactics converts an action-card discard into an action-phase stall without passing. Its use can also trigger mech deployment, giving the delay an additional payoff and an early deterrent.",
+      "conditions": "Use when delaying is valuable and a mech can be deployed on a controlled planet.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Guide explanation is not a ruling.",
+      "components": [
+        "ability:stall_tactics",
+        "unit:yssaril_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1025.55,
+          "end": 1028.75
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1035.55,
+          "end": 1039.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1487.63,
+          "end": 1494.39
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1494.41,
+          "end": 1499.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1500.41,
+          "end": 1502.69
+        }
+      ],
+      "segment_ids": [
+        "s000319",
+        "s000324",
+        "s000485",
+        "s000486",
+        "s000488"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Mechs cover some early ground weakness: opponents may avoid attacking a planet Yssaril can hold, even when its ships are weaker. The hosts also say killing Yssaril carriers may be worthwhile to force spending.",
+      "conditions": "This is deterrence rather than immunity; an opponent may target ships or force expenditure.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Anecdotal assessment.",
+      "components": [
+        "unit:yssaril_mech",
+        "faction:yssaril"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1524.61,
+          "end": 1528.01
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1531.53,
+          "end": 1534.25
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1541.31,
+          "end": 1545.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1545.21,
+          "end": 1548.95
+        }
+      ],
+      "segment_ids": [
+        "s000495",
+        "s000497",
+        "s000500",
+        "s000501"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "The flagship’s two movement and ability to pass through enemy-occupied systems can enable an early surprise, such as reaching Mecatol Rex. Light/Wave Deflectors or In the Silence of Space can make its special movement redundant.",
+      "conditions": "Build around this only when map and timing provide a target; the hosts also value its combat profile.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Flagship name noisy in ASR.",
+      "components": [
+        "unit:yssaril_flagship",
+        "technology:lwd",
+        "action-card:silence_space"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1401.85,
+          "end": 1402.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1414.63,
+          "end": 1418.07
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1418.09,
+          "end": 1419.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1464.77,
+          "end": 1468.41
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1437.91,
+          "end": 1440.11
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1455.17,
+          "end": 1457.65
+        }
+      ],
+      "segment_ids": [
+        "s000451",
+        "s000459",
+        "s000460",
+        "s000477",
+        "s000468",
+        "s000474"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Spy Net lets a player look at Yssaril’s action cards and take one. The hosts say players often sell or hand over a negotiated card instead of exposing the full choice, and call this common practice potentially contrary to intent.",
+      "conditions": "Clarify the exchange before trading the note; the hosts question what “look” means and describe a trust convention.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "No FAQ checked; hosts dispute common use.",
+      "components": [
+        "promissory:spynet"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1555.03,
+          "end": 1561.25
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1561.27,
+          "end": 1564.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1586.31,
+          "end": 1590.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1602.03,
+          "end": 1607.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1738.65,
+          "end": 1741.53
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1746.31,
+          "end": 1748.77
+        }
+      ],
+      "segment_ids": [
+        "s000505",
+        "s000506",
+        "s000515",
+        "s000518",
+        "s000571",
+        "s000574"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Ssruu copies another player’s agent text, even if exhausted. The hosts emphasize that this does not grant every other component referenced by that text; Yssaril is still using Ssruu.",
+      "conditions": "Value depends on agents present and useful timing.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Host interpretation, rules unverified.",
+      "components": [
+        "leader:yssarilagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1809.53,
+          "end": 1817.05
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1894.49,
+          "end": 1896.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1897.39,
+          "end": 1900.85
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1909.37,
+          "end": 1911.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1916.21,
+          "end": 1917.85
+        }
+      ],
+      "segment_ids": [
+        "s000595",
+        "s000615",
+        "s000616",
+        "s000621",
+        "s000625"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "So Ata unlocks with seven action cards. The hosts say this often arrives around round three or four because Yssaril may spend cards on mechs, and advise against warping play around the commander.",
+      "conditions": "Track the threshold while balancing card use and mech deployment; the speakers admit it is easy to forget.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Timing estimate is experiential.",
+      "components": [
+        "leader:yssarilcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1965.85,
+          "end": 1970.23
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1987.27,
+          "end": 1989.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1992.51,
+          "end": 1994.15
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2001.87,
+          "end": 2004.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2006.65,
+          "end": 2009.35
+        }
+      ],
+      "segment_ids": [
+        "s000643",
+        "s000651",
+        "s000653",
+        "s000656",
+        "s000658"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "After an opponent activates a system with Yssaril units, So Ata can inspect that player’s cards, promissory notes, or secret objectives. The hosts usually favor secret objectives as the most useful information, but note that a late card search can matter.",
+      "conditions": "Reactive trigger; choose information by game state.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "ASR may compress wording.",
+      "components": [
+        "leader:yssarilcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2011.45,
+          "end": 2013.39
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2017.59,
+          "end": 2020.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2021.15,
+          "end": 2023.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2043.53,
+          "end": 2047.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2049.49,
+          "end": 2051.69
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2068.37,
+          "end": 2069.41
+        }
+      ],
+      "segment_ids": [
+        "s000660",
+        "s000663",
+        "s000664",
+        "s000669",
+        "s000671",
+        "s000680"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Kyver’s hero makes each opponent show a card, then lets Yssaril take it or force three random discards. The hosts see little choice for Yssaril: even an unwanted card can be a stall, while discarding three may remove valuable options.",
+      "conditions": "They identify an exception when the leader has few cards and Yssaril wants to strip them.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "“Non-choice” is opinion.",
+      "components": [
+        "leader:yssarilhero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2160.31,
+          "end": 2167.35
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2167.37,
+          "end": 2172.33
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2172.35,
+          "end": 2178.39
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2181.69,
+          "end": 2186.43
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2208.75,
+          "end": 2213.83
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2252.19,
+          "end": 2253.47
+        }
+      ],
+      "segment_ids": [
+        "s000714",
+        "s000715",
+        "s000716",
+        "s000718",
+        "s000724",
+        "s000735"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Transparasteel Plating can stop players who have passed from playing action cards during Yssaril’s turn. It is situational but accessible from the starting green technology, useful when late responses matter.",
+      "conditions": "Compare with Hyper Metabolism by economy and whether opponents hold important cards.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Timing not rules checked.",
+      "components": [
+        "technology:tp",
+        "technology:hm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2326.53,
+          "end": 2328.05
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2332.63,
+          "end": 2334.41
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2334.63,
+          "end": 2338.43
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2375.71,
+          "end": 2380.17
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2400.43,
+          "end": 2405.45
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2423.93,
+          "end": 2428.93
+        }
+      ],
+      "segment_ids": [
+        "s000755",
+        "s000759",
+        "s000760",
+        "s000774",
+        "s000784",
+        "s000790"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "The preferred tech engine centers on Bio-Stims and Magi-on Implants, with Gravity Drive for movement. Bio-Stims can ready Magi-on for another use that round; the hosts describe the resulting card access as powerful.",
+      "conditions": "Tech intensive; shift with skips, economy, timing, or urgent movement.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Magi-on absent from reference; no ID invented.",
+      "components": [
+        "technology:bs",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2444.57,
+          "end": 2451.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2451.59,
+          "end": 2457.63
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2469.01,
+          "end": 2475.85
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2475.87,
+          "end": 2483.41
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3781.49,
+          "end": 3788.15
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3795.41,
+          "end": 3797.63
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3807.65,
+          "end": 3808.93
+        }
+      ],
+      "segment_ids": [
+        "s000794",
+        "s000795",
+        "s000798",
+        "s000799",
+        "s001265",
+        "s001268",
+        "s001272"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "The no-skip outline adds a choice between Hyper Metabolism and Transparasteel, then Magi-on, followed by blue access such as Dark Energy Tap or Antimass into Gravity Drive and possibly Carrier II, Fleet Logistics, and Light/Wave.",
+      "conditions": "Adaptable route, not fixed order; options may remain useful through round five.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "2024 advice; edition/prerequisites unchecked.",
+      "components": [
+        "technology:bs",
+        "technology:hm",
+        "technology:tp",
+        "technology:det",
+        "technology:amd",
+        "technology:gd",
+        "technology:fl",
+        "technology:lwd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3868.37,
+          "end": 3873.93
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3874.45,
+          "end": 3881.25
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3882.17,
+          "end": 3885.55
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3888.83,
+          "end": 3892.01
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3896.21,
+          "end": 3897.99
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3898.61,
+          "end": 3901.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3901.75,
+          "end": 3903.45
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3909.15,
+          "end": 3912.81
+        }
+      ],
+      "segment_ids": [
+        "s001298",
+        "s001299",
+        "s001300",
+        "s001302",
+        "s001305",
+        "s001306",
+        "s001307",
+        "s001311"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "With a green skip, Yssaril can omit Hyper Metabolism or Transparasteel; a blue skip may bypass Dark Energy Tap or Antimass for Gravity Drive. Dreadnought II with a yellow skip is mentioned as nonessential.",
+      "conditions": "Use skips to shorten research; pursue upgrades when objectives or cards justify them.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Conditional path.",
+      "components": [
+        "technology:bs",
+        "technology:gd",
+        "technology:det",
+        "technology:amd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3937.81,
+          "end": 3944.09
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3944.11,
+          "end": 3948.61
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3948.63,
+          "end": 3953.11
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3953.71,
+          "end": 3957.01
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3957.03,
+          "end": 3962.11
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3996.17,
+          "end": 3999.27
+        }
+      ],
+      "segment_ids": [
+        "s001319",
+        "s001320",
+        "s001321",
+        "s001322",
+        "s001323",
+        "s001341"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "The hosts usually avoid red and yellow technologies and favor green and blue. They prefer Carrier II over Fighter II, while acknowledging the preference is personal; Fighter Prototype could make Fighter II appealing.",
+      "conditions": "Pivot for an objective, slice, or card; several upgrade objectives can justify a detour.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Subjective preference.",
+      "components": [
+        "action-card:f_prototype"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4009.39,
+          "end": 4010.77
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4003.99,
+          "end": 4005.89
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4046.37,
+          "end": 4049.59
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4049.61,
+          "end": 4054.45
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4071.11,
+          "end": 4072.13
+        }
+      ],
+      "segment_ids": [
+        "s001350",
+        "s001345",
+        "s001361",
+        "s001362",
+        "s001369"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "The hosts first rate round-one Leadership mid-tier, then raise it to high-mid because following Politics can start card flow and offer an early-useful card. Spending an action card to deploy a mech can also create an opening deterrent.",
+      "conditions": "This describes benefits of following; taking Leadership is not universally best.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Draft-dependent rating.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok3politics",
+        "ability:stall_tactics",
+        "unit:yssaril_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3129.43,
+          "end": 3130.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3134.47,
+          "end": 3136.05
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3137.81,
+          "end": 3142.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3143.99,
+          "end": 3147.01
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3150.05,
+          "end": 3151.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3154.35,
+          "end": 3155.39
+        }
+      ],
+      "segment_ids": [
+        "s001019",
+        "s001021",
+        "s001022",
+        "s001024",
+        "s001027",
+        "s001029"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Trade is a strong pick because Yssaril wants technology and plastic. The guide also recommends following Trade when cut out, collecting trade goods without begging for access.",
+      "conditions": "An economic agent can reduce need; draft order and economy matter.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Not universal.",
+      "components": [
+        "strategy-card:pok5trade"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3554.63,
+          "end": 3556.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3563.43,
+          "end": 3566.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3568.93,
+          "end": 3570.13
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3576.17,
+          "end": 3578.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3591.37,
+          "end": 3593.83
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3593.85,
+          "end": 3597.23
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3173.45,
+          "end": 3174.59
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3174.87,
+          "end": 3175.49
+        }
+      ],
+      "segment_ids": [
+        "s001169",
+        "s001172",
+        "s001174",
+        "s001178",
+        "s001186",
+        "s001187",
+        "s001039",
+        "s001040"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Diplomacy can refresh a planet for command tokens or technology spending, but is rated mid-tier. The hosts frame the main opening pressure as funding an ambitious tech path.",
+      "conditions": "Depends on refreshed planet and timing; compare with Trade and Leadership.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "ASR planet names vary.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3217.55,
+          "end": 3221.97
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3221.99,
+          "end": 3226.97
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3226.99,
+          "end": 3232.09
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3237.93,
+          "end": 3239.89
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3248.31,
+          "end": 3250.27
+        }
+      ],
+      "segment_ids": [
+        "s001058",
+        "s001059",
+        "s001060",
+        "s001062",
+        "s001068"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Politics is not usually the round-one pick despite card synergy: free cards are less valuable before Yssaril has room to use them, and Politics alone rarely secures Custodians. It rises if the table denies tech or an agent creates access.",
+      "conditions": "Take it for deliberate access or timing; distinguish primary from secondary.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Map/agent assumptions.",
+      "components": [
+        "strategy-card:pok3politics",
+        "technology:gd",
+        "ability:scheming"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3282.93,
+          "end": 3283.61
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3284.33,
+          "end": 3286.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3286.37,
+          "end": 3289.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3292.81,
+          "end": 3296.09
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3301.39,
+          "end": 3306.53
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3320.43,
+          "end": 3326.63
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3360.47,
+          "end": 3365.75
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3374.73,
+          "end": 3378.39
+        }
+      ],
+      "segment_ids": [
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001090",
+        "s001092",
+        "s001095",
+        "s001103",
+        "s001107"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Construction and Warfare are low-priority opening picks. Yssaril has two home structures and can often afford Construction’s secondary; Warfare is left to factions that need its primary unless an objective changes the need.",
+      "conditions": "Take when structures or a concrete Warfare need matter.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Contextual.",
+      "components": [
+        "strategy-card:pok4construction",
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3469.81,
+          "end": 3470.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3472.51,
+          "end": 3473.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3473.43,
+          "end": 3476.11
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3478.53,
+          "end": 3480.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3642.67,
+          "end": 3644.77
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3650.19,
+          "end": 3651.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3657.85,
+          "end": 3660.67
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3663.93,
+          "end": 3666.57
+        }
+      ],
+      "segment_ids": [
+        "s001141",
+        "s001143",
+        "s001144",
+        "s001146",
+        "s001201",
+        "s001204",
+        "s001207",
+        "s001210"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Bio-Stims can be a useful first technology, while a green-skip opening may double-tech into Bio-Stims and Magi-on. A blue-first route remains possible when movement is urgent.",
+      "conditions": "Choose by slice, skip, funds, and movement target; early Gravity Drive matters most for Custodians.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Alternatives retained.",
+      "components": [
+        "technology:bs",
+        "technology:det",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3246.79,
+          "end": 3248.29
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3248.31,
+          "end": 3250.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3259.65,
+          "end": 3261.67
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3372.63,
+          "end": 3374.31
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3374.73,
+          "end": 3378.39
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3724.33,
+          "end": 3724.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3725.33,
+          "end": 3729.39
+        }
+      ],
+      "segment_ids": [
+        "s001067",
+        "s001068",
+        "s001073",
+        "s001106",
+        "s001107",
+        "s001239",
+        "s001240"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "With Hacan present, the hosts describe a “goblin fish” exchange: Ssruu copies Hacan’s agent, Hacan refreshes commodities, and the factions negotiate a trade-good split.",
+      "conditions": "Requires both agents, cooperation, and a negotiated split.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Podcast slang; amount varies.",
+      "components": [
+        "leader:yssarilagent",
+        "leader:hacanagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4417.69,
+          "end": 4419.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4424.65,
+          "end": 4429.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4431.47,
+          "end": 4433.37
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4433.83,
+          "end": 4436.51
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4485.07,
+          "end": 4487.55
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4487.89,
+          "end": 4491.31
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4494.45,
+          "end": 4496.55
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4537.85,
+          "end": 4541.71
+        }
+      ],
+      "segment_ids": [
+        "s001482",
+        "s001485",
+        "s001487",
+        "s001488",
+        "s001510",
+        "s001511",
+        "s001514",
+        "s001536"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Other agents can create an opening spike: Jol-Nar research, Naalu movement for Custodians, and Mahact command-token interaction to expand or reach Custodians are examples.",
+      "conditions": "Applies only when those factions are present; evaluate actual agent text and timing.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Some names noisy in ASR.",
+      "components": [
+        "leader:yssarilagent",
+        "leader:jolnaragent",
+        "leader:naaluagent",
+        "leader:mahactagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4626.17,
+          "end": 4628.69
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4629.21,
+          "end": 4631.23
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4640.61,
+          "end": 4642.31
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4642.43,
+          "end": 4643.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4651.27,
+          "end": 4656.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4656.51,
+          "end": 4662.17
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4682.53,
+          "end": 4684.35
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4718.87,
+          "end": 4721.35
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4728.65,
+          "end": 4732.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4741.41,
+          "end": 4746.59
+        }
+      ],
+      "segment_ids": [
+        "s001576",
+        "s001577",
+        "s001586",
+        "s001587",
+        "s001591",
+        "s001592",
+        "s001598",
+        "s001619",
+        "s001622",
+        "s001625"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "The hidden hand can support negotiations over shared control objectives because opponents may prefer cooperation to possible spiteful cards. The hosts also advise finding a Support for the Throne partner early, before the table becomes more wary.",
+      "conditions": "Offer mutual benefit; cooperation and a swap are not assured.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Social advice anecdotal.",
+      "components": [
+        "faction:yssaril",
+        "secret-objective:fsn"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5361.43,
+          "end": 5365.51
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5365.53,
+          "end": 5369.25
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5370.19,
+          "end": 5375.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5375.23,
+          "end": 5379.51
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5379.53,
+          "end": 5384.87
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5686.39,
+          "end": 5690.43
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5704.51,
+          "end": 5708.99
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5709.01,
+          "end": 5713.29
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5724.61,
+          "end": 5729.01
+        }
+      ],
+      "segment_ids": [
+        "s001859",
+        "s001860",
+        "s001861",
+        "s001862",
+        "s001863",
+        "s001970",
+        "s001978",
+        "s001979",
+        "s001982"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "The hosts describe Yssaril as strong in agendas because riders can steer outcomes and home influence is useful. They single out Public Execution as dangerous because losing cards hurts, and suggest Politics can help bury it.",
+      "conditions": "Agenda-deck dependent; Yssaril can stack riders on favorable outcomes.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Informal timing.",
+      "components": [
+        "strategy-card:pok3politics",
+        "action-card:politic_rider"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5022.03,
+          "end": 5025.61
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5025.63,
+          "end": 5028.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5034.85,
+          "end": 5037.75
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5057.71,
+          "end": 5059.47
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5059.51,
+          "end": 5061.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5114.91,
+          "end": 5117.15
+        }
+      ],
+      "segment_ids": [
+        "s001715",
+        "s001716",
+        "s001720",
+        "s001729",
+        "s001730",
+        "s001756"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Yssaril can prepare for many stage-one objectives: mechs support control, the home PDS and influence help with structures, and cards create unusual completion routes. The guide recommends following Construction when rich as a hedge toward structure objectives.",
+      "conditions": "Preparation, not automatic scoring; objective must appear and requirements remain.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Map/economy sensitive.",
+      "components": [
+        "unit:yssaril_mech",
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5126.47,
+          "end": 5129.91
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5132.33,
+          "end": 5134.15
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5134.17,
+          "end": 5135.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5150.35,
+          "end": 5152.09
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5164.31,
+          "end": 5169.43
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5181.07,
+          "end": 5185.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5191.65,
+          "end": 5193.75
+        }
+      ],
+      "segment_ids": [
+        "s001763",
+        "s001765",
+        "s001766",
+        "s001773",
+        "s001780",
+        "s001784",
+        "s001788"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Technology objectives are a weaker area because deep green and blue may leave fewer unit upgrades. The hosts still consider Fighter II or Carrier II manageable and say a revealed objective can justify another upgrade.",
+      "conditions": "Partial technology progress is not scoring; check the revealed requirement.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Objective edition unchecked.",
+      "components": [
+        "technology:gd",
+        "action-card:reveal_prototype"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5211.01,
+          "end": 5213.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5217.83,
+          "end": 5219.47
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5219.95,
+          "end": 5221.21
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5221.53,
+          "end": 5223.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5223.21,
+          "end": 5228.45
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5228.47,
+          "end": 5233.19
+        }
+      ],
+      "segment_ids": [
+        "s001798",
+        "s001801",
+        "s001802",
+        "s001803",
+        "s001804",
+        "s001805"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "For late control objectives, the hosts favor waiting until opponents pass, then sequencing card-enabled movement and captures. Yssaril can win through timing and reach instead of a large fleet contest.",
+      "conditions": "Needs suitable cards, units, movement, and a completable objective; a large hand alone is insufficient.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Illustrative examples.",
+      "components": [
+        "ability:stall_tactics",
+        "technology:gd",
+        "technology:lwd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5390.93,
+          "end": 5394.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5394.59,
+          "end": 5399.77
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5400.89,
+          "end": 5404.63
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5418.77,
+          "end": 5424.63
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5444.97,
+          "end": 5449.07
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5456.09,
+          "end": 5458.23
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5464.29,
+          "end": 5467.15
+        }
+      ],
+      "segment_ids": [
+        "s001865",
+        "s001866",
+        "s001867",
+        "s001871",
+        "s001876",
+        "s001879",
+        "s001884"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Beyond its ability, the flagship is valued as a heavy combat ship. The hosts compare it to two dreadnoughts in one hull and say early Gravity Drive can make a round-two build reach an equidistant system.",
+      "conditions": "Build when economy, capacity, and target support it; not solely for pass-through.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Approximate combat analogy.",
+      "components": [
+        "unit:yssaril_flagship",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4207.49,
+          "end": 4213.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4213.67,
+          "end": 4219.39
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4219.85,
+          "end": 4224.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4224.83,
+          "end": 4228.55
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4229.29,
+          "end": 4232.69
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4232.71,
+          "end": 4236.89
+        }
+      ],
+      "segment_ids": [
+        "s001414",
+        "s001415",
+        "s001416",
+        "s001417",
+        "s001418",
+        "s001419"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Counterplay remains unresolved: opponents should use valuable cards before Kyver takes them, may target Yssaril ships to force spending, and should recognize the hosts offer no reliable answer to late-game power.",
+      "conditions": "Advice, not a solved counter; hidden cards can change combat.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Hosts say counter is unclear.",
+      "components": [
+        "leader:yssarilhero",
+        "faction:yssaril"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2276.91,
+          "end": 2284.17
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2284.19,
+          "end": 2290.03
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2293.79,
+          "end": 2298.01
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1541.31,
+          "end": 1545.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1545.21,
+          "end": 1548.95
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3825.75,
+          "end": 3827.49
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3827.61,
+          "end": 3830.27
+        }
+      ],
+      "segment_ids": [
+        "s000745",
+        "s000746",
+        "s000748",
+        "s000500",
+        "s000501",
+        "s001281",
+        "s001282"
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "High potential is not assured victory: Yssaril still needs favorable circumstances, scoring opportunities, tempo, and a coherent route to ten. A hidden hand may deter attacks, but it does not score points.",
+      "conditions": "A large hand or partial objective preparation is not a scored point; verify requirements and endgame sequence.",
+      "compatibility": "SCPT episode 358 (2024-07-03); expansion and ruleset compatibility unreviewed.",
+      "uncertainty": "Overall interpretation, not guarantee.",
+      "components": [
+        "ability:scheming",
+        "faction:yssaril"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2664.09,
+          "end": 2667.57
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2667.59,
+          "end": 2669.93
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2675.59,
+          "end": 2678.17
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2712.99,
+          "end": 2715.07
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2792.99,
+          "end": 2795.27
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5597.53,
+          "end": 5602.59
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5616.55,
+          "end": 5619.55
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5657.93,
+          "end": 5659.75
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 5668.33,
+          "end": 5669.85
+        }
+      ],
+      "segment_ids": [
+        "s000865",
+        "s000866",
+        "s000869",
+        "s000880",
+        "s000910",
+        "s001935",
+        "s001940",
+        "s001957",
+        "s001962"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ability:stall_tactics",
+      "to": "unit:yssaril_mech",
+      "relation": "enables",
+      "conditions": "Using Stall Tactics can trigger mech deployment on a controlled planet, if a mech remains available.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1018.73,
+          "end": 1020.91
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1043.53,
+          "end": 1045.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1480.45,
+          "end": 1480.83
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 1502.71,
+          "end": 1506.53
+        }
+      ]
+    },
+    {
+      "from": "technology:bs",
+      "to": "technology:gd",
+      "relation": "enables",
+      "conditions": "The green engine and later movement technology form the guide’s broad research plan, subject to economy and prerequisites.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2428.95,
+          "end": 2434.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2503.63,
+          "end": 2508.67
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3781.49,
+          "end": 3788.15
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 3862.55,
+          "end": 3868.35
+        }
+      ]
+    },
+    {
+      "from": "leader:yssarilagent",
+      "to": "leader:hacanagent",
+      "relation": "synergizes-with",
+      "conditions": "When both factions cooperate, copying Hacan’s agent can help produce a commodity refresh and negotiated split.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4379.23,
+          "end": 4380.13
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4553.87,
+          "end": 4555.17
+        }
+      ]
+    },
+    {
+      "from": "technology:tp",
+      "to": "technology:hm",
+      "relation": "conflicts-with",
+      "conditions": "The guide presents these as alternative early green technologies, chosen by economy and tactical need.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2322.23,
+          "end": 2326.51
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 2428.95,
+          "end": 2434.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4073.13,
+          "end": 4076.89
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-358-8b6c1a7c1b89",
+          "start": 4177.97,
+          "end": 4184.39
+        }
+      ]
+    }
+  ]
+}

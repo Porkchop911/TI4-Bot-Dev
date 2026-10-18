@@ -1,0 +1,1438 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "naaz",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "When a mech is on the explored planet, Distant Suns lets you draw an extra card, choose one to resolve, and discard the rest.",
+      "conditions": "Use it whenever the extra choice is worthwhile; consider what discarding unchosen fragments does to deck cycling.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The episode also debates declaration timing; this paraphrase does not settle that FAQ interpretation.",
+      "components": [
+        "ability:distant_suns",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000202",
+        "s000203",
+        "s000204",
+        "s000210",
+        "s000217",
+        "s000218"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 733.68,
+          "end": 786.05
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 815.73,
+          "end": 826.55
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Treat exploration as a long-run edge from repeated small gains: collect fragments and attachments rather than expecting every individual card to be exceptional.",
+      "conditions": "This compounds when you can explore regularly; outcomes remain random and decks change as players draw.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts discuss both a high ceiling and bad-luck games, not guaranteed value.",
+      "components": [
+        "ability:distant_suns",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000686",
+        "s000687",
+        "s000708",
+        "s000713",
+        "s001505",
+        "s001517",
+        "s001523"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2493.86,
+          "end": 2506.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2546.82,
+          "end": 2581.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5443.48,
+          "end": 5511.68
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Favor hazardous and cultural decks while their contents remain valuable; the hosts slightly prefer hazardous, especially early, but call the two close overall.",
+      "conditions": "Monitor deck depletion and switch to industrial if opponents have already milled the better pools.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "This is the hosts’ qualitative ranking, not a verified evaluation of each edition’s deck list.",
+      "components": [
+        "ability:distant_suns",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s001455",
+        "s001457",
+        "s001458",
+        "s001461",
+        "s001463",
+        "s001467",
+        "s001512",
+        "s001513"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5237.0,
+          "end": 5280.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5294.1,
+          "end": 5317.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5463.3,
+          "end": 5482.28
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "If the slice permits, put an early mech on a hazardous planet to combine round-one exploration with Distant Suns selection and the guide’s favored hazardous opportunities.",
+      "conditions": "A cultural planet remains a workable alternative; do not force the setup at the cost of a better opening.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The speakers want at least one hazardous planet in a Naaz-Rokha slice but acknowledge alternatives.",
+      "components": [
+        "unit:naaz_mech",
+        "ability:distant_suns"
+      ],
+      "segment_ids": [
+        "s001455",
+        "s001467",
+        "s001473",
+        "s001475"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5237.0,
+          "end": 5253.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5294.1,
+          "end": 5331.0
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Garv and Gunn can add an exploration at the end of a player’s turn; using it on yourself can pair that explore with Distant Suns.",
+      "conditions": "The agent can instead help the player whose turn just ended, so choose the timing and beneficiary deliberately.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts call its timing awkward; transcript name variants are ASR, component reference says Garv and Gunn.",
+      "components": [
+        "leader:naazagent",
+        "ability:distant_suns"
+      ],
+      "segment_ids": [
+        "s000388",
+        "s000391",
+        "s000393",
+        "s000395",
+        "s000396",
+        "s000400",
+        "s000404"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1528.38,
+          "end": 1556.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1559.94,
+          "end": 1591.8
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Expect high variance: good exploration runs can produce exceptional value, while poor relic draws can leave a sound game without the hoped-for payoff.",
+      "conditions": "Keep ordinary scoring and board plans viable even when you invest in repeated exploration.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts give no odds; both favorable and unfavorable outcomes are part of their assessment.",
+      "components": [
+        "ability:distant_suns",
+        "ability:fabrication"
+      ],
+      "segment_ids": [
+        "s000549",
+        "s000553",
+        "s000564",
+        "s000569",
+        "s000573",
+        "s000582",
+        "s000585",
+        "s000603",
+        "s000606",
+        "s000610"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2102.06,
+          "end": 2163.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2182.54,
+          "end": 2204.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2239.08,
+          "end": 2255.46
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Keep a fragment reserve when possible; spend fragments for a relic or command token when the immediate effect matters, such as enabling a point or important action.",
+      "conditions": "Balance saving against a present need for a relic, token, or stall; this is not a ban on early conversion.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts give a rough desired reserve, not a required fragment count or schedule.",
+      "components": [
+        "ability:fabrication",
+        "relic:shard"
+      ],
+      "segment_ids": [
+        "s000252",
+        "s000256",
+        "s000708",
+        "s000709",
+        "s000710",
+        "s000711",
+        "s000712",
+        "s000713",
+        "s001853",
+        "s001858",
+        "s001860"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 947.67,
+          "end": 975.19
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2544.04,
+          "end": 2581.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6689.58,
+          "end": 6725.88
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Black Market Forgery can be a modest, cooperative trade: the recipient uses two matching fragments for a relic, the note returns, and you gain payment or goodwill.",
+      "conditions": "Price it against the recipient’s likely use and table norms; the hosts suggest a small payment rather than extracting too much.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "They allow higher pricing in a cutthroat meta and mention Obsidian as a special case without fixing a universal price.",
+      "components": [
+        "promissory:bmf",
+        "ability:fabrication"
+      ],
+      "segment_ids": [
+        "s000279",
+        "s000283",
+        "s000284",
+        "s001286",
+        "s001292",
+        "s001314",
+        "s001319",
+        "s001320",
+        "s001327"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1079.59,
+          "end": 1106.03
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4653.36,
+          "end": 4702.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4755.44,
+          "end": 4808.06
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Buy opponents’ isolated fragments at an acceptable price; generally avoid selling your own unless you urgently need the value, since your supply supports relic and token options.",
+      "conditions": "This depends on opponents cooperating and the cost remaining below the value of keeping your own fragments.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "A hostile no-deal table may deny this plan, and the speakers allow selling your fragments in desperation.",
+      "components": [
+        "ability:fabrication",
+        "promissory:bmf"
+      ],
+      "segment_ids": [
+        "s001368",
+        "s001370",
+        "s001376",
+        "s001378",
+        "s001380",
+        "s001382",
+        "s001391",
+        "s001396",
+        "s001410",
+        "s001413"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4919.66,
+          "end": 4982.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4989.86,
+          "end": 5052.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5084.94,
+          "end": 5111.3
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Dart and Tai let you explore after taking control of an opponent’s planet, extending the exploration engine into conflict and combining with Distant Suns if a mech is there.",
+      "conditions": "Use the ability when the capture is worthwhile for scoring or position, rather than attacking solely to trigger an explore.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The claim that this is unique in the game is the hosts’ comparison, not independently verified.",
+      "components": [
+        "leader:naazcommander",
+        "ability:distant_suns",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000400",
+        "s000401",
+        "s000403",
+        "s000404",
+        "s000405"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1559.94,
+          "end": 1601.18
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Hesh and Prit’s hero gives a relic and up to two secondaries from readied or unchosen strategy cards; order the secondaries so one result can enable the next.",
+      "conditions": "Use it when the relic and secondary effects have a concrete purpose; secondary costs still matter.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The episode leaves a no-tokens-in-reinforcements case unsettled, so no workaround is asserted here.",
+      "components": [
+        "leader:naazhero",
+        "strategy-card:pok4construction",
+        "strategy-card:pok6warfare"
+      ],
+      "segment_ids": [
+        "s000409",
+        "s000410",
+        "s000414",
+        "s000415",
+        "s000416",
+        "s000419",
+        "s000747",
+        "s000748",
+        "s000750",
+        "s000751"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1605.9,
+          "end": 1669.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2697.1,
+          "end": 2719.18
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Psychoarchaeology, AI Development Algorithm, and found tech skips make many branches accessible; adapt to the slice instead of treating every tempting technology as mandatory.",
+      "conditions": "Technology choices still depend on resources, objectives, movement needs, and what the map offers.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts stress flexibility but also note real constraints; current prerequisites were not audited.",
+      "components": [
+        "technology:pa",
+        "technology:aida"
+      ],
+      "segment_ids": [
+        "s000156",
+        "s000157",
+        "s000158",
+        "s000165",
+        "s000166",
+        "s000776",
+        "s000778",
+        "s000781",
+        "s000782",
+        "s000793",
+        "s000796"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 600.0,
+          "end": 642.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2792.7,
+          "end": 2870.8
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Consider Cruiser II for an early Custodians attempt or distant control objective; the discussed line continues into basic blue movement tech, with Antimass or Dark Energy Tap chosen for the slice.",
+      "conditions": "Check rival reach, cruiser and tech affordability, and whether the objective rewards the commitment.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts explicitly say not to force Cruiser II when early Custodians or control objectives are unlikely.",
+      "components": [
+        "technology:cr2",
+        "unit:cruiser2",
+        "technology:gd",
+        "technology:amd",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s000802",
+        "s000804",
+        "s000808",
+        "s000810",
+        "s000815",
+        "s000817",
+        "s000821",
+        "s000824",
+        "s000828",
+        "s000895",
+        "s000900",
+        "s000902"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2896.3,
+          "end": 2970.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3247.54,
+          "end": 3296.54
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Carrier II is a flexible upgrade when dispersed mechs need reach or an invasion needs extra capacity and fighter hit points; it complements rather than guarantees a safe fight.",
+      "conditions": "Its value depends on fleet composition, production, and enough support to win in space before landing.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The guide calls it a favored option, not mandatory, and acknowledges some fleets need more support.",
+      "components": [
+        "technology:cv2",
+        "unit:carrier2",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000829",
+        "s000834",
+        "s000841",
+        "s000843",
+        "s000846",
+        "s000850",
+        "s000852"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2970.96,
+          "end": 3068.52
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Scanlink Drone Network is unusually valuable alongside mechs because Distant Suns improves selection; add it when repeated exploration is part of the plan.",
+      "conditions": "Target decks that still contain useful cards and weigh Scanlink against movement, production, and scoring tech.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The speakers describe better odds qualitatively and give no probability calculation.",
+      "components": [
+        "technology:sdn",
+        "ability:distant_suns",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000854",
+        "s000855",
+        "s000859",
+        "s000860",
+        "s000861",
+        "s000862",
+        "s000863"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3075.96,
+          "end": 3127.16
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Dreadnought II can be a practical fleet choice when weak production limits builds, adding durability beside carriers, fighters, and mechs.",
+      "conditions": "Use it when the fleet needs its movement, capacity, or extra hit points and the economy can fund it.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The speakers call it a natural fallback, not the preferred path in every game.",
+      "components": [
+        "technology:dn2",
+        "unit:dreadnought2",
+        "unit:carrier2",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000864",
+        "s000865",
+        "s000868",
+        "s000871",
+        "s000873",
+        "s000874"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3127.16,
+          "end": 3182.94
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Solve the weak starting production early: the hosts favor a useful forward dock over automatically double-docking at home, and suggest Sling Relay when the dock cannot meet a build window.",
+      "conditions": "Construction is attractive when the slice supports a useful dock site; home double-dock is an alternative.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "They present several production fixes and prefer a forward dock in many situations.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:sr"
+      ],
+      "segment_ids": [
+        "s000646",
+        "s000650",
+        "s000655",
+        "s000656",
+        "s000657",
+        "s000883",
+        "s000888",
+        "s000893",
+        "s000894"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2364.56,
+          "end": 2408.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3215.34,
+          "end": 3246.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5803.8,
+          "end": 5886.44
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Assess round-one Custodians through the real table: the guide describes a demanding mix of technology, cruiser, influence, and cash, with Trade or exploration proceeds potentially closing the gap.",
+      "conditions": "Take the line only if rivals cannot beat you to it and your resources and speaker position make the attempt plausible.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The source describes several routes and calls the cruiser a significant cost; amounts are guide-era estimates.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok5trade",
+        "technology:cr2",
+        "unit:cruiser2"
+      ],
+      "segment_ids": [
+        "s001555",
+        "s001557",
+        "s001561",
+        "s001574",
+        "s001583",
+        "s001584",
+        "s001638",
+        "s001647",
+        "s001657",
+        "s001660",
+        "s001661",
+        "s001664"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5611.9,
+          "end": 5687.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5886.44,
+          "end": 5990.72
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "A mech can explore the intended forward-dock planet before Construction; attachments may improve the site, while a DMZ result may make a backup planet preferable.",
+      "conditions": "Choose a dock location that genuinely fixes production and tolerate the exploration risk.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The speakers present DMZ as a contingency, not a reason to avoid cultural planets altogether.",
+      "components": [
+        "ability:distant_suns",
+        "unit:naaz_mech",
+        "strategy-card:pok4construction"
+      ],
+      "segment_ids": [
+        "s001618",
+        "s001625",
+        "s001627",
+        "s001628",
+        "s001631",
+        "s001632",
+        "s001635",
+        "s001637"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5803.8,
+          "end": 5886.44
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Do not prioritize Supercharge routinely: it boosts a round of combat rolls, but the hosts doubt it changes close fights enough to justify the cost and call it most attractive when many dice benefit.",
+      "conditions": "It can be a late defensive purchase when tech is available and better uses for the resources are absent.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "This is a marginal-value opinion, not a claim the tech never matters.",
+      "components": [
+        "technology:sc",
+        "unit:naaz_mech",
+        "unit:naaz_flagship"
+      ],
+      "segment_ids": [
+        "s000465",
+        "s000469",
+        "s000470",
+        "s000476",
+        "s000479",
+        "s000481",
+        "s000932",
+        "s000938",
+        "s000940",
+        "s000943",
+        "s000953",
+        "s000956"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1801.94,
+          "end": 1882.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3374.7,
+          "end": 3413.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3452.48,
+          "end": 3481.86
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Pre-Fab Arcologies is a late, conditional economy play: repeat exploration can refresh attached planets, but extra income may exceed your ability to produce or spend it.",
+      "conditions": "Favor it with reliable refreshes, a valuable planet, and enough production; sequence carefully to avoid tactical mistakes.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts recognize strong setups but disagree about the prerequisite and follow-through burden.",
+      "components": [
+        "technology:pfa",
+        "technology:sdn",
+        "leader:naazagent",
+        "leader:naazcommander"
+      ],
+      "segment_ids": [
+        "s000483",
+        "s000485",
+        "s000488",
+        "s000490",
+        "s000505",
+        "s000510",
+        "s000512",
+        "s000515",
+        "s000525",
+        "s000958",
+        "s000964",
+        "s000975",
+        "s000986"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1883.18,
+          "end": 2036.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3481.86,
+          "end": 3581.7
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Bio-Stims can be worthwhile when a valuable attached or tech-skip planet is available to refresh; the hosts do not favor forcing green tech just to pair it with Pre-Fab Arcologies.",
+      "conditions": "Consider it after movement and production plans are secure, or when a two-green/two-blue objective makes it convenient.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "Its value depends on planet setup; speakers disagree on its comparative priority.",
+      "components": [
+        "technology:bs",
+        "technology:pfa",
+        "technology:pa"
+      ],
+      "segment_ids": [
+        "s001014",
+        "s001016",
+        "s001018",
+        "s001020",
+        "s001023",
+        "s001027",
+        "s001031",
+        "s001036",
+        "s001045",
+        "s001050",
+        "s001057",
+        "s001060"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3661.86,
+          "end": 3695.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3703.52,
+          "end": 3801.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3809.58,
+          "end": 3822.64
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Transit Diodes can regroup dispersed ground forces after mechs have supported exploration, enabling a later defensive or offensive pivot.",
+      "conditions": "It is a late supplemental blue-yellow option, not an opening priority; value depends on mech positions.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts like it in an ideal two-color path but do not prescribe a fixed route.",
+      "components": [
+        "technology:td",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000997",
+        "s000998",
+        "s001003",
+        "s001006",
+        "s001008",
+        "s001009",
+        "s001255",
+        "s001257",
+        "s001262",
+        "s001263"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3600.0,
+          "end": 3658.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4573.7,
+          "end": 4596.26
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Assault Cannon may surprise opponents because the mech is described as a ship at the start of space combat; the guide suggests a fleet of one carrier and two mechs can trigger it before the ground fight.",
+      "conditions": "This is a specialized late tech play dependent on the actual fleet, target, reach, and combat timing.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "Treat it as the hosts’ 2023 interpretation, not a current-rules ruling.",
+      "components": [
+        "technology:asc",
+        "unit:naaz_mech",
+        "unit:naaz_mech_space",
+        "unit:carrier2"
+      ],
+      "segment_ids": [
+        "s000306",
+        "s000309",
+        "s000313",
+        "s000314",
+        "s000318",
+        "s001085",
+        "s001088",
+        "s001090",
+        "s001098",
+        "s001100",
+        "s001101"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1227.26,
+          "end": 1304.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3909.56,
+          "end": 3978.5
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Visz El Vir adds a combat die to mechs in its system and has capacity to transport them, amplifying the faction’s strong ground force.",
+      "conditions": "Plan flagship movement and mech placement together; dispersed mechs may be hard to assemble for a late strike.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts praise the dice output but later note its offensive use can be awkward.",
+      "components": [
+        "unit:naaz_flagship",
+        "unit:naaz_mech"
+      ],
+      "segment_ids": [
+        "s000327",
+        "s000328",
+        "s000330",
+        "s000331",
+        "s000332",
+        "s000334",
+        "s000352",
+        "s000356",
+        "s001225",
+        "s001228",
+        "s001230",
+        "s001232"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1332.94,
+          "end": 1386.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1426.02,
+          "end": 1441.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4451.58,
+          "end": 4489.42
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Destroyer II may fit a mech-heavy one-round combat plan when enemy fighters are the obstacle; the guide contrasts its broad anti-fighter use with Cruiser II’s more specialized reach.",
+      "conditions": "Choose by opponents and targets; Cruiser II can be better when its movement enables an objective or mech-assisted strike.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The speakers qualify the ranking by matchup and disagree somewhat on which upgrade is broadly preferable.",
+      "components": [
+        "technology:cr2",
+        "unit:naaz_mech",
+        "unit:destroyer2"
+      ],
+      "segment_ids": [
+        "s001176",
+        "s001178",
+        "s001182",
+        "s001186",
+        "s001191",
+        "s001193",
+        "s001195",
+        "s001198",
+        "s001200",
+        "s001204",
+        "s001210"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4261.98,
+          "end": 4327.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4327.92,
+          "end": 4413.46
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Warsuns are a possible late offensive pivot when tech skips and money leave surplus capacity, not a required part of the baseline kit.",
+      "conditions": "They become more plausible if you can reposition mechs; Transit Diodes can make the flagship plan more coherent.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "Hosts partly endorse the option but doubt it fills a necessary gap.",
+      "components": [
+        "technology:ws",
+        "unit:naaz_flagship",
+        "unit:naaz_mech",
+        "technology:td"
+      ],
+      "segment_ids": [
+        "s001213",
+        "s001219",
+        "s001223",
+        "s001230",
+        "s001235",
+        "s001243",
+        "s001245",
+        "s001252",
+        "s001255",
+        "s001258"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4413.46,
+          "end": 4451.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4475.44,
+          "end": 4582.48
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Spread mechs across useful exploration sites and protect planets with several attachments, while preserving a route to regroup for a late defense or scoring strike.",
+      "conditions": "Balance coverage against the threat at the table and the difficulty of assembling a flagship or Warsun attack.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "Both dispersed coverage and the risk of scattered forces appear in the episode.",
+      "components": [
+        "unit:naaz_mech",
+        "unit:naaz_flagship",
+        "technology:cr2",
+        "technology:td"
+      ],
+      "segment_ids": [
+        "s001766",
+        "s001769",
+        "s001772",
+        "s001775",
+        "s001777",
+        "s001780",
+        "s001784",
+        "s001790",
+        "s001791",
+        "s001795"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6381.52,
+          "end": 6457.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6470.12,
+          "end": 6519.88
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Watch legendary planets while Shard of the Throne remains available; the hosts prefer not to take on that relic risk casually and describe capturing an opponent’s Shard as one alternative.",
+      "conditions": "This applies only while the relic and its condition are relevant; a DMZ result can change the calculation.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The guide does not recommend a blanket ban on legendary planets.",
+      "components": [
+        "relic:shard",
+        "unit:naaz_mech",
+        "unit:naaz_flagship"
+      ],
+      "segment_ids": [
+        "s001818",
+        "s001819",
+        "s001820",
+        "s001821",
+        "s001823",
+        "s001824",
+        "s001826",
+        "s001834",
+        "s001835"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6537.1,
+          "end": 6599.76
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Exploration makes attachment and tech-skip control objectives easier to prepare for, but preparation does not itself meet or score a revealed objective.",
+      "conditions": "Check the actual threshold and timing when the objective appears; the source discusses access to the needed board state, not automatic completion.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "Hosts use broad terms like “easy” without checking each objective’s exact scoring test.",
+      "components": [
+        "ability:distant_suns",
+        "unit:naaz_mech",
+        "technology:sdn"
+      ],
+      "segment_ids": [
+        "s001864",
+        "s001865",
+        "s001866",
+        "s001867",
+        "s001868",
+        "s001870",
+        "s001871",
+        "s001877",
+        "s001878"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6738.82,
+          "end": 6810.94
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Keep alternate point routes open through Custodians, relics, and secrets; a favorable game may support a round-four finish, while stage-two objectives are a fallback.",
+      "conditions": "Continue scoring revealed objectives and reassess the table; the fast-win picture assumes useful relics and timing.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts stress that favorable exploration is not assured and a poor run can lose.",
+      "components": [
+        "leader:naazhero",
+        "relic:shard",
+        "relic:obsidian",
+        "relic:emphidia"
+      ],
+      "segment_ids": [
+        "s000722",
+        "s000735",
+        "s000747",
+        "s000755",
+        "s000564",
+        "s000569",
+        "s000585",
+        "s001739",
+        "s001745",
+        "s001750",
+        "s001757",
+        "s001759",
+        "s001938",
+        "s001942",
+        "s001945"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2607.22,
+          "end": 2755.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 2102.06,
+          "end": 2204.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6302.62,
+          "end": 6367.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6988.4,
+          "end": 7039.46
+        }
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Keep fragments available late when practical: conversion can answer changing token needs, including command-token agendas, so early conversion can be regrettable.",
+      "conditions": "Spend earlier if a token or relic is immediately necessary; waiting is a hedge, not a strict schedule.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The source treats agenda effects as risks, not certainties.",
+      "components": [
+        "ability:fabrication",
+        "relic:shard"
+      ],
+      "segment_ids": [
+        "s001847",
+        "s001849",
+        "s001850",
+        "s001853",
+        "s001857",
+        "s001859",
+        "s001860"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6661.02,
+          "end": 6725.88
+        }
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "Avoid agendas that replace mechs; the hosts see Articles of War as a smaller loss because it prevents the space-capable side while leaving useful mech combat strength.",
+      "conditions": "Vote in light of opponent abilities and the value of preserving your own mech role.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts qualify Articles of War as acceptable in some circumstances; this is their interpretation.",
+      "components": [
+        "unit:naaz_mech",
+        "unit:naaz_mech_space"
+      ],
+      "segment_ids": [
+        "s001836",
+        "s001837",
+        "s001838",
+        "s001839",
+        "s001840",
+        "s001843",
+        "s001845",
+        "s001846"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6600.0,
+          "end": 6668.3
+        }
+      ]
+    },
+    {
+      "id": "C34",
+      "statement": "Keep Garv and Gunn for recurring exploration when possible; Alliance is a smaller negotiable tool for shared exploration, including reciprocal early control deals.",
+      "conditions": "Trade only when the consideration and board arrangement justify giving up immediate exploration or allowing another player an explore.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "The hosts strongly discourage selling the agent but acknowledge an unusually large offer could change the decision.",
+      "components": [
+        "leader:naazagent",
+        "promissory:<color>_an",
+        "ability:distant_suns"
+      ],
+      "segment_ids": [
+        "s001328",
+        "s001330",
+        "s001334",
+        "s001338",
+        "s001341",
+        "s001346",
+        "s001352",
+        "s001357",
+        "s001366",
+        "s001367"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 4808.88,
+          "end": 4919.62
+        }
+      ]
+    },
+    {
+      "id": "C35",
+      "statement": "On a DMZ planet, Garv and Gunn can still offer one exploration whereas Scanlink cannot use the mech-dependent Distant Suns extra-card selection there.",
+      "conditions": "The agent remains subject to its end-of-turn timing and eligible player; a DMZ planet is not automatically worth exploring.",
+      "compatibility": "SCPT 287, published 2023-02-22; guide-era advice and component interpretations are not independently checked against current rules.",
+      "uncertainty": "This is the episode’s interaction interpretation, not an independent rules check.",
+      "components": [
+        "leader:naazagent",
+        "technology:sdn",
+        "ability:distant_suns"
+      ],
+      "segment_ids": [
+        "s001495",
+        "s001496",
+        "s001497",
+        "s001498",
+        "s001499",
+        "s001500",
+        "s001501",
+        "s001502"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 5409.62,
+          "end": 5438.12
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "unit:naaz_mech",
+      "to": "ability:distant_suns",
+      "relation": "enables",
+      "conditions": "A mech on the explored planet enables the faction’s extra-card selection, the core exploration interaction described by the hosts.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 733.68,
+          "end": 754.76
+        }
+      ]
+    },
+    {
+      "from": "leader:naazagent",
+      "to": "ability:distant_suns",
+      "relation": "synergizes-with",
+      "conditions": "The agent can provide another eligible exploration which benefits from a mech on that planet.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1528.38,
+          "end": 1556.26
+        }
+      ]
+    },
+    {
+      "from": "leader:naazcommander",
+      "to": "technology:pfa",
+      "relation": "enables",
+      "conditions": "Exploring after gaining control of an enemy planet creates a possible refresh opportunity for the late Pre-Fab Arcologies plan.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1559.94,
+          "end": 1605.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1883.18,
+          "end": 1937.24
+        }
+      ]
+    },
+    {
+      "from": "unit:naaz_mech",
+      "to": "unit:naaz_flagship",
+      "relation": "synergizes-with",
+      "conditions": "The flagship adds a combat die to mechs in its system, so placement and movement determine where the bonus applies.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1332.94,
+          "end": 1386.62
+        }
+      ]
+    },
+    {
+      "from": "technology:asc",
+      "to": "unit:naaz_mech_space",
+      "relation": "synergizes-with",
+      "conditions": "The hosts describe the mech as a ship at space-combat start, creating an Assault Cannon surprise opportunity.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1227.26,
+          "end": 1279.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3913.52,
+          "end": 3935.2
+        }
+      ]
+    },
+    {
+      "from": "technology:td",
+      "to": "unit:naaz_mech",
+      "relation": "synergizes-with",
+      "conditions": "Transit Diodes can regroup mechs dispersed to support exploration for a later defensive or offensive pivot.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3600.0,
+          "end": 3658.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 6381.52,
+          "end": 6457.52
+        }
+      ]
+    },
+    {
+      "from": "technology:sdn",
+      "to": "technology:pfa",
+      "relation": "synergizes-with",
+      "conditions": "Repeated exploration can help refresh planets that make Pre-Fab Arcologies attractive, if the player can spend the income.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 1883.18,
+          "end": 1965.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-287-59caeca38446",
+          "start": 3486.48,
+          "end": 3505.72
+        }
+      ]
+    }
+  ]
+}

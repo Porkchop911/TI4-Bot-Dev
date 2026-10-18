@@ -1,0 +1,1894 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "deepwrought",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Choose the two setup technologies around the slice, desired early reach, and intended breakthrough path; Gravity Drive is attractive when key planets or equidistants are hard to reach, while Bio-Stims can turn a nearby tech specialty into a cheap breakthrough. The speakers generally favor blue or green over red or yellow, but present this as a flexible opening puzzle.",
+      "conditions": "Setup options, slice geometry, tech skips, and access to a specialty planet change the value; a Mahact race for the same target can disrupt the Bio-Stims plan.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; ruleset and later errata not reviewed.",
+      "uncertainty": "The advice is explicitly conditional and two speakers emphasize different paths; faction tech timing is discussed as table practice, not independently rules-checked.",
+      "components": [
+        "technology:gd",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1454.54,
+          "end": 1535.42
+        }
+      ],
+      "segment_ids": [
+        "s000334",
+        "s000335",
+        "s000336",
+        "s000337",
+        "s000338",
+        "s000339",
+        "s000340",
+        "s000341",
+        "s000342",
+        "s000343",
+        "s000344",
+        "s000345",
+        "s000346",
+        "s000347",
+        "s000348",
+        "s000349",
+        "s000350",
+        "s000351",
+        "s000352",
+        "s000353",
+        "s000354"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "A double-blue opening can aim at round-one Custodians: Gravity Drive plus Carrier II access helps reach Mecatol, and the four-influence home system plus another planet can supply the six influence. The speakers describe this as possible rather than automatic and say leadership or Diplo/Tech/Warfare timing may be needed to assemble the pieces.",
+      "conditions": "Requires suitable system access, enough influence, the relevant strategy-card follows, and no opponent beating you to Mecatol; the table and slice determine feasibility.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; ruleset, custodians timing, and later errata not reviewed.",
+      "uncertainty": "The transcript calls this an achievable line but rejects describing it as easy or guaranteed.",
+      "components": [
+        "technology:gd",
+        "technology:cv2",
+        "strategy-card:pok1leadership",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1540.76,
+          "end": 1628.1
+        }
+      ],
+      "segment_ids": [
+        "s000356",
+        "s000357",
+        "s000358",
+        "s000359",
+        "s000360",
+        "s000361",
+        "s000362",
+        "s000363",
+        "s000364",
+        "s000365",
+        "s000366",
+        "s000367",
+        "s000368",
+        "s000369",
+        "s000370",
+        "s000371"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Sling Relay is an alternative second blue when the slice has useful empty systems or the player wants a stall and flexibility around the Technology primary. The proposed line is to delay the primary, use Dark Energy Tap and Sling Relay to control timing, then negotiate for Gravity Drive after the breakthrough; the speakers stress that this depends on another player cooperating.",
+      "conditions": "Best considered with empties, Technology timing control, and a credible tech deal; do not count the hoped-for Gravity Drive as guaranteed.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; ruleset and later errata not reviewed.",
+      "uncertainty": "The episode frames the line as a reasonable alternative, not its universal opening recommendation.",
+      "components": [
+        "technology:sr",
+        "technology:det",
+        "technology:gd",
+        "technology:radical"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1634.16,
+          "end": 1714.44
+        }
+      ],
+      "segment_ids": [
+        "s000374",
+        "s000375",
+        "s000376",
+        "s000377",
+        "s000378",
+        "s000379",
+        "s000380",
+        "s000381",
+        "s000382",
+        "s000383",
+        "s000384",
+        "s000385",
+        "s000386",
+        "s000387",
+        "s000388",
+        "s000389",
+        "s000390",
+        "s000391",
+        "s000392",
+        "s000393",
+        "s000394",
+        "s000395",
+        "s000396",
+        "s000397"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use Research Team coexistence as both a defensive tool and a negotiated way to share planets. The speakers say it can make attacking the home system complicated and can let both players satisfy an objective that explicitly recognizes shared presence, so an offer to coexist can have diplomatic and scoring value.",
+      "conditions": "The value depends on the objective wording and the players' incentives; coexistence does not automatically transfer control or satisfy unrelated effects.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; coexistence rulings are explicitly described as changing and are not independently verified.",
+      "uncertainty": "The podcast itself directs listeners to a separate coexistence discussion and notes that interactions have been ruled on and changed.",
+      "components": [
+        "ability:researchteam"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1826.88,
+          "end": 1904.23
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1913.57,
+          "end": 1972.15
+        }
+      ],
+      "segment_ids": [
+        "s000418",
+        "s000419",
+        "s000420",
+        "s000421",
+        "s000422",
+        "s000423",
+        "s000424",
+        "s000425",
+        "s000426",
+        "s000427",
+        "s000428",
+        "s000429",
+        "s000430",
+        "s000431",
+        "s000432",
+        "s000433",
+        "s000436",
+        "s000437",
+        "s000438",
+        "s000439",
+        "s000440",
+        "s000441",
+        "s000442",
+        "s000443",
+        "s000444",
+        "s000445",
+        "s000446",
+        "s000447",
+        "s000448"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Place a new coexistence where it advances an objective or creates a useful relationship, rather than accepting every request automatically. The speakers suggest edge planets near a neighbor's home, tech skips, anomalies, and planet traits that complement your slice; they recount Stellar Converter being used to remove a shared planet and deny a secret objective as a reason to assess the other player's incentives first.",
+      "conditions": "Early and middle rounds are emphasized, when a planet can contribute toward future control objectives; the target player's objective and ability to destroy or vacate the planet matter.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; objective scoring and coexistence interactions not independently rules-checked.",
+      "uncertainty": "Examples are strategic anecdotes; the guide does not establish that every listed planet or trait will qualify for a particular objective.",
+      "components": [
+        "ability:researchteam",
+        "relic:stellarconverter"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 1933.25,
+          "end": 2023.73
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3967.56,
+          "end": 4041.4
+        }
+      ],
+      "segment_ids": [
+        "s000441",
+        "s000442",
+        "s000443",
+        "s000444",
+        "s000445",
+        "s000446",
+        "s000447",
+        "s000448",
+        "s000449",
+        "s000450",
+        "s000451",
+        "s000452",
+        "s000453",
+        "s000454",
+        "s000455",
+        "s000456",
+        "s000457",
+        "s000458",
+        "s000936",
+        "s000937",
+        "s000938",
+        "s000939",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000943",
+        "s000944",
+        "s000945",
+        "s000946",
+        "s000947",
+        "s000948",
+        "s000949",
+        "s000950"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Ocean cards add a flexible, ready resource/influence reserve as coexistence spreads; the speakers value this both for ordinary spending and for the flexibility to refresh cards when the set of coexisting planets changes. They describe the possibility of effectively spending a lost and reacquired ocean card again, but call that sequencing opportunity uncommon.",
+      "conditions": "The value depends on how many coexistences are active, whether cards are ready, and movement that removes then establishes units elsewhere.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; ocean-card handling not independently rules-checked.",
+      "uncertainty": "ASR renders some component names inconsistently; the podcast says there are five ocean cards and describes them collectively as one resource and one influence each.",
+      "components": [
+        "ability:oceanbound"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2032.83,
+          "end": 2113.33
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2114.33,
+          "end": 2183.83
+        }
+      ],
+      "segment_ids": [
+        "s000461",
+        "s000462",
+        "s000463",
+        "s000464",
+        "s000465",
+        "s000466",
+        "s000467",
+        "s000468",
+        "s000469",
+        "s000470",
+        "s000471",
+        "s000472",
+        "s000473",
+        "s000474",
+        "s000475",
+        "s000476",
+        "s000477",
+        "s000478",
+        "s000479",
+        "s000480",
+        "s000481",
+        "s000482",
+        "s000483",
+        "s000484",
+        "s000485",
+        "s000486",
+        "s000487",
+        "s000488",
+        "s000489",
+        "s000490",
+        "s000491",
+        "s000492",
+        "s000493",
+        "s000494"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Treat the D.W.S. Luminous as a later-game reach and payload piece: its movement can chain through systems containing your units, including coexisting positions, and its six capacity lets it deliver a substantial fleet. The speakers say the route must be prepared and is not an early free move.",
+      "conditions": "Needs a built flagship and a network of systems with Deepwrought units; access through other players' space still depends on the actual map and deals.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; flagship movement interactions not independently rules-checked.",
+      "uncertainty": "The podcast calls it among the strongest flagships but qualifies the large movement line as late-game and setup-dependent.",
+      "components": [
+        "unit:deepwrought_flagship",
+        "ability:researchteam"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2290.47,
+          "end": 2387.05
+        }
+      ],
+      "segment_ids": [
+        "s000519",
+        "s000520",
+        "s000521",
+        "s000522",
+        "s000523",
+        "s000524",
+        "s000525",
+        "s000526",
+        "s000527",
+        "s000528",
+        "s000529",
+        "s000530",
+        "s000531",
+        "s000532",
+        "s000533",
+        "s000534",
+        "s000535",
+        "s000536",
+        "s000537",
+        "s000538",
+        "s000539",
+        "s000540",
+        "s000541",
+        "s000542",
+        "s000543",
+        "s000544"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Use coexistence on wormholes or other movement linchpins to extend a flagship route, and consider staging a fleet before sending the Luminous through at the end of the sequence. The speakers describe it as a playmaker that can bring the needed ships and capacity to a late target, while noting that the setup takes work.",
+      "conditions": "Requires a strategically placed coexistence, an available route, and a fleet worth delivering; the flagship may be a better purchase than a War Sun in some games, not all.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; route legality and unit value not independently verified.",
+      "uncertainty": "The War Sun comparison is an experienced player's report from several games, not a general cost-efficiency proof.",
+      "components": [
+        "unit:deepwrought_flagship",
+        "ability:researchteam",
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2400.0,
+          "end": 2496.4
+        }
+      ],
+      "segment_ids": [
+        "s000547",
+        "s000548",
+        "s000549",
+        "s000550",
+        "s000551",
+        "s000552",
+        "s000553",
+        "s000554",
+        "s000555",
+        "s000556",
+        "s000557",
+        "s000558",
+        "s000559",
+        "s000560",
+        "s000561",
+        "s000562",
+        "s000563",
+        "s000564",
+        "s000565",
+        "s000566",
+        "s000567",
+        "s000568",
+        "s000569",
+        "s000570",
+        "s000571",
+        "s000572",
+        "s000573",
+        "s000574"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Exploit the Eanautic's production value to build near the front: the discussion highlights Production 1 and gives an example of using Integrated Economy to produce cardboard and then the mech to add a ship. Self-Assembly Routines can further reward repeated mech production, although the example is a personal game anecdote.",
+      "conditions": "Most relevant when forward production and units are useful and the faction can afford the technology/mech sequence; the speakers call the mech's retreat text less central to their plan.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; production and technology interactions not independently verified.",
+      "uncertainty": "The transcript's pronunciation of Eanautic is uncertain; the component reference resolves the name. The repeated-mech example is anecdotal.",
+      "components": [
+        "unit:deepwrought_mech",
+        "technology:ie",
+        "technology:sar"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2510.36,
+          "end": 2597.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2591.38,
+          "end": 2622.18
+        }
+      ],
+      "segment_ids": [
+        "s000578",
+        "s000579",
+        "s000580",
+        "s000581",
+        "s000582",
+        "s000583",
+        "s000584",
+        "s000585",
+        "s000586",
+        "s000587",
+        "s000588",
+        "s000589",
+        "s000590",
+        "s000591",
+        "s000592",
+        "s000593",
+        "s000594",
+        "s000595",
+        "s000596",
+        "s000597",
+        "s000598",
+        "s000599"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Sell Share Knowledge when a temporary technology access solves a concrete problem: examples include enabling a tech objective, lending Light/Wave to support a win-slay, or giving Mahact a technology to purge for a relic. The speakers also mention it as a stall when the buyer needs to wait for a primary, and caution that it may be easy to overlook amid other Deepwrought deals.",
+      "conditions": "Choose a non-unit-upgrade tech the faction owns; the value depends on timing, buyer's objective or ability, and whether the faction wants the tech back after the status phase.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; promissory and Mahact interactions not independently rules-checked.",
+      "uncertainty": "The podcast presents several possible deals and calls the Mahact conversion an idea that might not occur to most players; actual relic outcomes are conditional.",
+      "components": [
+        "promissory:shareknowledge",
+        "technology:lwd",
+        "technology:gd",
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2635.5,
+          "end": 2723.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2732.38,
+          "end": 2805.54
+        }
+      ],
+      "segment_ids": [
+        "s000602",
+        "s000603",
+        "s000604",
+        "s000605",
+        "s000606",
+        "s000607",
+        "s000608",
+        "s000609",
+        "s000610",
+        "s000611",
+        "s000612",
+        "s000613",
+        "s000614",
+        "s000615",
+        "s000616",
+        "s000617",
+        "s000618",
+        "s000619",
+        "s000620",
+        "s000621",
+        "s000622",
+        "s000623",
+        "s000624",
+        "s000625",
+        "s000626",
+        "s000631",
+        "s000632",
+        "s000633",
+        "s000634",
+        "s000635",
+        "s000636",
+        "s000637",
+        "s000638",
+        "s000639",
+        "s000640",
+        "s000641",
+        "s000642",
+        "s000643",
+        "s000644",
+        "s000645",
+        "s000646",
+        "s000647",
+        "s000648",
+        "s000649",
+        "s000650",
+        "s000651",
+        "s000652",
+        "s000653",
+        "s000654",
+        "s000655"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Share Knowledge can create early timing leverage as well as tech access: the speakers suggest selling a stall to someone waiting on Technology, including a Sling Relay interaction, and allowing access to a valuable prerequisite or tech such as Fleet Logistics when it matters. Negotiate for an actual advantage rather than treating the note as an automatic sale.",
+      "conditions": "Requires a buyer with an immediate timing or technology need; the note excludes unit upgrades and the faction should weigh what it lends.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; ruleset not independently reviewed.",
+      "uncertainty": "Examples include speculative table deals; no fixed price is recommended.",
+      "components": [
+        "promissory:shareknowledge",
+        "technology:sr",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2824.34,
+          "end": 2923.98
+        }
+      ],
+      "segment_ids": [
+        "s000660",
+        "s000661",
+        "s000662",
+        "s000663",
+        "s000664",
+        "s000665",
+        "s000666",
+        "s000667",
+        "s000668",
+        "s000669",
+        "s000670",
+        "s000671",
+        "s000672",
+        "s000673",
+        "s000674",
+        "s000675",
+        "s000676",
+        "s000677",
+        "s000678",
+        "s000679",
+        "s000680"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Radical Advancement can turn an expendable non-unit-upgrade technology into a same-color technology with exactly one more prerequisite at status. This may let the player start with a flexible green tech and replace it with a better fit, or limit the value of opponents withholding a desirable tech by researching toward it first.",
+      "conditions": "Only one same-color step with exactly one additional prerequisite is described; the replacement choice depends on the game state and the faction's priority techs.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; technology prerequisites and timing not independently verified.",
+      "uncertainty": "The speakers disagree on its priority: one initially finds it low value, while the other supplies situational uses and notes it may matter more where the breakthrough is less cooperative.",
+      "components": [
+        "technology:radical",
+        "technology:nm",
+        "technology:bs",
+        "technology:gls",
+        "technology:td",
+        "technology:hm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2945.58,
+          "end": 3038.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3038.5,
+          "end": 3116.12
+        }
+      ],
+      "segment_ids": [
+        "s000686",
+        "s000687",
+        "s000688",
+        "s000689",
+        "s000690",
+        "s000691",
+        "s000692",
+        "s000693",
+        "s000694",
+        "s000695",
+        "s000696",
+        "s000697",
+        "s000698",
+        "s000699",
+        "s000700",
+        "s000701",
+        "s000702",
+        "s000703",
+        "s000704",
+        "s000705",
+        "s000706",
+        "s000707",
+        "s000708",
+        "s000709",
+        "s000710",
+        "s000711",
+        "s000712",
+        "s000713",
+        "s000714",
+        "s000715",
+        "s000716",
+        "s000717",
+        "s000718"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Hydrothermal Mining becomes more attractive after several ocean cards are in play because it gains one trade good per card at status. The discussion treats it as a possible round-two technology rather than an automatic starting pick, since early ocean count may be low and ordinary research often needs unit upgrades such as Carrier II or Dreadnought II.",
+      "conditions": "Value rises with the number of ocean cards in play and available research; a technology specialty can make both faction technologies more accessible in the described line.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; technology and ocean-card timing not independently verified.",
+      "uncertainty": "The five-trade-good ceiling assumes all five cards are in play; the episode notes the player may prefer unit upgrades first.",
+      "components": [
+        "technology:hydrothermal",
+        "ability:oceanbound",
+        "technology:cv2",
+        "technology:dn2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3124.08,
+          "end": 3218.3
+        }
+      ],
+      "segment_ids": [
+        "s000720",
+        "s000721",
+        "s000722",
+        "s000723",
+        "s000724",
+        "s000725",
+        "s000726",
+        "s000727",
+        "s000728",
+        "s000729",
+        "s000730",
+        "s000731",
+        "s000732",
+        "s000733",
+        "s000734",
+        "s000735",
+        "s000736",
+        "s000737",
+        "s000738",
+        "s000739",
+        "s000740",
+        "s000741",
+        "s000742",
+        "s000743",
+        "s000744"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Visionaria Select is the faction's central table-wide research engine: each other player can pay three trade goods and provide a promissory note to research a non-faction, non-unit-upgrade technology, which Deepwrought also gains. The hosts describe paying part of the cost or returning notes to encourage participation, especially when the technology is valuable to Deepwrought.",
+      "conditions": "The offer needs technologies worth buying and players willing to participate; subsidize selectively and consider the order in which players act, since an early key technology may be more valuable than a later one.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; the podcast acknowledges its preferred note handling may differ from the printed component expectation. No rules ruling checked.",
+      "uncertainty": "Table practice is openly contested: the playtester says they often returned notes during testing, while the hosts describe that as a house-style corruption and readers' mileage may vary.",
+      "components": [
+        "technology:gd",
+        "promissory:shareknowledge"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3300.28,
+          "end": 3399.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3413.54,
+          "end": 3508.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3413.54,
+          "end": 3508.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3611.98,
+          "end": 3683.72
+        }
+      ],
+      "segment_ids": [
+        "s000770",
+        "s000771",
+        "s000772",
+        "s000773",
+        "s000774",
+        "s000775",
+        "s000776",
+        "s000777",
+        "s000778",
+        "s000779",
+        "s000780",
+        "s000781",
+        "s000782",
+        "s000783",
+        "s000784",
+        "s000785",
+        "s000786",
+        "s000787",
+        "s000788",
+        "s000789",
+        "s000790",
+        "s000791",
+        "s000792",
+        "s000798",
+        "s000799",
+        "s000800",
+        "s000801",
+        "s000802",
+        "s000803",
+        "s000804",
+        "s000805",
+        "s000806",
+        "s000807",
+        "s000808",
+        "s000809",
+        "s000810",
+        "s000811",
+        "s000812",
+        "s000813",
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000840",
+        "s000841",
+        "s000842",
+        "s000843",
+        "s000844",
+        "s000845",
+        "s000846",
+        "s000847",
+        "s000848",
+        "s000849",
+        "s000850",
+        "s000851",
+        "s000852",
+        "s000853",
+        "s000854",
+        "s000855",
+        "s000856"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Price the breakthrough around both sides' gains and the sequence: the faction can subsidize tech it wants, while opponents may join to avoid falling behind if wealthy factions such as Hacan or Nomad participate. The speakers argue Deepwrought can still come out ahead despite giving the table technology, but advise negotiating rather than handing out money for no return.",
+      "conditions": "Depends on table economy, available technologies, adjacency for ordinary transactions, player order, and whether opponents can exploit the new tech sooner.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; strategy is table-dependent and not a rules validation.",
+      "uncertainty": "The transcript preserves two approaches: generous broad participation and selective subsidy, with the playtester describing a less generous testing style.",
+      "components": [
+        "faction:hacan",
+        "faction:nomad",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3508.24,
+          "end": 3603.98
+        }
+      ],
+      "segment_ids": [
+        "s000817",
+        "s000818",
+        "s000819",
+        "s000820",
+        "s000821",
+        "s000822",
+        "s000823",
+        "s000824",
+        "s000825",
+        "s000826",
+        "s000827",
+        "s000828",
+        "s000829",
+        "s000830",
+        "s000831",
+        "s000832",
+        "s000833",
+        "s000834",
+        "s000835",
+        "s000836",
+        "s000837",
+        "s000838"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "When following Technology, consider resolving the breakthrough before ordinary research if that will provide prerequisites for a needed unit upgrade; starting double-green is given as a case where early access to blue technology and Carrier II can matter. Conversely, the speakers say tech order and a player's place in initiative affect who receives a subsidy.",
+      "conditions": "This is a sequencing choice tied to unit-upgrade goals and the breakthrough's timing; groups may handle the note and subsidy procedure differently.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; exact timing procedure not independently verified.",
+      "uncertainty": "The discussion mixes strategic order with table practice around subsidies; treat it as advice rather than a universal rules sequence.",
+      "components": [
+        "strategy-card:pok7technology",
+        "technology:cv2",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3611.98,
+          "end": 3705.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3775.0,
+          "end": 3805.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5914.06,
+          "end": 5958.5
+        }
+      ],
+      "segment_ids": [
+        "s000840",
+        "s000841",
+        "s000842",
+        "s000843",
+        "s000844",
+        "s000845",
+        "s000846",
+        "s000847",
+        "s000848",
+        "s000849",
+        "s000850",
+        "s000851",
+        "s000852",
+        "s000853",
+        "s000854",
+        "s000855",
+        "s000856",
+        "s000857",
+        "s000858",
+        "s000859",
+        "s000860",
+        "s000885",
+        "s000886",
+        "s000887",
+        "s000888",
+        "s000889",
+        "s000890",
+        "s000891",
+        "s000892",
+        "s000893",
+        "s001386",
+        "s001387",
+        "s001388",
+        "s001389",
+        "s001390",
+        "s001391",
+        "s001392",
+        "s001393",
+        "s001394",
+        "s001395",
+        "s001396"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Look for cross-faction research deals when they genuinely improve the price: the hosts describe Jol-Nar's Research Agreement potentially helping Hacan fund a shared technology, and Nekro potentially exchanging three trade goods for three command tokens through the research wording. They also connect breakthrough timing to the agent and commander economy.",
+      "conditions": "Requires Jol-Nar, Hacan, or Nekro and willing partners; these are specialized examples and the precise component wording is not verified here.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; faction and promissory interactions not independently rules-checked.",
+      "uncertainty": "One speaker calls the Nekro exchange an idea they had just realized; do not generalize it to tables without confirming the relevant text and rules.",
+      "components": [
+        "faction:jolnar",
+        "faction:hacan",
+        "faction:nekro",
+        "leader:deepwroughtagent",
+        "leader:deepwroughtcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3691.96,
+          "end": 3757.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3757.44,
+          "end": 3805.48
+        }
+      ],
+      "segment_ids": [
+        "s000859",
+        "s000860",
+        "s000861",
+        "s000862",
+        "s000863",
+        "s000864",
+        "s000865",
+        "s000866",
+        "s000867",
+        "s000868",
+        "s000869",
+        "s000870",
+        "s000871",
+        "s000872",
+        "s000873",
+        "s000874",
+        "s000875",
+        "s000876",
+        "s000877",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884",
+        "s000885",
+        "s000886",
+        "s000887",
+        "s000888",
+        "s000889",
+        "s000890",
+        "s000891",
+        "s000892",
+        "s000893"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Use Doctor Carrina's research offer to give a player a prerequisite skip and establish an ocean on a non-home planet they control; that can create a new trade partner and help unlock the commander. The hosts recommend choosing a player for the resulting alliance/trade relationship and placing the ocean with future control objectives in mind.",
+      "conditions": "Most valuable early, before the table's technology access makes prerequisite skips less compelling; target placement should reflect the board, neighbors, and objectives.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; leader timing, trading, and coexistence not independently verified.",
+      "uncertainty": "The episode labels some applications odd or untested; no guaranteed alliance or future objective is implied.",
+      "components": [
+        "leader:deepwroughtagent",
+        "leader:deepwroughtcommander",
+        "ability:oceanbound"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3806.22,
+          "end": 3896.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3953.78,
+          "end": 4041.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4042.2,
+          "end": 4088.18
+        }
+      ],
+      "segment_ids": [
+        "s000894",
+        "s000895",
+        "s000896",
+        "s000897",
+        "s000898",
+        "s000899",
+        "s000900",
+        "s000901",
+        "s000902",
+        "s000903",
+        "s000904",
+        "s000905",
+        "s000906",
+        "s000907",
+        "s000908",
+        "s000909",
+        "s000910",
+        "s000933",
+        "s000934",
+        "s000935",
+        "s000936",
+        "s000937",
+        "s000938",
+        "s000939",
+        "s000940",
+        "s000941",
+        "s000942",
+        "s000943",
+        "s000944",
+        "s000945",
+        "s000946",
+        "s000947",
+        "s000948",
+        "s000949",
+        "s000950",
+        "s000951",
+        "s000952",
+        "s000953",
+        "s000954",
+        "s000955",
+        "s000956",
+        "s000957",
+        "s000958",
+        "s000959",
+        "s000960",
+        "s000961",
+        "s000962",
+        "s000963",
+        "s000964",
+        "s000965"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Aello's commander can make research cheaper for other players and turn that demand into commodities or trade goods for Deepwrought. The speakers suggest making the commander broadly available, since its value improves when multiple factions research; they note that Deepwrought cannot use its own discount but can benefit from others' discounts when researching.",
+      "conditions": "Requires an ocean in play to unlock and opponents spending resources on research; the number of discounts and the exact value depend on which factions and alliance effects are present.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; commander interactions not independently rules-checked.",
+      "uncertainty": "The hosts call it strong but not the best commander and discuss the table's tendency to participate as a strategic expectation, not certainty.",
+      "components": [
+        "leader:deepwroughtcommander",
+        "ability:oceanbound",
+        "faction:mahact"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4132.68,
+          "end": 4199.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4235.42,
+          "end": 4308.16
+        }
+      ],
+      "segment_ids": [
+        "s000974",
+        "s000975",
+        "s000976",
+        "s000977",
+        "s000978",
+        "s000979",
+        "s000980",
+        "s000981",
+        "s000982",
+        "s000983",
+        "s000984",
+        "s000985",
+        "s000989",
+        "s000990",
+        "s000991",
+        "s000992",
+        "s000993",
+        "s000994",
+        "s000995",
+        "s000996",
+        "s000997",
+        "s000998",
+        "s000999",
+        "s001000",
+        "s001001",
+        "s001002",
+        "s001003",
+        "s001004",
+        "s001005",
+        "s001006",
+        "s001007",
+        "s001008",
+        "s001009",
+        "s001010"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Ta Zern's hero can remove a non-unit-upgrade technology from the game, so choose a target that hurts a rival's plan more than it harms your own. Discussed denial targets include Antimass when anomaly access matters, X-89 when it protects against ground-combat threats, Gravity Drive when ahead and seeking to slow pursuit, or Fleet Logistics when a likely winner needs it.",
+      "conditions": "Use the hero after assessing your own dependence and who benefits most; denying a technology also affects Deepwrought and can alter objective or movement plans for everyone. Players who purge an owned copy then research another technology, so denial does not simply remove their technology count.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; hero text and technology purge effects not independently rules-checked.",
+      "uncertainty": "These are competing examples from games, not a fixed priority list; X-89 is said to be a less common target because Deepwrought often obtains it.",
+      "components": [
+        "leader:deepwroughthero",
+        "technology:amd",
+        "technology:x89",
+        "technology:gd",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4370.3,
+          "end": 4468.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4470.64,
+          "end": 4535.34
+        }
+      ],
+      "segment_ids": [
+        "s001024",
+        "s001025",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001030",
+        "s001031",
+        "s001032",
+        "s001033",
+        "s001034",
+        "s001035",
+        "s001036",
+        "s001037",
+        "s001038",
+        "s001039",
+        "s001040",
+        "s001041",
+        "s001042",
+        "s001043",
+        "s001044",
+        "s001045",
+        "s001046",
+        "s001047",
+        "s001048",
+        "s001049",
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001053",
+        "s001054",
+        "s001055",
+        "s001056",
+        "s001057"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "The hero can also solve a personal technology gap: the episode recounts using it to get Cruiser II, then combining Sling Relay and Bio-Stims to build ships quickly for a late Mecatol/Fracture-style reach. Other proposed upgrades include Dreadnought II, Destroyer II, or Plasma Scoring when they make a particular objective or attack feasible.",
+      "conditions": "Use only when an upgrade changes what the fleet can actually reach or score; this was a situational late-game line rather than a default use of the hero.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; hero research sequence and objective legality not independently reviewed.",
+      "uncertainty": "The speakers offer several examples and explicitly call the Cruiser II line uncommon.",
+      "components": [
+        "leader:deepwroughthero",
+        "technology:cr2",
+        "technology:sr",
+        "technology:bs",
+        "technology:dn2",
+        "technology:dd2",
+        "technology:ps"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4535.34,
+          "end": 4598.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4617.92,
+          "end": 4658.7
+        }
+      ],
+      "segment_ids": [
+        "s001058",
+        "s001059",
+        "s001060",
+        "s001061",
+        "s001062",
+        "s001063",
+        "s001064",
+        "s001065",
+        "s001066",
+        "s001067",
+        "s001068",
+        "s001069",
+        "s001070",
+        "s001071",
+        "s001072",
+        "s001079",
+        "s001080",
+        "s001081",
+        "s001082",
+        "s001083",
+        "s001084",
+        "s001085",
+        "s001086",
+        "s001087",
+        "s001088"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Plan for scoring separately from coexistence: the speakers say shared presence can count where an objective explicitly allows it, but does not itself give control of Mecatol or the Custodians point and does not enable Imperial's Mecatol bonus. They name Occupy the Seat of the Empire as an exception they believe explicitly permits scoring while coexisting.",
+      "conditions": "Read the actual objective or card text; distinguish objective preparation, shared presence, control, and scoring.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; coexistence scoring has changing rulings and is not independently verified.",
+      "uncertainty": "The hosts use informal shorthand (“sticks”) for Mecatol Rex and explicitly distinguish at least one objective-specific exception.",
+      "components": [
+        "ability:researchteam",
+        "secret-objective:ose",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4724.1,
+          "end": 4760.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4800.0,
+          "end": 4842.28
+        }
+      ],
+      "segment_ids": [
+        "s001101",
+        "s001102",
+        "s001103",
+        "s001104",
+        "s001105",
+        "s001106",
+        "s001107",
+        "s001118",
+        "s001119",
+        "s001120",
+        "s001121",
+        "s001122",
+        "s001123",
+        "s001124"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Rank Leadership as lower or medium early rather than an automatic first pick: the faction starts with only a small fleet, but leadership can help assemble a round-one Custodians attempt. Diplomacy rises when a later pick needs access to the breakthrough; its value falls if Bio-Stims already secures that route.",
+      "conditions": "Choose based on the opening technology, strategy-card order, and whether a round-one Mecatol race is credible.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; strategy-card variants and ruleset not independently reviewed.",
+      "uncertainty": "The two speakers differ slightly, calling Leadership low versus medium priority, and emphasize different openings.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "strategy-card:pok2diplomacy",
+        "technology:bs"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4858.96,
+          "end": 4956.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4963.16,
+          "end": 5058.26
+        }
+      ],
+      "segment_ids": [
+        "s001129",
+        "s001130",
+        "s001131",
+        "s001132",
+        "s001133",
+        "s001134",
+        "s001135",
+        "s001136",
+        "s001137",
+        "s001138",
+        "s001139",
+        "s001140",
+        "s001141",
+        "s001142",
+        "s001143",
+        "s001144",
+        "s001145",
+        "s001146",
+        "s001147",
+        "s001148",
+        "s001149",
+        "s001150",
+        "s001151",
+        "s001152",
+        "s001153",
+        "s001154",
+        "s001155",
+        "s001158",
+        "s001159",
+        "s001160",
+        "s001161",
+        "s001162",
+        "s001163",
+        "s001164",
+        "s001165",
+        "s001166",
+        "s001167",
+        "s001168",
+        "s001169",
+        "s001170",
+        "s001171",
+        "s001172",
+        "s001173",
+        "s001174",
+        "s001175",
+        "s001176",
+        "s001177",
+        "s001178",
+        "s001179",
+        "s001180",
+        "s001181"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Politics is a strong flexible pick when round-one Custodians is uncertain: it preserves options to take Imperial early in round two, supports action-card access for the breakthrough, and can remain useful even if another player unexpectedly wins the first Mecatol race. The speakers prefer that over spending too much of round one on a race that may not happen.",
+      "conditions": "Depends on assessing opponents' reach and the likely round-one Mecatol race; this is one speaker's strong strategic preference, not a universal ranking.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; strategy-card and objective timing not independently checked.",
+      "uncertainty": "The guide acknowledges the prediction can be hard, especially when a late player takes Diplomacy; alternative openings remain viable.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5072.58,
+          "end": 5148.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5149.26,
+          "end": 5219.86
+        }
+      ],
+      "segment_ids": [
+        "s001185",
+        "s001186",
+        "s001187",
+        "s001188",
+        "s001189",
+        "s001190",
+        "s001191",
+        "s001192",
+        "s001193",
+        "s001194",
+        "s001195",
+        "s001196",
+        "s001197",
+        "s001198",
+        "s001199",
+        "s001200",
+        "s001201",
+        "s001202",
+        "s001203",
+        "s001204",
+        "s001205",
+        "s001206",
+        "s001207",
+        "s001208",
+        "s001209",
+        "s001210",
+        "s001211",
+        "s001212",
+        "s001213",
+        "s001214",
+        "s001215",
+        "s001216",
+        "s001217",
+        "s001218",
+        "s001219"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Construction is usually medium-to-low priority because the faction's strong home production and mech production reduce its need for extra docks; it can still help shore up home defense or meet a structure objective. Sling Relay can make Construction especially redundant by supplying a stall and production option.",
+      "conditions": "Reconsider when the objective rewards structures, the home system needs defense, or the chosen tech path lacks production flexibility.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; no rules or objective-pool review performed.",
+      "uncertainty": "The speakers agree on middling priority but include a conditional case where Construction helps.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:sr",
+        "unit:deepwrought_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5253.3,
+          "end": 5339.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5339.8,
+          "end": 5396.84
+        }
+      ],
+      "segment_ids": [
+        "s001227",
+        "s001228",
+        "s001229",
+        "s001230",
+        "s001231",
+        "s001232",
+        "s001233",
+        "s001234",
+        "s001235",
+        "s001236",
+        "s001237",
+        "s001238",
+        "s001239",
+        "s001240",
+        "s001241",
+        "s001242",
+        "s001243",
+        "s001244",
+        "s001245",
+        "s001246",
+        "s001247",
+        "s001248",
+        "s001249",
+        "s001250",
+        "s001251",
+        "s001252",
+        "s001253",
+        "s001254",
+        "s001255",
+        "s001256",
+        "s001257",
+        "s001258",
+        "s001259",
+        "s001260",
+        "s001261",
+        "s001262"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Trade is consistently valuable for money and for building adjacency that makes repeated tech deals practical; it can also help the table participate in the breakthrough. The hosts warn that a promissory note can change hands at a distance but the paired transaction may need adjacency or rely on non-binding table practice.",
+      "conditions": "Especially useful early, before the faction's economy is already saturated; actual trade access and the group's treatment of non-binding deals matter.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; transaction rules not independently verified.",
+      "uncertainty": "The speaker's characterization of Trade as always good is a strong preference; the transcript itself qualifies transaction logistics and table norms.",
+      "components": [
+        "strategy-card:pok5trade",
+        "technology:gd",
+        "promissory:shareknowledge"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5397.66,
+          "end": 5485.7
+        }
+      ],
+      "segment_ids": [
+        "s001263",
+        "s001264",
+        "s001265",
+        "s001266",
+        "s001267",
+        "s001268",
+        "s001269",
+        "s001270",
+        "s001271",
+        "s001272",
+        "s001273",
+        "s001274",
+        "s001275",
+        "s001276",
+        "s001277",
+        "s001278",
+        "s001279",
+        "s001280",
+        "s001281",
+        "s001282",
+        "s001283",
+        "s001284"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Warfare is a lower-priority pick or follow when the starting fleet can already take useful systems and coexistence adds planets; it rises if the plan specifically needs more early reach or a Custodians line. Sling Relay may cover some of the production/stall need, but the starting three infantry and slice shape still matter.",
+      "conditions": "Check the map, starting plastic, and whether a late Diplomacy follow is dependable before committing to a Warfare-dependent race.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; strategy card availability and unit counts are podcast descriptions, not rechecked.",
+      "uncertainty": "The speakers describe the round-one plan as a slow roll and do not present Warfare as useless.",
+      "components": [
+        "strategy-card:pok6warfare",
+        "technology:sr",
+        "ability:researchteam"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5487.46,
+          "end": 5548.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5548.48,
+          "end": 5596.6
+        }
+      ],
+      "segment_ids": [
+        "s001286",
+        "s001287",
+        "s001288",
+        "s001289",
+        "s001290",
+        "s001291",
+        "s001292",
+        "s001293",
+        "s001294",
+        "s001295",
+        "s001296",
+        "s001297",
+        "s001298",
+        "s001299",
+        "s001300",
+        "s001301",
+        "s001302",
+        "s001303",
+        "s001304",
+        "s001305",
+        "s001306",
+        "s001307",
+        "s001308",
+        "s001309",
+        "s001310"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Technology and Trade can serve similar strategic roles early: Technology gives direct timing control and access to unit upgrades, while Trade can finance participation in the breakthrough and generate comparable economic value. If taking Technology, the speakers favor resolving the breakthrough first when it unlocks the commander or prerequisites, then coordinating the agent and commodity exchange before the primary resolves.",
+      "conditions": "The better pick depends on player order, needed unit upgrades, available trading partners, and how the breakthrough is administered at the table.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; strategy-card, commander, and transaction sequencing not independently verified.",
+      "uncertainty": "The comparison is explicitly round-one focused and the speakers acknowledge the cards do not produce identical technology counts or timing control.",
+      "components": [
+        "strategy-card:pok7technology",
+        "strategy-card:pok5trade",
+        "leader:deepwroughtagent",
+        "leader:deepwroughtcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5644.38,
+          "end": 5718.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5714.0,
+          "end": 5756.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 5914.06,
+          "end": 6009.0
+        }
+      ],
+      "segment_ids": [
+        "s001323",
+        "s001324",
+        "s001325",
+        "s001326",
+        "s001327",
+        "s001328",
+        "s001329",
+        "s001330",
+        "s001331",
+        "s001332",
+        "s001333",
+        "s001334",
+        "s001335",
+        "s001336",
+        "s001337",
+        "s001338",
+        "s001339",
+        "s001340",
+        "s001341",
+        "s001342",
+        "s001343",
+        "s001344",
+        "s001345",
+        "s001346",
+        "s001347",
+        "s001348",
+        "s001349",
+        "s001350",
+        "s001351",
+        "s001352",
+        "s001353",
+        "s001386",
+        "s001387",
+        "s001388",
+        "s001389",
+        "s001390",
+        "s001391",
+        "s001392",
+        "s001393",
+        "s001394",
+        "s001395",
+        "s001396",
+        "s001397",
+        "s001398",
+        "s001399",
+        "s001400",
+        "s001401",
+        "s001402",
+        "s001403",
+        "s001404",
+        "s001405",
+        "s001406",
+        "s001407",
+        "s001408"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Prioritize useful unit upgrades alongside the unusually broad technology menu. The speakers highlight Carrier II and Dreadnought II, and suggest Fighter II plus Carrier II and Dreadnought II as a plausible upgrade package; Fighter II with Dock II can support a fighter-heavy economy. Mechs and X-89 reduce the pressure to rush Infantry II in their view.",
+      "conditions": "Choose upgrades for the fleet and objectives actually available; all tech may be accessible through the faction engine, but research actions remain limited and need to cover unit upgrades.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; upgrades and objective value not independently checked.",
+      "uncertainty": "The episode gives multiple possible paths and says the right package depends on the game; the claim about not needing Infantry II is their strategic judgment.",
+      "components": [
+        "technology:cv2",
+        "technology:dn2",
+        "technology:ff2",
+        "technology:sd2",
+        "technology:x89",
+        "unit:deepwrought_mech"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 6102.08,
+          "end": 6198.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 6243.34,
+          "end": 6308.7
+        }
+      ],
+      "segment_ids": [
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001436",
+        "s001437",
+        "s001438",
+        "s001439",
+        "s001440",
+        "s001441",
+        "s001442",
+        "s001443",
+        "s001444",
+        "s001445",
+        "s001446",
+        "s001447",
+        "s001448",
+        "s001449",
+        "s001450",
+        "s001451",
+        "s001452",
+        "s001453",
+        "s001454",
+        "s001455",
+        "s001456",
+        "s001457",
+        "s001471",
+        "s001472",
+        "s001473",
+        "s001474",
+        "s001475",
+        "s001476",
+        "s001477",
+        "s001478",
+        "s001479",
+        "s001480",
+        "s001481",
+        "s001482",
+        "s001483",
+        "s001484"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "The faction is strongest at building and maintaining an early lead, with a large economy and technology tempo, but the speakers identify a weaker catch-up/win-slay finish when another player races ahead. Do not assume the flagship or broad tech access automatically solves the last-mile attack; if leading, account for opponents learning how to coordinate a Deepwrought win-slay.",
+      "conditions": "Applies to the hosts' early experience with the new faction; map, table familiarity, and game length can change how effective a catch-up is.",
+      "compatibility": "SCPT beginner guide published 2026-02-25; opinionated early meta assessment, not current-rules verification.",
+      "uncertainty": "The speakers explicitly say the faction and counterplay are new and predict their assessment may change as tables learn the faction.",
+      "components": [
+        "unit:deepwrought_flagship",
+        "technology:gd",
+        "technology:fl"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 6361.42,
+          "end": 6449.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 6449.26,
+          "end": 6503.46
+        }
+      ],
+      "segment_ids": [
+        "s001495",
+        "s001496",
+        "s001497",
+        "s001498",
+        "s001499",
+        "s001500",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505",
+        "s001506",
+        "s001507",
+        "s001508",
+        "s001509",
+        "s001510",
+        "s001511",
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001516",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524",
+        "s001525",
+        "s001526",
+        "s001527"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ability:oceanbound",
+      "to": "technology:hydrothermal",
+      "relation": "synergizes-with",
+      "conditions": "As coexistence places ocean cards in play, Hydrothermal Mining's status-phase income grows; this matters most once several cards are active.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3124.08,
+          "end": 3218.3
+        }
+      ]
+    },
+    {
+      "from": "promissory:shareknowledge",
+      "to": "technology:gd",
+      "relation": "enables",
+      "conditions": "The note can temporarily lend a non-unit-upgrade technology such as Gravity Drive when a buyer needs it for a timing or movement plan; sell only when the exchange benefits the faction.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2824.34,
+          "end": 2923.98
+        }
+      ]
+    },
+    {
+      "from": "leader:deepwroughtagent",
+      "to": "ability:oceanbound",
+      "relation": "enables",
+      "conditions": "The agent's placement can begin a coexistence and add an ocean card, supporting the commander's stated unlock condition; choose placement for useful neighbors/objectives.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 3806.22,
+          "end": 3896.62
+        }
+      ]
+    },
+    {
+      "from": "unit:deepwrought_mech",
+      "to": "technology:ie",
+      "relation": "synergizes-with",
+      "conditions": "The speakers describe using Integrated Economy and the mech's production to build cardboard and then produce additional ships near the front.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2510.36,
+          "end": 2602.78
+        }
+      ]
+    },
+    {
+      "from": "leader:deepwroughthero",
+      "to": "technology:fl",
+      "relation": "counters",
+      "conditions": "When another player is close to winning and Deepwrought does not need Fleet Logistics for its own plan, the hero can purge it as a denial choice; weigh the cost to yourself.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 4470.64,
+          "end": 4535.34
+        }
+      ]
+    },
+    {
+      "from": "unit:deepwrought_flagship",
+      "to": "ability:researchteam",
+      "relation": "synergizes-with",
+      "conditions": "A network of coexistence positions can extend the flagship's movement and create staging routes; the route requires setup and does not guarantee passage to every target.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-445-df4ef137cb74",
+          "start": 2400.0,
+          "end": 2492.32
+        }
+      ]
+    }
+  ]
+}

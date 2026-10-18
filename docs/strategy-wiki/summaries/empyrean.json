@@ -1,0 +1,1145 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "empyrean",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat Empyrean as a quietly accumulating economy faction: four commodities, Dark Pact, frontier returns, command-token rebates and useful bargaining add up across small transactions.",
+      "conditions": "Most useful with neighbors willing to trade and when frontier tokens remain available; income varies with table behavior and draw luck.",
+      "compatibility": "SCPT 476, published 2026-09-30; Thunder's Edge-era discussion, but exact rules compatibility was not reviewed.",
+      "uncertainty": "The hosts describe an overall strong economy as their evaluation, not a measured guarantee; ASR only and speakers unidentified.",
+      "components": [
+        "faction:empyrean",
+        "promissory:dark_pact",
+        "leader:empyreanagent",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s000562",
+        "s000577",
+        "s001567",
+        "s001592"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2052.48,
+          "end": 2133.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5773.36,
+          "end": 5855.6
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "The starting force is a functional two-carrier, destroyer, fighter, infantry package. The hosts regard it as an all-purpose baseline, with the destroyer immediately useful for the faction's frontier plan.",
+      "conditions": "Applies to the starting kit as described in the guide; it does not remove the need to plan future production and carrying capacity.",
+      "compatibility": "SCPT 476's stated Thunder's Edge-era faction kit; not independently checked against errata.",
+      "uncertainty": "ASR transcript; the starting list is clear, but the positive evaluation is opinion.",
+      "components": [
+        "faction:empyrean",
+        "unit:carrier",
+        "unit:fighter"
+      ],
+      "segment_ids": [
+        "s000419",
+        "s000440"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 1580.78,
+          "end": 1630.62
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "The three-resource, four-influence home planet creates a timing tradeoff: influence is plentiful, but early tech can be hard to afford if Empyrean explores without first arranging a neighbor, trade good, or other payment.",
+      "conditions": "Especially relevant in round one when the tech secondary is at risk of resolving before Empyrean has money; four influence can also support a round-one Custodians attempt if movement and timing align.",
+      "compatibility": "SCPT 476; rules and objective timing not independently checked.",
+      "uncertainty": "The hosts call the home value awkward and contextual; Custodians is presented as a possible line, not a default.",
+      "components": [
+        "faction:empyrean",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s000465",
+        "s000481",
+        "s000482",
+        "s000488"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 1732.06,
+          "end": 1782.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 1784.02,
+          "end": 1810.98
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Solve the low home production early. Empyrean wants carriers and fighters, so prioritize a forward dock on a high-resource system; Sling Relay at home alone is explicitly insufficient to fix the production ceiling.",
+      "conditions": "Draft for a suitable resource-rich forward staging system and plan to follow Construction when needed. If the best dock is less forward, Aetherstream and Void Tethers may reduce the movement or exposure problem.",
+      "compatibility": "SCPT 476 with Thunder's Edge map and component assumptions; not rules-verified.",
+      "uncertainty": "The speakers say they do not have a known solution when the slice has no good forward-dock site; do not assume a Dreadnought build solves it.",
+      "components": [
+        "technology:sr",
+        "technology:as",
+        "unit:carrier",
+        "unit:fighter"
+      ],
+      "segment_ids": [
+        "s001690",
+        "s001701",
+        "s001714",
+        "s001723"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6187.22,
+          "end": 6218.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6275.18,
+          "end": 6318.04
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Avoid the glass-cannon failure mode: do not let exploratory destroyers and scattered plastic replace a plan for production, fleet capacity, and a timed late-game push. Empyrean is presented as a patient faction that can wait for a favorable Styx fight and then convert preserved material into points.",
+      "conditions": "The guide favors this posture when no immediate score demands a race and when opponents can outfight Empyrean early; adapt if a public objective or map creates a real early window.",
+      "compatibility": "The hosts contrast POK assumptions with the current guide's post-slay and Thunder's Edge environment; game-state expectations vary by meta.",
+      "uncertainty": "This is strategic opinion and includes tournament anecdotes; no universal optimal timing is established.",
+      "components": [
+        "faction:empyrean",
+        "unit:carrier",
+        "unit:empyrean_mech",
+        "technology:lwd"
+      ],
+      "segment_ids": [
+        "s000182",
+        "s000192",
+        "s000744",
+        "s000747"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 712.8,
+          "end": 758.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2739.36,
+          "end": 2749.46
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Use Acamar to make a measured frontier cadence efficient: the agent can grant a command token after a player moves into a planetless system, while Dark Energy Tap (DET) explores a frontier token after an activation. Ideally, reserve tokens for the agent rather than rush every token early.",
+      "conditions": "The guide's ideal is roughly one frontier exploration per round in the early game, using the agent repeatedly; increase pace when opponents compete for tokens or an objective makes empties urgent.",
+      "compatibility": "SCPT 476; timing and rules text are quoted from the transcript and not independently checked.",
+      "uncertainty": "Frontier rewards are random; the speakers call some draws a wash and warn that poor early draws can slow the start.",
+      "components": [
+        "leader:empyreanagent",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s001357",
+        "s001362",
+        "s001367",
+        "s001376",
+        "s000440",
+        "s000440",
+        "s001346",
+        "s001346"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4994.34,
+          "end": 5018.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5037.6,
+          "end": 5068.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 1625.28,
+          "end": 1630.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4950.68,
+          "end": 4956.08
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Leave frontier destroyers in place after exploring when practical. They gum routes and preserve access for later hero or tether play; use newly built destroyers or Fighter II for later explorations instead of repeatedly moving the committed ship back.",
+      "conditions": "Works when the destroyer is not needed for defense, scoring, or a more important route; opponents can still negotiate passage through Aether Passage.",
+      "compatibility": "SCPT 476; the guide specifically discusses the Thunder's Edge fracture and hero timing.",
+      "uncertainty": "Do not treat every empty system as worth occupying; the guide warns against overexploring and exhausting the agent's future value.",
+      "components": [
+        "technology:det",
+        "leader:empyreanagent",
+        "technology:vw",
+        "unit:fighter2",
+        "ability:aetherpassage"
+      ],
+      "segment_ids": [
+        "s000611",
+        "s000613",
+        "s002297",
+        "s002314"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2261.52,
+          "end": 2274.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8202.98,
+          "end": 8258.24
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Treat Aether Passage as a negotiable route-control tool. A destroyer left in a system can let a chosen player pass while denying others, and the hosts recommend making that permission explicit as a small deal rather than assuming the ability will be noticed.",
+      "conditions": "After another player activates, Empyrean may allow that player's ships to move through systems containing Empyrean ships. Use selectively, especially when keeping a destroyer in place supports later plans.",
+      "compatibility": "SCPT 476; card wording is ASR-derived and has not been checked against current rules.",
+      "uncertainty": "The guide presents both enabling movement and restricting it as useful diplomacy; it is not a blanket promise to every neighbor.",
+      "components": [
+        "ability:aetherpassage",
+        "promissory:dark_pact"
+      ],
+      "segment_ids": [
+        "s000595",
+        "s000599",
+        "s000606",
+        "s000613"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2203.08,
+          "end": 2226.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2240.62,
+          "end": 2274.98
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Use Void Tether flexibly to alter adjacency at the moment of activation: the discussion gives examples of blocking a space dock's reach, denying access to Mecatol or a control objective, protecting a planet, and avoiding pillage or a neighbor relationship.",
+      "conditions": "Choose the border based on current scoring, threats, and how opponents might enter. The speakers advise moving the tether as activations occur instead of leaving it unused or permanently committed to the Fracture.",
+      "compatibility": "Thunder's Edge Void Tether interpretation in SCPT 476; community interpretation is unsettled, especially with Ghost movement and tile swaps.",
+      "uncertainty": "No matching Void Tether component ID is present in component-reference.json, so this claim intentionally has no component ID. The speakers themselves flag unresolved edge cases and advise agreeing on Ghost interactions before play.",
+      "components": [],
+      "segment_ids": [
+        "s001159",
+        "s001165",
+        "s001189",
+        "s001208",
+        "s001169",
+        "s001178"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4165.82,
+          "end": 4198.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4317.44,
+          "end": 4373.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4241.32,
+          "end": 4277.74
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "A Fracture blockade can reserve Styx until Empyrean chooses to enter, but it is a high-threat political play, not the default use of every tether. The speakers disagree on its timing and risk: a quick lock may fail to stop early entrants and may invite table-wide hostility.",
+      "conditions": "Consider it only if Empyrean can establish both sides early, the opponent roster lacks bypasses such as the cited hero or Ghost routes, and reserving Styx is more valuable than using tethers elsewhere. Otherwise wait, observe the fight, and strike after opponents spend ships.",
+      "compatibility": "Thunder's Edge map/ability environment as discussed in SCPT 476; specific bypass interactions are not independently rules-checked.",
+      "uncertainty": "Conflicting advice is preserved: one host advocates a blockade; the other doubts it can be assembled in time and prefers opportunistic timing. ASR includes uncertain faction-name spellings.",
+      "components": [],
+      "segment_ids": [
+        "s001078",
+        "s001089",
+        "s001114",
+        "s001131",
+        "s001132",
+        "s001136"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3871.92,
+          "end": 3928.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3985.64,
+          "end": 4048.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4048.78,
+          "end": 4076.14
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "The hosts describe a second Fracture tether tactic, the 'baby cage': close a non-Styx relic-planet route after an opponent commits ships, potentially trapping them until Empyrean reopens it. They frame this as a deterrent and bargaining position, not an automatic move to make.",
+      "conditions": "Only worthwhile if Empyrean has the activation access and can tolerate the diplomatic cost; decide whether releasing the opponent, extracting a deal, or keeping them trapped advances Empyrean's own race for points.",
+      "compatibility": "SCPT 476 Thunder's Edge interpretation; the term is the hosts' informal nickname.",
+      "uncertainty": "The source says an opponent's commitment can be risky but also notes Empyrean may later want to move the tether; the lock is conditional, not guaranteed permanent control.",
+      "components": [],
+      "segment_ids": [
+        "s001218",
+        "s001225",
+        "s001260",
+        "s001272"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4412.18,
+          "end": 4446.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4551.71,
+          "end": 4611.87
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Place Watcher mechs where they can threaten action-card cancellation, ideally near multiple players; the guide especially values them as protection against a decisive card such as Parley and as renewable leverage for deals or selective cancellation.",
+      "conditions": "A Watcher must be in or adjacent to the relevant player's units to cancel that player's action card, and removing the mech has a real positional cost. Balance coverage against using mechs to take Styx or defend home.",
+      "compatibility": "SCPT 476 discussion of Empyrean's mech in the Thunder's Edge game; exact card timing is not separately verified.",
+      "uncertainty": "The hosts differ in superlative ranking but agree on the mech's practical utility. They warn that securing Styx can pull mechs away from broad coverage.",
+      "components": [
+        "unit:empyrean_mech",
+        "action-card:parley"
+      ],
+      "segment_ids": [
+        "s000689",
+        "s000697",
+        "s000710",
+        "s000712",
+        "s000742",
+        "s000743"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2529.64,
+          "end": 2557.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2616.44,
+          "end": 2632.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2731.18,
+          "end": 2737.94
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "The Dynamo is a defensive HP tool that can repair a unit after sustain damage for two influence when a unit in its or an adjacent system sustains. The hosts value it most for protecting a home system or reinforcing a fight when it can keep a flagship or Dreadnought in range.",
+      "conditions": "Its one movement makes getting it to distant Styx difficult; the speakers suggest adjacency can be enough and that it is more attractive when Empyrean has spare money and time to build it.",
+      "compatibility": "SCPT 476 quotes the flagship ability and contrasts POK defense with the current Fracture/ Sticks tempo; rules not independently checked.",
+      "uncertainty": "Its value is situational and the hosts say it is less central than before. Direct Hit is noted as a counter, with a separate faction tool mentioned but not clearly named in the transcript.",
+      "components": [
+        "unit:empyrean_flagship",
+        "unit:dreadnought"
+      ],
+      "segment_ids": [
+        "s000622",
+        "s000639",
+        "s000671",
+        "s000679"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2309.06,
+          "end": 2359.36
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2471.84,
+          "end": 2509.4
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Dark Pact is an unusually easy diplomatic offer: give it to a likely neighbor and let both players profit when they exchange commodities, building a soft early relationship and a reason not to attack Empyrean.",
+      "conditions": "Choose a partner whose commodity capacity or faction effects can make the exchange repeatable; the guide specifically says this can solve Empyrean's round-one tech-payment timing when the partner waits to trigger Technology.",
+      "compatibility": "SCPT 476; Dark Pact wording and timing are transcript-derived, not current-rules verified.",
+      "uncertainty": "The hosts reject hard extraction as the default and prefer reciprocal or nebulous deals; the other player's willingness and commodity supply matter.",
+      "components": [
+        "promissory:dark_pact",
+        "strategy-card:pok7technology"
+      ],
+      "segment_ids": [
+        "s000808",
+        "s000830",
+        "s000837",
+        "s000844",
+        "s000769",
+        "s000788"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2951.66,
+          "end": 3007.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3034.86,
+          "end": 3070.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2817.8,
+          "end": 2897.08
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Blood Pact is mainly a low-profile stall and occasional bargaining chip; its four extra votes matter only when both players choose the same agenda outcome. The speakers recommend reminding a neighbor it exists when they need a stall, not counting on its votes to control an agenda.",
+      "conditions": "Potentially useful later or for an agenda timing problem; the guide mentions a possible trade-good price and a secret-objective interaction as situational examples.",
+      "compatibility": "SCPT 476; agenda and promissory-note rules not independently verified.",
+      "uncertainty": "The hosts repeatedly call the vote count modest and say it is often forgotten. Do not overstate it as a strong voting engine.",
+      "components": [
+        "promissory:blood_pact"
+      ],
+      "segment_ids": [
+        "s000847",
+        "s000863"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3076.9,
+          "end": 3143.94
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Treat Aetherstream as a map-dependent movement supplement, not an automatic faction technology. Prioritize it when an anomaly gives a useful route to Mecatol or a needed score; otherwise the speakers prefer more broadly useful movement and flexibility such as Light/Wave Deflector or Fleet Logistics.",
+      "conditions": "Reassess after seeing slice geometry, anomalies near Mecatol, Fracture access, and scoring requirements. Aetherstream can also help reach a remote scoring position or support a specific frontier plan.",
+      "compatibility": "SCPT 476 explicitly says Thunder's Edge reduced the frequency of the POK-era use case; exact rules and map layouts unverified.",
+      "uncertainty": "The speakers acknowledge exceptions and personal games where Aetherstream was decisive; the recommendation is a broad prior, not a ban.",
+      "components": [
+        "technology:as",
+        "technology:lwd",
+        "technology:fl"
+      ],
+      "segment_ids": [
+        "s000247",
+        "s000258",
+        "s000909",
+        "s000926"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 922.1,
+          "end": 957.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3301.14,
+          "end": 3353.92
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Voidwatch is not a reliable way to collect valuable promissory notes: opponents can discard or protect the notes they care about, and a destroyer committed to enforcement may be worth more elsewhere. The source also notes tension between threatening movement and Aether Passage's invitation to negotiate passage.",
+      "conditions": "The guide favors keeping the destroyer for frontier access and diplomacy unless a particular opponent's note is worth the risk and the timing is favorable.",
+      "compatibility": "SCPT 476 with a critique of this faction technology; not a rules legality review.",
+      "uncertainty": "The speakers criticize its general payoff but discuss hypothetical edge cases. There is no transcript-backed guaranteed return.",
+      "components": [
+        "technology:vw",
+        "ability:aetherpassage"
+      ],
+      "segment_ids": [
+        "s000954",
+        "s000971",
+        "s000982",
+        "s000997",
+        "s000997",
+        "s000998"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3400.28,
+          "end": 3447.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3485.08,
+          "end": 3566.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3560.8,
+          "end": 3572.3
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "The green-blue Void Tether breakthrough is valued for both its adjacency control and its color synergy: the speakers say it naturally supports the two-and-two technology objective and Carrier II plus Fighter II, while making Styx access and flexible disruption more practical.",
+      "conditions": "They recommend obtaining it, but distinguish it from a breakthrough so essential that Empyrean cannot function without it. For newer players, their simpler fallback is to use tethers for Fracture access and home defense.",
+      "compatibility": "SCPT 476, Thunder's Edge era; Void Tether's exact component ID is absent from component-reference.json, and fine-print interactions remain unsettled.",
+      "uncertainty": "The hosts explicitly say Ghost interactions and tile-swap behavior lack a definitive ruling in their discussion; do not infer current legal adjacency from this guide.",
+      "components": [
+        "unit:carrier2",
+        "unit:fighter2"
+      ],
+      "segment_ids": [
+        "s001291",
+        "s001304",
+        "s001311",
+        "s001315"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4691.55,
+          "end": 4768.83
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4830.0,
+          "end": 4858.06
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "A broad tech path is Gravity Drive, Carrier II, X-89 when ground defense warrants it, and Light/Wave Deflector or Fleet Logistics for late movement and action flexibility. The hosts ultimately expand the short list to five, while treating X-89 as conditional rather than inevitable.",
+      "conditions": "Movement and carrying capacity underpin Empyrean's ability to contest objectives and choose a late fight. Prefer Light/Wave for surprise Fracture entry or route access; Fleet Logistics rises when a two-action closer or X-89-on-demand via Enigmatic Device is realistic.",
+      "compatibility": "SCPT 476 tech discussion assumes Thunder's Edge and its Fracture, with core unit-upgrade objectives; not current rules checked.",
+      "uncertainty": "The hosts disagree on the four/five-tech shortlist and explicitly say some games do not need X-89. Component reference distinguishes X-89 variants; the source does not specify which variant.",
+      "components": [
+        "technology:gd",
+        "unit:carrier2",
+        "technology:x89_base",
+        "technology:lwd",
+        "technology:fl"
+      ],
+      "segment_ids": [
+        "s002191",
+        "s002203",
+        "s002220",
+        "s002232",
+        "s002271",
+        "s002286"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7836.8,
+          "end": 7903.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7972.66,
+          "end": 8006.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8124.76,
+          "end": 8160.88
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "The guide values Fighter II because independently moving fighters can collect frontier tokens and reduce carrier transport pressure while leaving established destroyers in place. It ranks Fighter II ahead of Sling Relay and Bio-Stims among optional technologies; this is not an increase to a carrier's printed capacity.",
+      "conditions": "Especially attractive after Void Tether unlocks the blue-green path and when the hero can refresh frontier tokens; it also helps when a strong economy produces more plastic than the starting carriers can move.",
+      "compatibility": "SCPT 476, Thunder's Edge tech and hero discussion; current upgrade prerequisites not independently verified.",
+      "uncertainty": "The hosts call Fighter II especially useful, but still frame the amount of frontier exploration as something to moderate.",
+      "components": [
+        "unit:fighter2",
+        "technology:det",
+        "leader:empyreanhero"
+      ],
+      "segment_ids": [
+        "s002303",
+        "s002311",
+        "s002364",
+        "s002373",
+        "s002387",
+        "s002394"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8222.22,
+          "end": 8252.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8378.2,
+          "end": 8409.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8431.44,
+          "end": 8448.64
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Sling Relay and Bio-Stims are useful supplements, not core requirements. Sling can add production and repeatedly deploy fresh explorers while old destroyers stay on tokens; Bio-Stims can refresh an exhausted technology and may pay back when used as a prerequisite route to X-89.",
+      "conditions": "Take them when additional technology, stalls, production or repeated frontier use matters; the hosts put Fighter II ahead of both and say the short core path is sufficient.",
+      "compatibility": "SCPT 476; tech-prerequisite and refresh details follow the guide's edition assumptions and were not checked.",
+      "uncertainty": "Their exact ranking is informal; Bio-Stims' value depends on what can be exhausted and on the game lasting long enough to recoup it.",
+      "components": [
+        "technology:sr",
+        "technology:bs",
+        "technology:x89_base",
+        "unit:fighter2"
+      ],
+      "segment_ids": [
+        "s002289",
+        "s002293",
+        "s002336",
+        "s002354",
+        "s002357",
+        "s002368",
+        "s002305",
+        "s002307"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8165.82,
+          "end": 8191.44
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8302.18,
+          "end": 8358.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8365.66,
+          "end": 8389.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8231.0,
+          "end": 8243.42
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Draft the slice for a forward production site and enough resources before optimizing influence: Empyrean can supplement influence from its home system, agent, frontier rewards and trade goods, while a consolidated high-production system saves command tokens otherwise spent activating separate docks.",
+      "conditions": "The source's priority order is Mecatol access, planet-control qualification, production, Fracture, then spend capacity. It names several high-production double-planet systems as examples and prefers resource-rich planets for the forward dock.",
+      "compatibility": "SCPT 476 map-drafting advice, dependent on slice distribution and the Thunder's Edge map.",
+      "uncertainty": "The hosts give a rough ideal of five slice influence alongside four at home, but say they can survive on less; treat their order as a preference, not a universal formula.",
+      "components": [
+        "faction:empyrean",
+        "leader:empyreanagent"
+      ],
+      "segment_ids": [
+        "s001774",
+        "s001796",
+        "s001821",
+        "s001833"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6452.6,
+          "end": 6520.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6627.18,
+          "end": 6663.84
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Among round-one priorities, ensure Technology resolves when Empyrean can pay; Trade is the most generally useful pick, with Politics attractive for action-card options and a possible Custodians attempt. Construction is a strong late pick when it secures the needed forward dock; ",
+      "conditions": "Use Dark Pact to coordinate a neighbor's commodity refresh and delay Technology until Empyrean can follow. Construction becomes more urgent with a strong dock site; Politics is less attractive when faster Custodians factions are present.",
+      "compatibility": "SCPT 476; the hosts explicitly say the card order depends on the pool, speaker, scoring objectives, and timing. Not a rules recommendation.",
+      "uncertainty": "Rankings are qualified and not fully consistent: the source says Trade is best, Politics often second, Tech is valuable, and Construction can outrank Diplomacy or Warfare in particular pools.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok7technology",
+        "strategy-card:pok3politics",
+        "strategy-card:pok4construction",
+        "strategy-card:pok1leadership",
+        "strategy-card:pok2diplomacy"
+      ],
+      "segment_ids": [
+        "s001838",
+        "s001847",
+        "s001898",
+        "s001914",
+        "s001942",
+        "s001965",
+        "s002025",
+        "s002037",
+        "s001870",
+        "s001889"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6679.16,
+          "end": 6713.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6914.74,
+          "end": 6957.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7022.54,
+          "end": 7077.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7264.8,
+          "end": 7320.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6814.98,
+          "end": 6894.82
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Leadership is usually mid-to-low priority because Empyrean already starts with tokens and Acamar can add one; avoid turning extra tokens into a reason to overbuild destroyers or exhaust frontier rewards too early. Raise its value if an empties objective or another concrete control task demands early exploration.",
+      "conditions": "Keep future agent uses available for the early/mid rounds, but do not hoard if opponents are contesting tokens or the objective makes them urgent.",
+      "compatibility": "SCPT 476 describes the early-game cadence in a Thunder's Edge environment.",
+      "uncertainty": "The speakers call Leadership difficult to evaluate because exploration can create a token feedback loop; they preserve both the risk and the possible payoff.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "leader:empyreanagent",
+        "technology:det"
+      ],
+      "segment_ids": [
+        "s001849",
+        "s001858",
+        "s001861",
+        "s001869"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6714.88,
+          "end": 6757.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6770.0,
+          "end": 6813.98
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Construction can be a better practical pick than Warfare when Empyrean needs production rather than an immediate expansion burst; do not assume taking Warfare will deliver a point, since it gives the table tempo and depends on a specific scoring or Custodians line.",
+      "conditions": "Take Warfare when its primary or secondary has a concrete scoring purpose, such as a reachable round-one Custodians attempt or an objective; otherwise the hosts prefer solving the forward-dock problem and accepting slightly slower point tempo.",
+      "compatibility": "SCPT 476; strategy-card ranking is contextual to the round-one pool and speaker order.",
+      "uncertainty": "The source allows exceptions where Warfare is the only good option. The exact cited objective names are ASR-spelled and should not be treated as current objective text.",
+      "components": [
+        "strategy-card:pok4construction",
+        "strategy-card:pok6warfare",
+        "strategy-card:pok8imperial"
+      ],
+      "segment_ids": [
+        "s002110",
+        "s002113",
+        "s002121",
+        "s002139",
+        "s001898",
+        "s001900"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7561.76,
+          "end": 7579.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7604.12,
+          "end": 7643.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6914.74,
+          "end": 6923.18
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Use Dark Energy Tap's retreat defensively and opportunistically to preserve ships, including when losing Styx or when an isolated carrier might otherwise be destroyed. The source argues that surviving plastic can matter more than denying an opponent a point if Empyrean can contest the system later.",
+      "conditions": "Retreat only to a qualifying adjacent system with no other players' units as described by the guide; assess whether preserving the fleet improves a later score or defense.",
+      "compatibility": "SCPT 476 quotes DET's retreat text; exact timing and eligibility not independently rules-checked.",
+      "uncertainty": "The hosts' 'third of games' regret figure is personal anecdote, not a statistical estimate.",
+      "components": [
+        "technology:det",
+        "unit:carrier"
+      ],
+      "segment_ids": [
+        "s001527",
+        "s001532",
+        "s001550",
+        "s001554",
+        "s001539",
+        "s001541",
+        "s000441",
+        "s000442"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5616.54,
+          "end": 5641.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5713.98,
+          "end": 5731.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5670.72,
+          "end": 5685.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 1631.08,
+          "end": 1642.22
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Score the game through tempo and a timed close rather than expecting one faction ability to win outright: the guide's model line is an early Custodians point, incremental frontier value, then a late Support swap or Styx point after opponents have spent resources. Empyrean can struggle to secure the tenth point without a Support.",
+      "conditions": "This is an illustrative plan, not a fixed opening; stage-two control objectives and unfavorable table tempo can require another route. Distinguish having position or partial objective preparation from actually scoring.",
+      "compatibility": "SCPT 476 opinion about Thunder's Edge pacing and point routes; not a current-rule scoring audit.",
+      "uncertainty": "The hosts acknowledge late-game secrets can be awkward and closeouts can fail; support availability and opponents' responses are uncertain.",
+      "components": [
+        "faction:empyrean",
+        "technology:lwd",
+        "leader:empyreanhero"
+      ],
+      "segment_ids": [
+        "s002596",
+        "s002602",
+        "s002609",
+        "s002615",
+        "s002668",
+        "s002675",
+        "s002692",
+        "s002694",
+        "s002603",
+        "s002607"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9115.72,
+          "end": 9140.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9167.32,
+          "end": 9205.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9369.08,
+          "end": 9398.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9454.76,
+          "end": 9470.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9140.06,
+          "end": 9161.6
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Empyrean's greatest structural weakness is converting its excellent small-value economy into enough centralized, movable plastic and then turning that board presence into a decisive final point. The speakers compare it unfavorably with Sol's more immediate production and closeout, while emphasizing Empyrean's flexibility and timing.",
+      "conditions": "Plan production, carrier capacity, objective access, and a late-game strike together; extra trade goods alone do not solve the carrier or production bottleneck.",
+      "compatibility": "SCPT 476's faction evaluation comparing current Empyrean and Sol; relative tier claims are personal judgments.",
+      "uncertainty": "The conclusion is evaluative rather than quantitative and depends on the assumed meta and game length.",
+      "components": [
+        "faction:empyrean",
+        "unit:carrier",
+        "unit:fighter"
+      ],
+      "segment_ids": [
+        "s001690",
+        "s001701",
+        "s002667",
+        "s002675",
+        "s002694",
+        "s002703"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 6187.22,
+          "end": 6218.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9361.5,
+          "end": 9398.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 9464.9,
+          "end": 9509.92
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "leader:empyreanagent",
+      "to": "technology:det",
+      "relation": "synergizes-with",
+      "conditions": "When Acamar's command-token gain is used to offset an early frontier exploration, DET's retreat remains a separate added benefit; do not overexplore just because one token is refunded.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 4994.34,
+          "end": 5018.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 5037.6,
+          "end": 5068.32
+        }
+      ]
+    },
+    {
+      "from": "promissory:dark_pact",
+      "to": "strategy-card:pok7technology",
+      "relation": "enables",
+      "conditions": "A neighbor can receive Dark Pact, wash commodities, and delay the Technology primary until Empyrean has the money to follow; partner must agree and retain enough commodities.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2951.66,
+          "end": 3007.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 3034.86,
+          "end": 3070.04
+        }
+      ]
+    },
+    {
+      "from": "unit:empyrean_mech",
+      "to": "action-card:parley",
+      "relation": "counters",
+      "conditions": "When a Watcher is positioned in or adjacent to an opponent's units, the mech can cancel that opponent's Parley; moving or spending the mech sacrifices its continuing position.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2529.64,
+          "end": 2557.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 2731.18,
+          "end": 2737.94
+        }
+      ]
+    },
+    {
+      "from": "technology:gd",
+      "to": "unit:carrier2",
+      "relation": "synergizes-with",
+      "conditions": "The source's round-one double-tech example is conditional on enough resources and a reachable early control objective; with only starting carriers, double-tech may leave too little fleet to capitalize.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7665.68,
+          "end": 7713.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7836.8,
+          "end": 7848.02
+        }
+      ]
+    },
+    {
+      "from": "technology:lwd",
+      "to": "unit:carrier2",
+      "relation": "synergizes-with",
+      "conditions": "Light/Wave Deflector plus Carrier II supports a surprise, high-capacity route to Styx or another blocked target when a late push can score; usefulness depends on map and timing.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 7882.36,
+          "end": 7903.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-476-b263b43f307a",
+          "start": 8044.8,
+          "end": 8058.24
+        }
+      ]
+    }
+  ]
+}

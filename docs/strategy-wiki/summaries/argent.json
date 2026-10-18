@@ -1,0 +1,1917 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "argent",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Prefer Sarween Tools and Plasma Scoring as the usual starting technologies; the speakers strongly reject Neural Motivator as a default.",
+      "conditions": "Their default path; a table-specific choice to deny another faction Sarween is acknowledged but not recommended.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Strong podcast preference; not universal advice.",
+      "components": [
+        "technology:st",
+        "technology:ps",
+        "technology:nm"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 701.6,
+          "end": 705.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 801.48,
+          "end": 803.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 833.5,
+          "end": 840.0
+        }
+      ],
+      "segment_ids": [
+        "s000191",
+        "s000224",
+        "s000242"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Treat the home system as influence-rich but awkward for early resources and production.",
+      "conditions": "This matters when planning the opening economy and weighing Hololattice against another dock.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Values and strategic impact are guide claims; verify exact planet values against the rules source.",
+      "components": [
+        "faction:argent",
+        "technology:ah"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 849.94,
+          "end": 854.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 887.9,
+          "end": 890.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2390.04,
+          "end": 2396.02
+        }
+      ],
+      "segment_ids": [
+        "s000246",
+        "s000253",
+        "s000633"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Use Zeal’s player-count-scaled early votes as leverage, while recognizing that voting first can be a liability.",
+      "conditions": "Its bonus applies if Argent casts a vote; the hosts are especially negative about three- or four-player games.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Agenda outcomes depend on table agreements and player count.",
+      "components": [
+        "ability:zeal"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 902.92,
+          "end": 907.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 910.56,
+          "end": 913.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 913.22,
+          "end": 917.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 917.28,
+          "end": 920.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 928.64,
+          "end": 930.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 936.16,
+          "end": 937.94
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4239.52,
+          "end": 4244.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4266.92,
+          "end": 4272.2
+        }
+      ],
+      "segment_ids": [
+        "s000258",
+        "s000261",
+        "s000262",
+        "s000263",
+        "s000268",
+        "s000273",
+        "s001095",
+        "s001103"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Use the starting Strike Wing Alpha I destroyers as cheap two-move capacity units, not as ordinary destroyers.",
+      "conditions": "They can carry a small invasion force, reach custodians, and threaten distant systems alongside the starting carrier.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Cheap reach is the point; the guide does not claim late-game durability.",
+      "components": [
+        "unit:argent_destroyer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1110.46,
+          "end": 1113.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1113.68,
+          "end": 1117.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1117.96,
+          "end": 1118.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1131.64,
+          "end": 1136.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2669.48,
+          "end": 2676.36
+        }
+      ],
+      "segment_ids": [
+        "s000320",
+        "s000321",
+        "s000322",
+        "s000327",
+        "s000693"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Exploit Aerie Sentinels’ capacity-free transport to make unexpected or flexible landings.",
+      "conditions": "A capacity ship must be present; the guide says any number of Argent mechs can accompany it without counting against capacity.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Mechanic is summarized from the episode, not separately rules-checked.",
+      "components": [
+        "unit:argent_mech",
+        "unit:argent_destroyer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1158.9,
+          "end": 1166.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1171.7,
+          "end": 1177.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1181.82,
+          "end": 1189.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2524.04,
+          "end": 2527.42
+        }
+      ],
+      "segment_ids": [
+        "s000332",
+        "s000334",
+        "s000336",
+        "s000654"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Use Trilossa Aun Mirik to spread home-produced ground forces across Argent’s three-planet home system.",
+      "conditions": "Most useful on a large home production; the guide describes the agent as convenient but modest otherwise.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Ability application follows the podcast explanation.",
+      "components": [
+        "leader:argentagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1330.9,
+          "end": 1337.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1356.8,
+          "end": 1361.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1366.64,
+          "end": 1368.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1389.54,
+          "end": 1392.68
+        }
+      ],
+      "segment_ids": [
+        "s000361",
+        "s000365",
+        "s000368",
+        "s000377"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Unlock Trrakan Aun Zulok early by building toward six units with AFB, space cannon, or bombardment.",
+      "conditions": "The starting destroyers and home PDS make the unlock accessible; one example is taking Construction secondary and building two destroyers at home.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Threshold and ability are transcript descriptions, not a separate rules ruling.",
+      "components": [
+        "leader:argentcommander",
+        "unit:argent_destroyer",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1434.48,
+          "end": 1437.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1437.6,
+          "end": 1438.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1439.28,
+          "end": 1441.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1442.94,
+          "end": 1444.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1502.02,
+          "end": 1507.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1513.68,
+          "end": 1520.84
+        }
+      ],
+      "segment_ids": [
+        "s000395",
+        "s000396",
+        "s000397",
+        "s000399",
+        "s000412",
+        "s000415"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Remember that the commander adds a die to one unit-ability roll, including anti-fighter barrage.",
+      "conditions": "The guide names AFB, space cannon, and bombardment; it warns digital tabletop users not to forget to enable the extra die.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Mod implementation may vary.",
+      "components": [
+        "leader:argentcommander",
+        "unit:argent_destroyer",
+        "technology:ps"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1448.32,
+          "end": 1455.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1462.22,
+          "end": 1468.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1468.58,
+          "end": 1473.82
+        }
+      ],
+      "segment_ids": [
+        "s000402",
+        "s000405",
+        "s000406"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Treat Mirik Aun Sissiri as an opportunistic defensive or repositioning tool, not the foundation of a strategy.",
+      "conditions": "Her action moves ships between tokened systems with no enemy ships; the guide values late defense, with invasion or Malice access as situational cases.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Hosts differ slightly on clever use frequency; both call it situational.",
+      "components": [
+        "leader:argenthero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1524.56,
+          "end": 1527.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1537.08,
+          "end": 1542.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1632.6,
+          "end": 1637.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1643.46,
+          "end": 1646.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1665.28,
+          "end": 1668.04
+        }
+      ],
+      "segment_ids": [
+        "s000417",
+        "s000419",
+        "s000444",
+        "s000447",
+        "s000455"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "The episode’s FAQ interpretation allows transport out of tokened systems during a movement ability; keep that distinct from a tactical action.",
+      "conditions": "Relevant to the Argent hero and comparable movement abilities.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "FAQ/errata version is date-sensitive; verify before rules adjudication.",
+      "components": [
+        "leader:argenthero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1727.46,
+          "end": 1729.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1743.9,
+          "end": 1748.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1757.96,
+          "end": 1763.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1763.34,
+          "end": 1766.96
+        }
+      ],
+      "segment_ids": [
+        "s000474",
+        "s000480",
+        "s000486",
+        "s000487"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Prioritize Strike Wing Alpha II; treat its 9-or-10 infantry effect as extra rather than the main benefit.",
+      "conditions": "A core upgrade for a faction encouraged to build destroyers; infantry aboard ships are the threat described.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "The infantry-kill FAQ is episode-specific and unverified here.",
+      "components": [
+        "technology:swa2",
+        "unit:argent_destroyer2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1871.48,
+          "end": 1876.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1899.08,
+          "end": 1904.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1904.72,
+          "end": 1909.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1909.72,
+          "end": 1916.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 1962.76,
+          "end": 1970.24
+        }
+      ],
+      "segment_ids": [
+        "s000523",
+        "s000528",
+        "s000529",
+        "s000530",
+        "s000540"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Research Aerie Hololattice when production or a home-system fix matters; do not assume its movement restriction secures every slice.",
+      "conditions": "Its Production 1 is attractive at home and on forward planets; the defensive value depends on slice geometry and opponent routes.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "The guide calls it slice-dependent and says opponents can work around it.",
+      "components": [
+        "technology:ah",
+        "technology:st",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2084.44,
+          "end": 2091.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2107.9,
+          "end": 2113.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2158.72,
+          "end": 2163.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2163.24,
+          "end": 2172.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2281.6,
+          "end": 2285.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2345.42,
+          "end": 2349.2
+        }
+      ],
+      "segment_ids": [
+        "s000569",
+        "s000573",
+        "s000585",
+        "s000586",
+        "s000606",
+        "s000623"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "The preferred core technology package is PDS II plus Strike Wing Alpha II.",
+      "conditions": "PDS II deters bullying while Strike Wing II provides efficient midgame fleets; exact timing depends on the board.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "“Almost every game” is the speakers’ preference, not a requirement.",
+      "components": [
+        "technology:pds2",
+        "technology:swa2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2854.68,
+          "end": 2859.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2868.46,
+          "end": 2870.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2870.76,
+          "end": 2873.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2876.18,
+          "end": 2878.76
+        }
+      ],
+      "segment_ids": [
+        "s000733",
+        "s000737",
+        "s000738",
+        "s000740"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Consider AI Development Algorithm as an early rebate that bridges core research into a late-game unit upgrade.",
+      "conditions": "One proposed path is PDS II, AI Dev, then Strike Wing II; DET or Antimass may fill prerequisites for Carrier II or Dreadnought II.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "This is one suggested no-skip path, not the only route; confirm current prerequisites.",
+      "components": [
+        "technology:aida",
+        "technology:pds2",
+        "technology:swa2",
+        "technology:det",
+        "technology:amd",
+        "technology:cv2",
+        "technology:dn2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2967.94,
+          "end": 2969.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2969.52,
+          "end": 2971.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2972.38,
+          "end": 2976.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2976.22,
+          "end": 2979.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2979.78,
+          "end": 2985.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3008.04,
+          "end": 3013.38
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3013.6,
+          "end": 3020.68
+        }
+      ],
+      "segment_ids": [
+        "s000769",
+        "s000770",
+        "s000771",
+        "s000772",
+        "s000774",
+        "s000782",
+        "s000783"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Choose Carrier II or Dreadnought II according to production and the fleet role needed.",
+      "conditions": "The hosts lean Dread II when production is limited, Carrier II when extra infantry/capacity is needed; Dread II adds bombardment opportunities.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Contextual preference; objectives, fleet and resources change the choice.",
+      "components": [
+        "technology:cv2",
+        "technology:dn2",
+        "technology:ps",
+        "leader:argentcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3024.86,
+          "end": 3029.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3029.98,
+          "end": 3037.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3037.06,
+          "end": 3041.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3044.88,
+          "end": 3049.58
+        }
+      ],
+      "segment_ids": [
+        "s000785",
+        "s000786",
+        "s000787",
+        "s000789"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Use Dark Energy Tap selectively with Argent’s destroyer-heavy fleet, which can explore and later reposition.",
+      "conditions": "The destroyers remain useful for home defense or late offense, making DET more plausible than for factions using disposable explorers.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Exploration rewards and tech tempo determine value; not automatic.",
+      "components": [
+        "technology:det",
+        "unit:argent_destroyer2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3202.26,
+          "end": 3208.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3213.8,
+          "end": 3218.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3218.92,
+          "end": 3223.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3223.8,
+          "end": 3230.76
+        }
+      ],
+      "segment_ids": [
+        "s000832",
+        "s000834",
+        "s000835",
+        "s000836"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Reserve Graviton Laser Systems for late-game defense; research earlier only for a visible threat.",
+      "conditions": "The hosts allow earlier Graviton if Argent took custodians, the table has noticed, and Carrier II is not urgent.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Highly table-dependent advice.",
+      "components": [
+        "technology:gls",
+        "technology:pds2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3116.0,
+          "end": 3121.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3141.36,
+          "end": 3144.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3144.72,
+          "end": 3147.22
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3164.48,
+          "end": 3167.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3167.68,
+          "end": 3170.8
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3171.36,
+          "end": 3173.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3192.5,
+          "end": 3196.74
+        }
+      ],
+      "segment_ids": [
+        "s000807",
+        "s000812",
+        "s000813",
+        "s000820",
+        "s000821",
+        "s000822",
+        "s000830"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Use Fleet Logistics to make a planned hero reposition harder to block, not as a token-only feint.",
+      "conditions": "The value is in staging ships, taking a planet, then using the hero to return or defend before opponents can obstruct the destination.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Situational combo; not a general requirement.",
+      "components": [
+        "technology:fl",
+        "leader:argenthero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3254.34,
+          "end": 3256.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3273.06,
+          "end": 3276.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3311.34,
+          "end": 3316.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3316.58,
+          "end": 3320.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3334.22,
+          "end": 3336.76
+        }
+      ],
+      "segment_ids": [
+        "s000843",
+        "s000850",
+        "s000858",
+        "s000859",
+        "s000863"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Treat Assault Cannon as an optional red-skip finisher for small ships, not a blind default.",
+      "conditions": "The proposed combination uses AFB and Raid Formation before combat; the speakers recommend it only when a concrete target makes sense.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Conditional tech opinion; access and target matter.",
+      "components": [
+        "technology:asc",
+        "unit:argent_destroyer2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3383.5,
+          "end": 3387.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3397.8,
+          "end": 3402.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3407.24,
+          "end": 3414.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3415.62,
+          "end": 3423.28
+        }
+      ],
+      "segment_ids": [
+        "s000874",
+        "s000878",
+        "s000880",
+        "s000882"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Do not make Integrated Economy or Self-Assembly Routines routine investments; cheap destroyer-plus-mech production already covers much of the role.",
+      "conditions": "A fitting skip or unusual objective can change the choice, but usual tech tempo and available build sites make them hard to justify.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Hosts’ judgment reflects their typical games, not every map.",
+      "components": [
+        "technology:ie",
+        "technology:sar",
+        "unit:argent_mech",
+        "unit:argent_destroyer"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3488.06,
+          "end": 3494.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3528.12,
+          "end": 3536.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3600.0,
+          "end": 3605.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3616.18,
+          "end": 3621.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3639.24,
+          "end": 3643.72
+        }
+      ],
+      "segment_ids": [
+        "s000903",
+        "s000910",
+        "s000924",
+        "s000927",
+        "s000932"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "Sell Strike Wing Ambuscade near its ability window; do not overprice vague passive defense, but ask more when it directly enables scoring.",
+      "conditions": "The extra die matters most for a planned offensive/objective roll; Jol-Nar is a stronger buyer because of rerolls.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Negotiation value depends on the scoring window.",
+      "components": [
+        "promissory:ambuscade",
+        "leader:jolnarcommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3783.48,
+          "end": 3786.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3823.02,
+          "end": 3828.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3856.5,
+          "end": 3861.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3862.38,
+          "end": 3865.12
+        }
+      ],
+      "segment_ids": [
+        "s000978",
+        "s000987",
+        "s000994",
+        "s000995"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Use the PDS network as a paid deterrent; establish a simple consistent toll and avoid giving space-cannon value away for nothing.",
+      "conditions": "The speakers suggest roughly one trade good normally, with negotiation when the passage or objective is especially important.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "A table heuristic, not a market rule; route alternatives matter.",
+      "components": [
+        "technology:pds2",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3902.96,
+          "end": 3910.04
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3910.56,
+          "end": 3915.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3926.94,
+          "end": 3932.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4118.62,
+          "end": 4121.18
+        }
+      ],
+      "segment_ids": [
+        "s001004",
+        "s001005",
+        "s001009",
+        "s001066"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Keep trade simple and frequent: Argent has three commodities but often reaches more neighbors early than its commodity value suggests.",
+      "conditions": "Several small trades and X-1 opportunities are preferred to one elaborate exchange; Trade can fund flexible spending.",
+      "compatibility": "SCPT 289 (2023-03-08); compatibility with current rules not reviewed.",
+      "uncertainty": "Depends on neighbors, map and table norms.",
+      "components": [
+        "strategy-card:pok5trade"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4132.48,
+          "end": 4133.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4140.6,
+          "end": 4145.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4169.18,
+          "end": 4176.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4916.06,
+          "end": 4922.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4926.24,
+          "end": 4931.72
+        }
+      ],
+      "segment_ids": [
+        "s001072",
+        "s001074",
+        "s001080",
+        "s001265",
+        "s001267"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Choose round-one cards by whether they enable custodians timing, not a fixed ranking.",
+      "conditions": "Trade, Warfare, or a timed Diplomacy/Technology/Leadership combination may work depending on skips, secondaries, and table choices.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Hosts differ on rankings; they agree to assess actual variables.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok6warfare",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok7technology",
+        "strategy-card:pok1leadership"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5048.08,
+          "end": 5052.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5069.8,
+          "end": 5077.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5218.42,
+          "end": 5220.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5354.3,
+          "end": 5359.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5400.0,
+          "end": 5404.22
+        }
+      ],
+      "segment_ids": [
+        "s001302",
+        "s001307",
+        "s001350",
+        "s001393",
+        "s001404"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Take Politics when speaker position can preserve round-two custodians or help later speaker control.",
+      "conditions": "Less attractive if round-one custodians is available another way; assess whether the next speaker can score early.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Hosts differ on later speaker value.",
+      "components": [
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4708.4,
+          "end": 4714.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4767.78,
+          "end": 4774.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4815.4,
+          "end": 4822.12
+        }
+      ],
+      "segment_ids": [
+        "s001213",
+        "s001225",
+        "s001235"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "If custodians is unavailable and Construction is a late pick, place a forward PDS on an important equidistant or in-slice planet.",
+      "conditions": "The hosts favor a forward PDS on valuable slice planets; placement depends on map geometry and neighbors.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Map geometry and neighbors determine placement.",
+      "components": [
+        "strategy-card:pok4construction",
+        "technology:pds2",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2941.24,
+          "end": 2945.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4829.98,
+          "end": 4835.56
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4845.3,
+          "end": 4850.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4868.96,
+          "end": 4871.1
+        }
+      ],
+      "segment_ids": [
+        "s000757",
+        "s001237",
+        "s001240",
+        "s001246"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Do not prioritize Leadership automatically; take it when token pressure or a blue-skip Gravity Drive opening makes its timing valuable.",
+      "conditions": "Home influence often funds one extra token; Leadership is more attractive if it enables round-one Gravity Drive and a later Mecatol grab.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Map and resource situation matter.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "technology:gd"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4501.0,
+          "end": 4507.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4517.52,
+          "end": 4521.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4521.52,
+          "end": 4527.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4527.98,
+          "end": 4532.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4540.9,
+          "end": 4543.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4551.94,
+          "end": 4555.62
+        }
+      ],
+      "segment_ids": [
+        "s001152",
+        "s001155",
+        "s001156",
+        "s001157",
+        "s001160",
+        "s001163"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Start planning the late fleet by round three: Strike Wing IIs can lose when opponents bring more sustained hull points.",
+      "conditions": "Build toward fleet-pool advantage; add carriers, fighters, or dreadnoughts according to objectives, with Hololattice as possible forward production.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "No fixed fleet recipe.",
+      "components": [
+        "unit:argent_destroyer2",
+        "technology:ah",
+        "technology:cv2",
+        "technology:dn2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5503.6,
+          "end": 5507.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5513.9,
+          "end": 5520.78
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5520.78,
+          "end": 5528.08
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5535.78,
+          "end": 5542.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5576.22,
+          "end": 5581.14
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5607.38,
+          "end": 5611.66
+        }
+      ],
+      "segment_ids": [
+        "s001431",
+        "s001433",
+        "s001434",
+        "s001438",
+        "s001448",
+        "s001454"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Argent is well positioned for many stage-one control and economic objectives, but early comfort should not obscure custodians’ bonus-point value.",
+      "conditions": "Movement and capacity help with early control; inexpensive fleets and modest tech needs soften stage-one spending objectives.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Map and objective order matter; printed scoring conditions still apply.",
+      "components": [
+        "faction:argent",
+        "public-objective:push_boundaries"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5897.48,
+          "end": 5901.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5919.62,
+          "end": 5927.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6000.0,
+          "end": 6006.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6056.12,
+          "end": 6060.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6630.64,
+          "end": 6633.94
+        }
+      ],
+      "segment_ids": [
+        "s001523",
+        "s001528",
+        "s001550",
+        "s001568",
+        "s001718"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Expect weaker stage-two economic scoring and prepare an upgraded fleet for major control objectives.",
+      "conditions": "Structure objectives may suit Argent; large resource reserves and taking defended planets can be difficult without ship upgrades.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Guide forecast depends on objective, map, opponents and prior investment.",
+      "components": [
+        "faction:argent",
+        "technology:cv2",
+        "technology:dn2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6380.6,
+          "end": 6385.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6405.6,
+          "end": 6410.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6445.5,
+          "end": 6450.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6612.58,
+          "end": 6617.48
+        }
+      ],
+      "segment_ids": [
+        "s001658",
+        "s001663",
+        "s001678",
+        "s001713"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Use bonus AFB rolls to pursue combat secrets such as Turn Their Fleets to Dust and Fight with Precision; treat Occupy the Fringe and Produce en Masse as awkward fits.",
+      "conditions": "Demonstrate Your Power is described as broadly accessible rather than a distinct Argent advantage; printed scoring conditions still apply.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Hosts correct their own mix-up between Demonstrate Your Power and Make an Example in the discussion.",
+      "components": [
+        "secret-objective:ttfd",
+        "secret-objective:fwp",
+        "secret-objective:dyp",
+        "secret-objective:mew",
+        "secret-objective:otf",
+        "secret-objective:pem"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6109.88,
+          "end": 6111.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6113.26,
+          "end": 6119.2
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6137.44,
+          "end": 6141.88
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6141.88,
+          "end": 6147.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6148.08,
+          "end": 6151.42
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6165.14,
+          "end": 6170.26
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6170.26,
+          "end": 6175.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6338.16,
+          "end": 6342.38
+        }
+      ],
+      "segment_ids": [
+        "s001584",
+        "s001586",
+        "s001591",
+        "s001592",
+        "s001593",
+        "s001597",
+        "s001598",
+        "s001649"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Watch for Representative Government, Articles of War, Rearmament Agreement, and Enforced Travel Ban.",
+      "conditions": "They can remove Zeal’s bonus votes, suppress the mech, or disable PDS near wormholes; allies and agenda control may help.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Agenda text and FAQ state may be date-sensitive; verify before acting.",
+      "components": [
+        "ability:zeal",
+        "unit:argent_mech",
+        "technology:pds2",
+        "strategy-card:pok3politics"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5685.0,
+          "end": 5688.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5697.38,
+          "end": 5710.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5743.06,
+          "end": 5745.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5755.24,
+          "end": 5759.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5769.28,
+          "end": 5771.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5839.34,
+          "end": 5844.8
+        }
+      ],
+      "segment_ids": [
+        "s001472",
+        "s001475",
+        "s001485",
+        "s001491",
+        "s001494",
+        "s001510"
+      ]
+    },
+    {
+      "id": "C33",
+      "statement": "After missing custodians, pursue an attainable bonus-point route, but avoid resource-intensive exploration gambles without the means to support them.",
+      "conditions": "One host suggests DET or an accessible Mecatol point route; the other argues Argent lacks Naaz-Rokha’s wealth and repeatable exploration tempo.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "The speakers explicitly disagree; the best route depends on the game.",
+      "components": [
+        "technology:det",
+        "relic:obsidian",
+        "relic:shard",
+        "faction:naaz"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6636.84,
+          "end": 6638.62
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6676.3,
+          "end": 6678.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6745.88,
+          "end": 6750.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 7028.9,
+          "end": 7030.66
+        }
+      ],
+      "segment_ids": [
+        "s001722",
+        "s001734",
+        "s001753",
+        "s001842"
+      ]
+    },
+    {
+      "id": "C34",
+      "statement": "Use PDS placement and Hololattice to defend valuable routes and production sites, allowing for exposed approaches in an awkward slice.",
+      "conditions": "Structures on tech skips or attachment planets can deter attacks; empty systems and wormhole geometry can undermine coverage.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "Defense is a deterrent; the guide says slice layout matters.",
+      "components": [
+        "technology:ah",
+        "technology:pds2",
+        "unit:pds"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2296.18,
+          "end": 2299.82
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2323.7,
+          "end": 2326.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5464.88,
+          "end": 5471.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5489.34,
+          "end": 5492.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5492.7,
+          "end": 5497.4
+        }
+      ],
+      "segment_ids": [
+        "s000610",
+        "s000617",
+        "s001422",
+        "s001428",
+        "s001429"
+      ]
+    },
+    {
+      "id": "C35",
+      "statement": "Do not let early control scores or defense justify delaying the point plan.",
+      "conditions": "Without custodians or another bonus point, Argent may struggle once stage twos arrive; round-three decisions often determine its tempo.",
+      "compatibility": "SCPT 289 (2023-03-08); current-rules compatibility unreviewed.",
+      "uncertainty": "This is the hosts’ play experience, not a guaranteed outcome.",
+      "components": [
+        "faction:argent",
+        "leader:argenthero",
+        "technology:pds2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5404.22,
+          "end": 5407.86
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5417.04,
+          "end": 5421.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 6992.94,
+          "end": 6996.28
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 8391.6,
+          "end": 8397.48
+        }
+      ],
+      "segment_ids": [
+        "s001405",
+        "s001408",
+        "s001824",
+        "s002216"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "technology:st",
+      "to": "technology:ah",
+      "relation": "enables",
+      "conditions": "Sarween is the normal yellow start; Hololattice Production 1 receives its production discount.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 801.48,
+          "end": 803.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2158.72,
+          "end": 2163.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2163.24,
+          "end": 2172.58
+        }
+      ],
+      "segment_ids": [
+        "s000224",
+        "s000585",
+        "s000586"
+      ]
+    },
+    {
+      "from": "technology:ps",
+      "to": "leader:argentcommander",
+      "relation": "synergizes-with",
+      "conditions": "When both modifiers apply to a qualifying ability roll, the guide describes an especially threatening home PDS roll.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2879.26,
+          "end": 2883.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2883.51,
+          "end": 2887.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 5438.7,
+          "end": 5440.66
+        }
+      ],
+      "segment_ids": [
+        "s000741",
+        "s000742",
+        "s001415"
+      ]
+    },
+    {
+      "from": "technology:pds2",
+      "to": "technology:swa2",
+      "relation": "synergizes-with",
+      "conditions": "Together they provide the guide’s preferred deterrence and low-cost midgame fleet package; neither guarantees safety.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2854.68,
+          "end": 2859.18
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2868.46,
+          "end": 2870.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 2870.76,
+          "end": 2873.6
+        }
+      ],
+      "segment_ids": [
+        "s000733",
+        "s000737",
+        "s000738"
+      ]
+    },
+    {
+      "from": "leader:argenthero",
+      "to": "technology:fl",
+      "relation": "enables",
+      "conditions": "Fleet Logistics can stage the fleet before hero movement, reducing the chance an opponent blocks an empty destination.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3254.34,
+          "end": 3256.02
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3273.06,
+          "end": 3276.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3311.34,
+          "end": 3316.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3316.58,
+          "end": 3320.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 3334.22,
+          "end": 3336.76
+        }
+      ],
+      "segment_ids": [
+        "s000843",
+        "s000850",
+        "s000858",
+        "s000859",
+        "s000863"
+      ]
+    },
+    {
+      "from": "promissory:<color>_an",
+      "to": "technology:pds2",
+      "relation": "synergizes-with",
+      "conditions": "The guide says the proposed Jol-Nar alliance exchange makes Argent’s PDS network much stronger, while describing it as a political tradeoff.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4347.46,
+          "end": 4354.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4354.6,
+          "end": 4358.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4372.8,
+          "end": 4375.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-289-04e0c639051b",
+          "start": 4375.3,
+          "end": 4378.26
+        }
+      ],
+      "segment_ids": [
+        "s001119",
+        "s001120",
+        "s001124",
+        "s001125"
+      ]
+    }
+  ]
+}

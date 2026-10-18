@@ -1,0 +1,1249 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "muaat",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat the starting War Sun as a powerful but exposed asset: its offensive threat is real, yet it has only one movement and weak protection, so avoid sending it unsupported or leaving the home system naked without accepting that risk.",
+      "conditions": "Especially before Prototype War Sun II and while the War Sun is Muaat's only one; judge nearby fleets and table aggression.",
+      "compatibility": "SCPT 355, published 2024-06-12; ruleset and expansion compatibility not reviewed.",
+      "uncertainty": "Podcast advice and one tournament example; not a current-rules verification.",
+      "components": [
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s000260",
+        "s000261",
+        "s000297",
+        "s000300",
+        "s000612",
+        "s000614",
+        "s000615",
+        "s000616",
+        "s000617",
+        "s000618",
+        "s000621",
+        "s000860"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 901.76,
+          "end": 1057.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1989.64,
+          "end": 2014.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2889.16,
+          "end": 2904.54
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Do not count on Gashlai Physiology to solve the opening's mobility problem: passing through supernovas is available from the start, but the one-move starting War Sun cannot exploit it to reach much.",
+      "conditions": "Before upgrading the War Sun or acquiring other mobile ships; board layout may change the value.",
+      "compatibility": "SCPT 355; no current-rules review.",
+      "uncertainty": "The speakers describe the ability as initially low-value, not universally useless.",
+      "components": [
+        "faction:muaat",
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s000289",
+        "s000296",
+        "s000297",
+        "s000302",
+        "s000303"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1015.14,
+          "end": 1067.62
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Value Star Forge in context: spending a strategy token for two fighters or a destroyer can look costly alone, but mechs and the unlocked commander can return infantry and a trade good, making repeated uses attractive once enough mechs are positioned.",
+      "conditions": "Most compelling after commander unlock and with two or more mechs in/adjacent to useful War Sun systems; the speaker estimates more than two proccing mechs can make the exchange net positive.",
+      "compatibility": "SCPT 355; guide-era advice, not rules-verified.",
+      "uncertainty": "The break-even is explicitly approximate and depends on how the player values units and command tokens.",
+      "components": [
+        "faction:muaat",
+        "unit:muaat_mech",
+        "leader:muaatcommander"
+      ],
+      "segment_ids": [
+        "s000277",
+        "s000285",
+        "s000318",
+        "s000327",
+        "s000509",
+        "s000516",
+        "s000522",
+        "s000529"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 978.82,
+          "end": 1012.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1105.08,
+          "end": 1138.3
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1644.21,
+          "end": 1702.77
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Place mechs where Star Forge can reach them: each applicable mech can add an infantry when Star Forge is used in its system or an adjacent one, so positioning mechs in or adjacent to the War Sun system where Star Forge will be used raises the ability's output.",
+      "conditions": "Requires mechs in the relevant geography and infantry remaining in reinforcements; the speakers distinguish Star Forge from the flagship's separate ability.",
+      "compatibility": "SCPT 355; exact rules not independently checked.",
+      "uncertainty": "Transcript phrasing is conversational; verify exact timing and range before rules use.",
+      "components": [
+        "unit:muaat_mech",
+        "faction:muaat"
+      ],
+      "segment_ids": [
+        "s000317",
+        "s000318",
+        "s000319",
+        "s000320",
+        "s000321",
+        "s000325",
+        "s000327",
+        "s000328",
+        "s000329"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1105.08,
+          "end": 1138.3
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Treat the Inferno's cruiser-spawning ability as a low priority; the speakers rarely see a strategic need for cruisers and say its ability does not receive the mech interaction described for Star Forge.",
+      "conditions": "Build it mainly when resources are abundant, a specific objective or plan makes it useful, or its combat profile helps; do not build it expecting Star Forge triggers.",
+      "compatibility": "SCPT 355; component/rules state not independently verified.",
+      "uncertainty": "This is a strong podcast opinion, not a rules or broad performance finding.",
+      "components": [
+        "unit:muaat_flagship",
+        "unit:muaat_mech"
+      ],
+      "segment_ids": [
+        "s000328",
+        "s000336",
+        "s000337",
+        "s000338",
+        "s000342",
+        "s000348"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1127.38,
+          "end": 1168.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1194.98,
+          "end": 1229.04
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Price Fires of the Gashlai against a concrete goal, usually accelerating the second War Sun; sell when the proceeds change that timing materially and no better funding route exists, then reassess after the second War Sun is secured.",
+      "conditions": "Buyer demand and faction timing matter; a Hacan before its hero or a later Mentak with Mirror Computing may value it, while many buyers cannot afford or use it.",
+      "compatibility": "SCPT 355; trade values reflect that podcast's games and era.",
+      "uncertainty": "Speakers give inconsistent prices (roughly one to five trade goods) and reject abstract fixed valuations.",
+      "components": [
+        "faction:muaat",
+        "unit:muaat_warsun2"
+      ],
+      "segment_ids": [
+        "s000355",
+        "s000369",
+        "s000370",
+        "s000371",
+        "s000372",
+        "s000373",
+        "s000374",
+        "s000375",
+        "s000376",
+        "s000377",
+        "s000378",
+        "s000380",
+        "s000383",
+        "s000392",
+        "s000394",
+        "s000401",
+        "s000402",
+        "s000403",
+        "s000404",
+        "s000406",
+        "s000407",
+        "s000408",
+        "s000409",
+        "s000410",
+        "s000411",
+        "s000412"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1244.82,
+          "end": 1405.85
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Be cautious selling Fires when influence or fleet supply is scarce: returning a fleet token can leave a lasting command-capacity problem that outweighs the cash, especially if the slice cannot replenish it.",
+      "conditions": "Most concerning in low-influence slices or before the second War Sun; safer when token surplus is established or the late buyer's payment advances a point or decisive plan.",
+      "compatibility": "SCPT 355; strategy advice only.",
+      "uncertainty": "The guide describes the risk qualitatively and does not quantify recovery odds.",
+      "components": [
+        "faction:muaat"
+      ],
+      "segment_ids": [
+        "s001249",
+        "s001251",
+        "s001252",
+        "s001253",
+        "s001254",
+        "s001255",
+        "s001256",
+        "s001300",
+        "s001301",
+        "s001302",
+        "s001303",
+        "s001304",
+        "s001305",
+        "s001306",
+        "s001307",
+        "s001308",
+        "s001309"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4185.12,
+          "end": 4222.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4333.3,
+          "end": 4369.94
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Use the commander as recurring economic relief after producing a War Sun: strategy-pool spending can return a trade good, helping offset Star Forge and other token expenditures over the game.",
+      "conditions": "The commander must be unlocked by producing a War Sun; the return is most valuable when there are repeated spend-token actions and enough influence to maintain tokens.",
+      "compatibility": "SCPT 355; not current-rules verified.",
+      "uncertainty": "Podcast arithmetic is approximate and describes marginal trade-good value, not a guaranteed net-positive economy.",
+      "components": [
+        "leader:muaatcommander",
+        "faction:muaat"
+      ],
+      "segment_ids": [
+        "s000504",
+        "s000505",
+        "s000509",
+        "s000516",
+        "s000522",
+        "s000529"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1629.77,
+          "end": 1702.77
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Plan to unlock the commander through War Sun production when its repeated refunds matter; the required War Sun production means the ability is not immediate opening liquidity.",
+      "conditions": "Consider the payoff over several later token spends; it requires first producing a War Sun.",
+      "compatibility": "SCPT 355; game-specific timing advice.",
+      "uncertainty": "No fixed round or exact payoff count is established.",
+      "components": [
+        "leader:muaatcommander",
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s000504",
+        "s000505",
+        "s000506",
+        "s000509",
+        "s000517",
+        "s000527"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1629.77,
+          "end": 1702.77
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Prioritize Magnus Reactor Omega when a reachable supernova can become a practical production point; the speakers say this ability occasionally matters and becomes more relevant alongside Nova Seed.",
+      "conditions": "Requires a supernova with Muaat units and a reason to produce there; its value depends on map access and timing.",
+      "compatibility": "SCPT 355 references a Codex-updated technology; compatibility with later rules was not checked.",
+      "uncertainty": "The guide reports occasional usefulness, not a default high-priority pick.",
+      "components": [
+        "technology:mr",
+        "leader:muaathero"
+      ],
+      "segment_ids": [
+        "s000457",
+        "s000464",
+        "s000465",
+        "s000473",
+        "s000566",
+        "s000568"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1504.37,
+          "end": 1548.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1812.24,
+          "end": 1828.04
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Treat Nova Seed primarily as a way to establish a hard-to-disrupt staging or production position for a later scoring turn, rather than spending it only to damage one opponent.",
+      "conditions": "The guide favors planning the position around round four for round five, often toward the board center, Mecatol, or wormhole access; edge objectives can be an exception.",
+      "compatibility": "SCPT 355; ability use and current rules not independently checked.",
+      "uncertainty": "Its payoff depends on the revealed objective and nearby threats; the speakers describe the hero as situational.",
+      "components": [
+        "leader:muaathero",
+        "technology:mr"
+      ],
+      "segment_ids": [
+        "s000549",
+        "s000550",
+        "s000551",
+        "s000552",
+        "s000553",
+        "s000565",
+        "s000573",
+        "s000579",
+        "s001441",
+        "s001454",
+        "s001466"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1748.25,
+          "end": 1883.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4732.18,
+          "end": 4799.54
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Avoid using Nova Seed early just because a target is available; the speakers say its round-five value can be hard to realize if used in round three, especially if later objectives reward an edge or another location.",
+      "conditions": "Earlier use is a deliberate tradeoff when an immediate safe base or other objective is worth more than preserving flexibility.",
+      "compatibility": "SCPT 355; guide-era strategic opinion.",
+      "uncertainty": "The discussion is hypothetical and explicitly acknowledges that certain stage-two objectives could reward early placement.",
+      "components": [
+        "leader:muaathero"
+      ],
+      "segment_ids": [
+        "s001593",
+        "s001599",
+        "s001601",
+        "s001609"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 5140.12,
+          "end": 5205.52
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Look for the second War Sun by round two, but do not wreck the opening economy to force it in round one; trade's larger cash injection can bank toward a more reliable round-two purchase.",
+      "conditions": "A round-one War Sun is plausible with favorable planets, trade goods, timing, and a buyer for Fires, but the speakers call forcing it a risky bet; a good slice may make round two comfortable.",
+      "compatibility": "SCPT 355; map and table dependent.",
+      "uncertainty": "The speakers differ in enthusiasm about having it at the start of round two and do not call it mandatory.",
+      "components": [
+        "unit:muaat_warsun2"
+      ],
+      "segment_ids": [
+        "s000837",
+        "s000842",
+        "s000843",
+        "s000846",
+        "s000933",
+        "s000934"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2796.1,
+          "end": 2853.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3086.46,
+          "end": 3098.7
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Consider round-one Diplomacy only with a negotiated sequence that makes its resources and timing useful: agree on Trade/refresh value and arrange Tech after Umbat, then take a planet and refresh the money if the deal holds.",
+      "conditions": "The Trade player must benefit and honor the arrangement; the speakers warn that exploration or other circumstances can remove that incentive, so this is a fragile table deal.",
+      "compatibility": "SCPT 355; no current-rules or binding-deal review.",
+      "uncertainty": "The speakers report a successful personal game but call the setup risky and opponent-dependent.",
+      "components": [
+        "leader:muaatagent"
+      ],
+      "segment_ids": [
+        "s000809",
+        "s000812",
+        "s000813",
+        "s000814",
+        "s000815",
+        "s000816",
+        "s000817",
+        "s000818",
+        "s000819",
+        "s000820",
+        "s000822",
+        "s000825",
+        "s000828",
+        "s000829",
+        "s000830",
+        "s000831"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2675.88,
+          "end": 2776.74
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Do not mistake Diplomacy's two smaller resource injections for the large one-time pool needed to build a War Sun; favor Trade when the main goal is to accumulate a large purchase fund.",
+      "conditions": "Diplomacy can still serve timing or a negotiated round-one plan; Trade goods can also be saved for round two.",
+      "compatibility": "SCPT 355; strategy card advice from the source era.",
+      "uncertainty": "The speakers use a simplified contrast; actual value depends on planets, commodities, and table deals.",
+      "components": [],
+      "segment_ids": [
+        "s000831",
+        "s000834",
+        "s000835",
+        "s000836",
+        "s000837",
+        "s000840",
+        "s000928",
+        "s000934"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2766.2,
+          "end": 2825.76
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3076.5,
+          "end": 3098.7
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "Treat round-one Leadership as a real but often deferred need: tokens fuel Star Forge and other actions, yet Leadership competes with Imperial, Tech, and Trade, and the guide recalls regretting it when a more urgent card was available.",
+      "conditions": "Its priority rises with resource access and a plan to spend tokens; it is weak if the immediate bottleneck is cash, tech, or scoring tempo.",
+      "compatibility": "SCPT 355; card choice is game-state dependent.",
+      "uncertainty": "Advice is expressed as experience, not a universal ranking.",
+      "components": [
+        "faction:muaat"
+      ],
+      "segment_ids": [
+        "s000715",
+        "s000718",
+        "s000721",
+        "s000725",
+        "s000732"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2385.13,
+          "end": 2455.6
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Take Politics for speaker/setup and action-card value when those needs matter, including preparing a round-two Tech double-pick with a useful skip; the guide does not take it to claim Custodians by default.",
+      "conditions": "A yellow or red skip increases the Tech setup value; throughout the game Politics can also expose and bury harmful agendas. Round two's Politics may override the value of taking it in round one.",
+      "compatibility": "SCPT 355; agenda effects and rules not separately checked.",
+      "uncertainty": "The speakers explicitly vary the priority with skips and game position.",
+      "components": [],
+      "segment_ids": [
+        "s000865",
+        "s000868",
+        "s000870",
+        "s000875",
+        "s000876",
+        "s000887",
+        "s000894",
+        "s000895",
+        "s000896",
+        "s000897",
+        "s000898",
+        "s000899",
+        "s000900",
+        "s000901",
+        "s000902",
+        "s000903"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2905.94,
+          "end": 2976.48
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2990.4,
+          "end": 3027.24
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Use Politics to obtain action cards when affordable, since the speakers value Sabotage and Direct Hit access for defense and combat odds as well as broader economic utility.",
+      "conditions": "More attractive when Muaat can afford cards without missing a more urgent token, technology, or scoring need.",
+      "compatibility": "SCPT 355; guide-era assessment.",
+      "uncertainty": "No card draw guarantee or specific card outcome is implied.",
+      "components": [],
+      "segment_ids": [
+        "s000876",
+        "s000878",
+        "s000879",
+        "s000880",
+        "s000881",
+        "s000882",
+        "s000883",
+        "s000884"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2948.88,
+          "end": 2968.78
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Do not prioritize Construction or a forward dock in the normal plan; the guide expects War Suns and Umbat to supply production, but warns that a revealed structure objective can make the lack of structures a serious scoring problem.",
+      "conditions": "Reconsider if a structure objective appears or the game provides an unusually cheap way to satisfy it.",
+      "compatibility": "SCPT 355; no objective legality check.",
+      "uncertainty": "The source names a lucky exception involving 'Junior'; the exact proper noun is unclear in ASR and is omitted.",
+      "components": [
+        "unit:muaat_warsun",
+        "leader:muaatagent"
+      ],
+      "segment_ids": [
+        "s000908",
+        "s000910",
+        "s000911",
+        "s000912",
+        "s000915",
+        "s000925"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3037.28,
+          "end": 3075.78
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "View Warfare as a conditional line to reach Mecatol and set up a later Imperial score, not as an automatic round-one pick; the plan can expose slice and home defense and does not guarantee the next round's Imperial.",
+      "conditions": "More attractive with a two-planet bridge toward Mecatol, a defensible route, and confidence the table will not punish the exposed position; a powerful War Sun can make a round-two approach credible.",
+      "compatibility": "SCPT 355; tactical and objective claims not independently checked.",
+      "uncertainty": "The speakers disagree in emphasis: one calls the Warfare primary unusually defensible for Muaat, while another questions its value and notes the risk.",
+      "components": [
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s000947",
+        "s000948",
+        "s000949",
+        "s000950",
+        "s000951",
+        "s000952",
+        "s000960",
+        "s000983",
+        "s001009",
+        "s001010",
+        "s001011",
+        "s001012",
+        "s001013",
+        "s001014",
+        "s001015",
+        "s001016",
+        "s001017",
+        "s001018",
+        "s001019",
+        "s001020",
+        "s001021",
+        "s001022",
+        "s001023",
+        "s001024",
+        "s001025",
+        "s001026",
+        "s001027",
+        "s001028",
+        "s001029",
+        "s001050",
+        "s001051",
+        "s001052",
+        "s001053",
+        "s001054",
+        "s001055",
+        "s001056",
+        "s001061",
+        "s001062",
+        "s001063",
+        "s001064",
+        "s001065",
+        "s001066",
+        "s001070",
+        "s001072",
+        "s001073",
+        "s001074",
+        "s001075",
+        "s001076",
+        "s001077"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3143.26,
+          "end": 3187.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3269.84,
+          "end": 3387.52
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3447.36,
+          "end": 3543.54
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "If round one cannot score, plan to take Imperial later to recover tempo; consider a second Imperial point when the public objectives and position allow it, rather than assuming the War Sun alone will make up missed scoring.",
+      "conditions": "Especially important when round-one objectives are inaccessible; the guide says a game without an early point often needs Imperial, though access and ability to score remain uncertain.",
+      "compatibility": "SCPT 355; scoring route described by the podcast, not a verified guarantee.",
+      "uncertainty": "The source alternates between categorical language and estimates of how often round one is missed; actual objectives determine feasibility.",
+      "components": [],
+      "segment_ids": [
+        "s000953",
+        "s000957",
+        "s001130",
+        "s001139",
+        "s001498",
+        "s001499",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001505"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3164.28,
+          "end": 3183.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3781.88,
+          "end": 3844.64
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4892.18,
+          "end": 4918.16
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "Keep a shallow red technology route available: AI Development Algorithm into Magnus Reactor Omega into Prototype War Sun II is the default described path, while Destroyer II is an optional addition when Tech and resources permit.",
+      "conditions": "A red skip can bypass Magnus Reactor; without early Tech, the route can shift to rounds two through four, with Prototype War Sun II still arriving for the late game.",
+      "compatibility": "SCPT 355 includes a Codex-updated Magnus Reactor; rules compatibility after the episode is unknown.",
+      "uncertainty": "The guide presents this as a reliable practical path, not a mandatory sequence.",
+      "components": [
+        "technology:aida",
+        "technology:mr",
+        "technology:pws2",
+        "technology:dd2"
+      ],
+      "segment_ids": [
+        "s001142",
+        "s001145",
+        "s001146",
+        "s001150",
+        "s001157",
+        "s001161",
+        "s001170"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3844.76,
+          "end": 3990.32
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "Delay Prototype War Sun II when early movement is unnecessary; the guide says many games can research it later, while taking it early opens slice movement and late-game attack choices sooner.",
+      "conditions": "Prioritize it earlier when the War Sun's one movement constrains access, or when a target/opportunity is time-sensitive; do not overvalue a small cost saving if the second War Sun is built first.",
+      "compatibility": "SCPT 355; guide-era timing opinion.",
+      "uncertainty": "The source notes that most games build the second War Sun before the upgrade and gives no fixed round requirement.",
+      "components": [
+        "technology:pws2",
+        "unit:muaat_warsun2"
+      ],
+      "segment_ids": [
+        "s000416",
+        "s000417",
+        "s000418",
+        "s000421",
+        "s000422",
+        "s000423",
+        "s000429",
+        "s000434",
+        "s001150",
+        "s001151",
+        "s001152",
+        "s001153",
+        "s001155",
+        "s001156",
+        "s001157",
+        "s001175"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1406.47,
+          "end": 1472.03
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3907.92,
+          "end": 3990.32
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3889.94,
+          "end": 3909.78
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "Use a blue route as a survival adaptation for high-influence, low-resource slices rather than a superior default: Dark Energy Tap, Gravity Drive, and Carrier II can provide movement and a fleet that travels together.",
+      "conditions": "Most relevant with a blue skip or substantial influence and limited resources; expect the second War Sun to come later and use carriers/fighters/infantry to support it.",
+      "compatibility": "SCPT 355; the speakers explicitly describe this as a non-ideal route.",
+      "uncertainty": "The transcript contains ASR errors around 'blue tech path' and 'blue ought'; the summary interprets this as a blue technology path from surrounding named techs.",
+      "components": [
+        "technology:det",
+        "technology:gd",
+        "technology:cv2",
+        "unit:muaat_mech"
+      ],
+      "segment_ids": [
+        "s001184",
+        "s001190",
+        "s001199",
+        "s001204",
+        "s001210",
+        "s001245",
+        "s001247"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4009.0,
+          "end": 4078.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4147.7,
+          "end": 4176.02
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Take the round-one Tech secondary only when the budget leaves the opening production intact; skipping it to use Umbat and build a carrier plus destroyer is acceptable, with Tech caught up later.",
+      "conditions": "A Tech primary or a trade/diplomacy sequence can make early research affordable; if Tech timing competes with the agent or plastic, the guide favors getting units out.",
+      "compatibility": "SCPT 355; exact costs and timing not revalidated.",
+      "uncertainty": "The speakers describe several alternatives and explicitly reject a universal round-one Tech requirement.",
+      "components": [
+        "leader:muaatagent"
+      ],
+      "segment_ids": [
+        "s001117",
+        "s001120",
+        "s001123",
+        "s001126",
+        "s001128"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3710.78,
+          "end": 3781.88
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "Treat Muaat as able to convert a good resource and influence position into efficient fleets through its production tools, but not as innately wealthy: a poor slice can leave it stalled for the whole game.",
+      "conditions": "The army-production advantage matters only when Muaat can afford units and the command tokens to use its abilities; assess both resource and influence supply.",
+      "compatibility": "SCPT 355; strategic evaluation only.",
+      "uncertainty": "The speakers frame this as a recurring experience, not a measured faction comparison.",
+      "components": [
+        "unit:muaat_warsun",
+        "leader:muaatagent"
+      ],
+      "segment_ids": [
+        "s000638",
+        "s000646",
+        "s000662",
+        "s000668"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2046.42,
+          "end": 2213.5
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Treat Muaat as a wind-up faction: preserve enough actions and resources to assemble the round's pieces, then exploit late-round production or movement; it rarely starts the round with an immediate decisive strike.",
+      "conditions": "Useful as a planning frame across rounds, but the exact sequence changes with strategy-card timing, agent use, money, and table pressure.",
+      "compatibility": "SCPT 355; metaphor summarizes podcast advice.",
+      "uncertainty": "This is a descriptive metaphor, not a rules mechanic or promise that late-round actions remain safe.",
+      "components": [
+        "faction:muaat"
+      ],
+      "segment_ids": [
+        "s000647",
+        "s000648",
+        "s000649",
+        "s000651",
+        "s000652",
+        "s000653",
+        "s000658"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2096.64,
+          "end": 2165.08
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Use Alliance trades for concrete benefits such as a helpful faction ability, an early point deal, or temporary protection from a slice neighbor; the value is incremental and depends on the remaining game actions.",
+      "conditions": "A Cabal swap is given as a useful example for extra fighters on builds; early neighbor protection may fade by rounds four or five, and alliance value depends on whether Muaat will still follow secondaries.",
+      "compatibility": "SCPT 355; example-specific trade advice.",
+      "uncertainty": "The guide says it can be hard to price and may be worth less late when tokens are committed to tactics/fleet.",
+      "components": [
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s001344",
+        "s001350",
+        "s001354",
+        "s001360",
+        "s001378",
+        "s001379",
+        "s001380",
+        "s001381",
+        "s001389",
+        "s001390",
+        "s001391",
+        "s001392",
+        "s001393",
+        "s001394",
+        "s001395",
+        "s001396",
+        "s001400",
+        "s001401",
+        "s001403",
+        "s001404",
+        "s001405"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4467.32,
+          "end": 4565.66
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4571.52,
+          "end": 4646.88
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Prepare for stage-two scoring before the end of round four: map War Sun access, supporting fleets, and routes that can clear a path, then position Nova Seed to protect the intended round-five play.",
+      "conditions": "Especially important because the guide expects Muaat often to rely on a stage two and may lack Light/Wave; revealed objective type determines the best position.",
+      "compatibility": "SCPT 355; objective examples are strategic, not rules verification.",
+      "uncertainty": "Stage-two types are unknown until later, so the source recommends broad readiness rather than a fixed target.",
+      "components": [
+        "unit:muaat_warsun",
+        "leader:muaathero"
+      ],
+      "segment_ids": [
+        "s001409",
+        "s001426",
+        "s001431",
+        "s001432",
+        "s001433",
+        "s001434",
+        "s001435",
+        "s001436",
+        "s001437",
+        "s001438",
+        "s001439",
+        "s001443",
+        "s001444",
+        "s001454"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4647.94,
+          "end": 4799.54
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Use the War Sun to stop a scoring leader or contest a key position when one decisive move can change the scoring race; Muaat may need an Imperial grab or a late slay more than first-in-line initiative.",
+      "conditions": "Pick targets and commit only when the position can be defended or the scoring swing is worth exposing the fleet; repeated control objectives make the tradeoff more dangerous.",
+      "compatibility": "SCPT 355; game length and table response vary.",
+      "uncertainty": "The speakers emphasize that Muaat usually ekes out points rather than steamrolling and that a War Sun may only affect one opponent.",
+      "components": [
+        "unit:muaat_warsun"
+      ],
+      "segment_ids": [
+        "s001512",
+        "s001513",
+        "s001514",
+        "s001515",
+        "s001517",
+        "s001518",
+        "s001519",
+        "s001520",
+        "s001521",
+        "s001522",
+        "s001523",
+        "s001524",
+        "s001528",
+        "s001534"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4935.14,
+          "end": 5035.94
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Take scoring risks when safe play would leave Muaat short of ten: if Imperial is available and objectives are stretchable, the guide advises seriously considering the double-score attempt rather than assuming a later War Sun attack will recover all missed points.",
+      "conditions": "Evaluate actual objective prerequisites, fleet access, and whether scoring both is possible; prioritize preserving a route for the second point when plausible.",
+      "compatibility": "SCPT 355; scoring guidance is conditional and unverified against a ruleset.",
+      "uncertainty": "The speakers disagree on how often round-one scoring fails and use an approximate probability; do not treat that estimate as data.",
+      "components": [],
+      "segment_ids": [
+        "s001473",
+        "s001485",
+        "s001489",
+        "s001498",
+        "s001500",
+        "s001501",
+        "s001502",
+        "s001503",
+        "s001504",
+        "s001508",
+        "s001509"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4800.0,
+          "end": 4923.94
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "unit:muaat_mech",
+      "to": "faction:muaat",
+      "relation": "enables",
+      "conditions": "Mechs placed within Star Forge's applicable range add infantry when that faction ability is used.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1105.08,
+          "end": 1138.3
+        }
+      ]
+    },
+    {
+      "from": "leader:muaatcommander",
+      "to": "faction:muaat",
+      "relation": "synergizes-with",
+      "conditions": "After its War Sun production unlock, the commander returns trade goods on strategy-pool spending, offsetting repeated Star Forge and other token costs.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1632.85,
+          "end": 1702.77
+        }
+      ]
+    },
+    {
+      "from": "technology:mr",
+      "to": "leader:muaathero",
+      "relation": "synergizes-with",
+      "conditions": "Magnus Reactor Omega can make a supernova usable for production; the hero can create a supernova position for later production and staging.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1504.37,
+          "end": 1548.65
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1812.24,
+          "end": 1828.04
+        }
+      ]
+    },
+    {
+      "from": "technology:pws2",
+      "to": "unit:muaat_warsun2",
+      "relation": "enables",
+      "conditions": "The upgrade improves War Sun movement, opening earlier access across the slice and toward late-game targets.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1406.47,
+          "end": 1472.03
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 3970.42,
+          "end": 3990.32
+        }
+      ]
+    },
+    {
+      "from": "technology:cv2",
+      "to": "unit:muaat_mech",
+      "relation": "synergizes-with",
+      "conditions": "Carrier II helps move the fighter/infantry support generated around Star Forge and lets the fleet travel together in the blue-route example.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4051.72,
+          "end": 4078.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4117.74,
+          "end": 4145.52
+        }
+      ]
+    },
+    {
+      "from": "leader:muaatagent",
+      "to": "unit:muaat_warsun2",
+      "relation": "enables",
+      "conditions": "Umbat can produce up to two units in a system with a War Sun; the guide values this for converting resources into units, subject to the unit-cost cap and available money.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1548.75,
+          "end": 1587.67
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 2053.3,
+          "end": 2096.64
+        }
+      ]
+    },
+    {
+      "from": "leader:muaathero",
+      "to": "unit:muaat_warsun2",
+      "relation": "enables",
+      "conditions": "The hero's Nova Seed trigger requires moving a War Sun to a non-home system other than Mecatol Rex, then can establish the supernova position described in the source.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1748.25,
+          "end": 1775.29
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 4732.18,
+          "end": 4754.08
+        }
+      ]
+    },
+    {
+      "from": "leader:muaatcommander",
+      "to": "leader:muaatagent",
+      "relation": "synergizes-with",
+      "conditions": "Both reward the War Sun production engine: Umbat supplies units while the unlocked commander can return a trade good when strategy-pool tokens are spent.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1548.75,
+          "end": 1587.67
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-355-f37100b5127b",
+          "start": 1644.21,
+          "end": 1702.77
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,616 @@
+{
+  "schema": 1,
+  "status": "proposal-not-training-data",
+  "factions": [
+    "hacan",
+    "sol",
+    "jolnar",
+    "l1z1x",
+    "letnev",
+    "xxcha"
+  ],
+  "families": [
+    {
+      "id": "hacan-production-bottleneck",
+      "faction": "hacan",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C02",
+        "C21"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-360-5e107b23a516",
+          "start": 2298.42,
+          "end": 2396.6
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-360-5e107b23a516",
+          "start": 4661.62,
+          "end": 4710.3
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Emirates of Hacan (`hacan`)"
+      },
+      "source_conditions": [
+        "Risk rises when Hacan has little plastic or an opponent can attack the ground.",
+        "Production, not cash, limits placement."
+      ],
+      "source_compatibility": [
+        "SCPT 360 (2024-07-17); ruleset compatibility not independently reviewed.",
+        "SCPT 360 (2024-07-17); ruleset compatibility not independently reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "production",
+        "payment"
+      ],
+      "positive_variant": "Money remains but the home production allowance is the binding constraint; a defensive screen is needed.",
+      "contrast_variant": "Enough production exists, or extra combat quality rather than screen size is the immediate constraint.",
+      "diagnostic": "Production limit versus affordable units; chosen unit mix; actual defensive coverage, not bank size.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "hacan-marginal-technology",
+      "faction": "hacan",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C09",
+        "C10"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-360-5e107b23a516",
+          "start": 1305.26,
+          "end": 1415.46
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-360-5e107b23a516",
+          "start": 537.99,
+          "end": 547.81
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-360-5e107b23a516",
+          "start": 1200.0,
+          "end": 1304.64
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Emirates of Hacan (`hacan`)"
+      },
+      "source_conditions": [
+        "Research tempo and useful card swaps must justify it; hosts acknowledge Politics alternatives.",
+        "Reconsider only if green path/token are unusually cheap and income unusually valuable."
+      ],
+      "source_compatibility": [
+        "SCPT 360 (2024-07-17); ruleset compatibility not independently reviewed.",
+        "SCPT 360 (2024-07-17); ruleset compatibility not independently reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "development",
+        "secondary",
+        "payment"
+      ],
+      "positive_variant": "An available technology advances required mobility or a feasible QDN path, while extra income has low marginal value.",
+      "contrast_variant": "The supposedly core technology is unavailable, too late, or an objective/current income constraint changes the tradeoff.",
+      "diagnostic": "Legal alternatives, prerequisites, funds left for units; withhold a universal QDN or anti-Biomes label.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "sol-research-versus-expansion",
+      "faction": "sol",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C17"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3336.94,
+          "end": 3370.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 4132.74,
+          "end": 4194.82
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Federation of Sol (`sol`)"
+      },
+      "source_conditions": [
+        "Change the priority when the slice or revealed objectives create an immediate technology requirement."
+      ],
+      "source_compatibility": [
+        "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "secondary",
+        "development",
+        "production",
+        "payment"
+      ],
+      "positive_variant": "Extra early research prevents an otherwise useful carrier/infantry expansion build.",
+      "contrast_variant": "Expansion is already supplied or a revealed objective makes the extra technology valuable.",
+      "diagnostic": "Actual reached planets/scoring prerequisites under each affordable branch; distinguish a bad action ranking from a broken continuation.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "sol-secondary-budget",
+      "faction": "sol",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C19"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-328-db4a3e239705",
+          "start": 3423.4,
+          "end": 3509.04
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Federation of Sol (`sol`)"
+      },
+      "source_conditions": [
+        "Use the secondary when the hand has room and action cards matter; the hosts mention the seven-card limit."
+      ],
+      "source_compatibility": [
+        "SCPT 328, published 2023-12-06; guide assumes a Prophecy of Kings era six-player table and, for trade estimates, an X-minus-one commodity meta. Current ruleset compatibility is not reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "secondary",
+        "tokens",
+        "payment"
+      ],
+      "positive_variant": "Politics secondary is useful, the hand has room, and a strategy token is genuinely spare.",
+      "contrast_variant": "The hand is full, cards have low marginal value, or the token is needed for a more valuable secondary.",
+      "diagnostic": "Action-card outcome and token budget; taking Politics and following its secondary are separate choices.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "jolnar-opening-infantry",
+      "faction": "jolnar",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C02",
+        "C08"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 877.72,
+          "end": 885.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2423.56,
+          "end": 2451.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 2423.56,
+          "end": 2451.72
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3341.44,
+          "end": 3438.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 3629.88,
+          "end": 3717.94
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Universities of Jol-Nar (`jolnar`)"
+      },
+      "source_conditions": [
+        "Most acute in round one, when the carrier expands before the home build.",
+        "When the infantry shortage makes a missed build dangerous."
+      ],
+      "source_compatibility": [
+        "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+        "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "secondary",
+        "production",
+        "cargo",
+        "landing"
+      ],
+      "positive_variant": "A timely Warfare secondary/home production route can repair the two-infantry expansion shortage.",
+      "contrast_variant": "Warfare timing or an activated home makes that route ineffective, or the expansion is already supplied.",
+      "diagnostic": "Engine offer timing, infantry produced, capacity loaded and planets actually taken; verify Sarween savings in the legal state.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "jolnar-research-agreement",
+      "faction": "jolnar",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C04",
+        "C21"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 1279.9,
+          "end": 1403.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 4078.98,
+          "end": 4132.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6365.22,
+          "end": 6407.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6104.3,
+          "end": 6128.34
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6194.04,
+          "end": 6320.68
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-340-22ea1026a491",
+          "start": 6365.22,
+          "end": 6407.06
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Universities of Jol-Nar (`jolnar`)"
+      },
+      "source_conditions": [
+        "Value depends on buyers, trigger timing, and agreement.",
+        "Consider scores, win-slay risk, tech objectives and buyer return."
+      ],
+      "source_compatibility": [
+        "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed.",
+        "SCPT 340 (2024-02-29); ruleset compatibility not independently reviewed."
+      ],
+      "decision_heads_to_inspect": [
+        "diplomacy",
+        "secondary",
+        "development"
+      ],
+      "positive_variant": "A legal Research Agreement transaction pays for useful research or secures a concrete benefit.",
+      "contrast_variant": "The partner receives decisive technology for marginal return, or no supported transaction/timing is available.",
+      "diagnostic": "Publicly visible deal value and opportunity cost; diplomacy-ON specialist case, not evidence about diplomacy-OFF improvement.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "l1z1x-structure-capture",
+      "faction": "l1z1x",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C12",
+        "C21"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 1698.88,
+          "end": 1730.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5867.86,
+          "end": 5919.26
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The L1Z1X Mindnet (`l1z1x`)"
+      },
+      "source_conditions": [
+        "Requires taking such a planet and an opportunity to produce afterward.",
+        "May appeal late, even after an opponent scores, when taking a structure advances or blocks an objective."
+      ],
+      "source_compatibility": [
+        "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+        "SCPT347, published 2024-04-17; ruleset compatibility unreviewed"
+      ],
+      "decision_heads_to_inspect": [
+        "activation",
+        "cargo",
+        "landing",
+        "production"
+      ],
+      "positive_variant": "An affordable, feasible invasion captures an enemy structure that can support a revealed objective or production.",
+      "contrast_variant": "The same target lacks a useful structure, the invasion cannot land enough ground forces, or the structure is irrelevant to scoring.",
+      "diagnostic": "Real Assimilate timing, actual control and usable structure; an imagined target-progress feature is not proof the invasion succeeds.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "l1z1x-invasion-budget",
+      "faction": "l1z1x",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C02",
+        "C22"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 6338.5,
+          "end": 6366.98
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-347-35ba8438f8db",
+          "start": 5919.68,
+          "end": 5941.38
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The L1Z1X Mindnet (`l1z1x`)"
+      },
+      "source_conditions": [
+        "Especially important in six-player and tournament contexts; reconsider L1 if both are absent.",
+        "Especially important for stage-two or multi-system control objectives."
+      ],
+      "source_compatibility": [
+        "SCPT347, published 2024-04-17; ruleset compatibility unreviewed",
+        "SCPT347, published 2024-04-17; ruleset compatibility unreviewed"
+      ],
+      "decision_heads_to_inspect": [
+        "tokens",
+        "activation",
+        "cargo",
+        "landing"
+      ],
+      "positive_variant": "A control-objective attempt needs influence-funded command tokens and sufficient ground forces despite a strong fleet.",
+      "contrast_variant": "Tokens/ground forces are already sufficient or the attack leaves no viable scoring route.",
+      "diagnostic": "Remaining actions, landed ground forces and full objective requirements; combat strength alone is not the target.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "letnev-resource-influence-balance",
+      "faction": "letnev",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C04"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 5461.54,
+          "end": 5521.26
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Barony of Letnev (`letnev`)"
+      },
+      "source_conditions": [
+        "The speakers suggest about six influence in the slice as a minimum and accept lower slice resources more readily than lower influence."
+      ],
+      "source_compatibility": [
+        "Episode 463; slice composition and token pressure are table- and map-dependent."
+      ],
+      "decision_heads_to_inspect": [
+        "tokens",
+        "payment",
+        "strategy"
+      ],
+      "positive_variant": "Home resources fund ships but influence/tokens constrain the next useful activation.",
+      "contrast_variant": "Command tokens are plentiful or the immediate scoring constraint is ships/resources instead.",
+      "diagnostic": "Separate resource income, influence spending and remaining action budget; do not use total planet value as interchangeable money.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "letnev-armada-token-allocation",
+      "faction": "letnev",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C15",
+        "C16"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 1934.78,
+          "end": 2013.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 2013.7,
+          "end": 2085.84
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 2088.02,
+          "end": 2177.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 1934.78,
+          "end": 2013.7
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-463-83eb5a3140f5",
+          "start": 5461.54,
+          "end": 5521.26
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Barony of Letnev (`letnev`)"
+      },
+      "source_conditions": [
+        "Taking fleet tokens for tactics may be more practical than for other factions; the speakers also note Barony may still field five ships when another rule sets a general cap of four.",
+        "The no-token interactions apply only to effects that specifically remove a fleet-pool token; they do not remove other token or action costs."
+      ],
+      "source_compatibility": [
+        "Episode 463; agenda and objective interactions are described as occasional edge cases.",
+        "Episode 463 combines Armada discussion with slice/token-economy caveats."
+      ],
+      "decision_heads_to_inspect": [
+        "tokens",
+        "movement",
+        "production"
+      ],
+      "positive_variant": "Armada permits a smaller fleet pool, but leaving no tactic tokens would prevent a useful action.",
+      "contrast_variant": "A larger fleet is required or another revealed requirement changes the best pool allocation.",
+      "diagnostic": "Actual fleet legality versus activation budget; zero fleet tokens is an option, not the training goal.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "xxcha-hero-economy-capacity",
+      "faction": "xxcha",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C03",
+        "C04"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1081.06,
+          "end": 1195.12
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 940.98,
+          "end": 974.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1138.36,
+          "end": 1169.92
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Xxcha Kingdom (`xxcha`)"
+      },
+      "source_conditions": [
+        "Apply only to qualifying spends under the hero text described in the episode.",
+        "Separate planet spending from production and effects that inspect inherent planet values; the episode says Xxcha begins with four influence toward the unlock."
+      ],
+      "source_compatibility": [
+        "Hero interpretation in a 2022 post-Codex-3 guide; rules and errata not independently checked.",
+        "SCPT 264's hero/commander reading; current rule text not audited."
+      ],
+      "decision_heads_to_inspect": [
+        "payment",
+        "production"
+      ],
+      "positive_variant": "The hero is active and increases spendable planet value, while printed production still limits the build.",
+      "contrast_variant": "The hero is inactive, production is not binding, or printed influence is being counted for a distinct unlock.",
+      "diagnostic": "Effective spend versus printed values/production; reject any target that treats hero income as extra dock production.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    },
+    {
+      "id": "xxcha-imperial-tempo",
+      "faction": "xxcha",
+      "status": "proposal-not-instantiated",
+      "source_claims": [
+        "C05",
+        "C13"
+      ],
+      "episode_citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1673.88,
+          "end": 1776.06
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2938.24,
+          "end": 2998.48
+        }
+      ],
+      "upstream_citation": {
+        "kind": "document",
+        "document": "upstream-plans",
+        "heading": "The Xxcha Kingdom (`xxcha`)"
+      },
+      "source_conditions": [
+        "Inspect the map and secret's actual requirements; a threatened-planet secret or other immediately achievable secret is only useful if it can really be scored.",
+        "This is a conditional listener proposal endorsed by the hosts; it depends on Imperial being available, speaker order and having two scoreable stage-one objectives. Drawing a second secret improves the chance to score a secret; the draw itself is not a point."
+      ],
+      "source_compatibility": [
+        "Objective strategy from the 2022 guide; deck and rules mix not verified.",
+        "SCPT 264, with then-current objective/hero assumptions."
+      ],
+      "decision_heads_to_inspect": [
+        "strategy",
+        "secondary",
+        "turn",
+        "other"
+      ],
+      "positive_variant": "Imperial can score an eligible public objective and improve secret access on a feasible hero-unlock path.",
+      "contrast_variant": "No public score is eligible or the extra draw does not justify losing a card/action opportunity.",
+      "diagnostic": "A drawn secret is not a scored secret; actual score ledger and hero condition before preferring the line.",
+      "target_status": "unlabelled: requires legal-state, source-compatibility and branch-outcome checks"
+    }
+  ],
+  "validation_gates": [
+    "legal engine state and stable offered action IDs",
+    "current source/ruleset compatibility",
+    "public observation and own cards only; no hidden objectives/decks",
+    "full positive and contrast branch outcomes",
+    "inference status and guard failures retained"
+  ],
+  "split_policy": "Separate training-map/synthetic-state origin; never train or tune on validation holdout seeds. Split related state variants by origin seed/family."
+}

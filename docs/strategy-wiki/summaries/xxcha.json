@@ -1,0 +1,1195 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "summarizer": "Luna",
+  "faction": "xxcha",
+  "claims": [
+    {
+      "id": "C01",
+      "statement": "Treat the first rounds as a difficult setup: the guide cites a single starting carrier, weak early production/resources for technology, and limited early plastic, despite four commodities.",
+      "conditions": "Starting units, slice, trade partners and objective deck determine the severity; use this as the episode's opening assessment.",
+      "compatibility": "SCPT 264 (2022), post-Codex-3 Omega-Xxcha discussion; current compatibility not verified.",
+      "uncertainty": "Podcast assessment and transcript are historical; no present-day setup audit.",
+      "components": [
+        "faction:xxcha"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 315.48,
+          "end": 434.5
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1317.86,
+          "end": 1419.16
+        }
+      ],
+      "segment_ids": [
+        "s000338",
+        "s000343",
+        "s000354",
+        "s000060",
+        "s000061",
+        "s000064",
+        "s000066",
+        "s000074",
+        "s000075",
+        "s000077",
+        "s000087",
+        "s000088",
+        "s000358",
+        "s000359",
+        "s000362",
+        "s000368"
+      ]
+    },
+    {
+      "id": "C02",
+      "statement": "Prioritize scoring early enough to unlock Xxekir Grom; the speakers target the end of round two when feasible and warn that unlocking by round three is a materially slower start.",
+      "conditions": "Requires scoring the required public and secret objectives; objective availability and table pressure can make the timing unattainable.",
+      "compatibility": "SCPT 264's then-new Codex-3 hero context; errata/current edition not verified.",
+      "uncertainty": "The round-two target is aspirational guide advice, not a guaranteed outcome.",
+      "components": [
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1657.82,
+          "end": 1776.06
+        }
+      ],
+      "segment_ids": [
+        "s000431",
+        "s000434",
+        "s000438",
+        "s000459",
+        "s000441",
+        "s000442"
+      ]
+    },
+    {
+      "id": "C03",
+      "statement": "Xxekir Grom combines a planet's printed resource and influence values when Xxcha exhausts it for a spend, treating the total as both resources and influence; this applies to objective spending and votes.",
+      "conditions": "Apply only to qualifying spends under the hero text described in the episode.",
+      "compatibility": "Hero interpretation in a 2022 post-Codex-3 guide; rules and errata not independently checked.",
+      "uncertainty": "Transcript paraphrase is not rules authority; verify exact current wording.",
+      "components": [
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1081.06,
+          "end": 1195.12
+        }
+      ],
+      "segment_ids": [
+        "s000284",
+        "s000293",
+        "s000298",
+        "s000307",
+        "s000310",
+        "s000285",
+        "s000286",
+        "s000287",
+        "s000288"
+      ]
+    },
+    {
+      "id": "C04",
+      "statement": "Do not treat the hero as added production capacity or as changing printed planet values for commander unlocks and unrelated effects; the guide says the commander requires planets with 12 combined printed influence.",
+      "conditions": "Separate planet spending from production and effects that inspect inherent planet values; the episode says Xxcha begins with four influence toward the unlock.",
+      "compatibility": "SCPT 264's hero/commander reading; current rule text not audited.",
+      "uncertainty": "Use the current official wording for edge cases.",
+      "components": [
+        "leader:xxchahero",
+        "leader:xxchacommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 940.98,
+          "end": 974.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1138.36,
+          "end": 1169.92
+        }
+      ],
+      "segment_ids": [
+        "s000240",
+        "s000243",
+        "s000247",
+        "s000301",
+        "s000306",
+        "s000242",
+        "s000244"
+      ]
+    },
+    {
+      "id": "C05",
+      "statement": "Choose a secret objective with a credible round-one or round-two scoring route when possible, because early scoring advances the hero unlock.",
+      "conditions": "Inspect the map and secret's actual requirements; a threatened-planet secret or other immediately achievable secret is only useful if it can really be scored.",
+      "compatibility": "Objective strategy from the 2022 guide; deck and rules mix not verified.",
+      "uncertainty": "The source itself says missing the round-two target does not end the game.",
+      "components": [
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1673.88,
+          "end": 1776.06
+        }
+      ],
+      "segment_ids": [
+        "s000434",
+        "s000438",
+        "s000447",
+        "s000458",
+        "s000459"
+      ]
+    },
+    {
+      "id": "C06",
+      "statement": "Do not prioritize the Custodians point over scoring objectives for the hero condition; the speakers say it does not count toward that unlock.",
+      "conditions": "Applies to the hero prerequisite as described in the episode.",
+      "compatibility": "Historical guide claim; present rules wording not independently verified.",
+      "uncertainty": "A special map or house rule could change the strategic calculation, not the cited prerequisite.",
+      "components": [
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1827.76,
+          "end": 1853.94
+        }
+      ],
+      "segment_ids": [
+        "s000470",
+        "s000480",
+        "s000483"
+      ]
+    },
+    {
+      "id": "C07",
+      "statement": "Diplomacy is a frequent preferred opening because its primary can refresh planets and Xxcha can use Peace Accords to gain an adjacent unoccupied planet after resolving either the primary or secondary.",
+      "conditions": "Peace Accords excludes Mecatol Rex and requires an unoccupied planet adjacent to one Xxcha controls; taking the card is distinct from following its secondary.",
+      "compatibility": "SCPT 264; current Diplomacy/Peace Accords wording not checked.",
+      "uncertainty": "The guide sees high value but emphasizes map and timing dependence.",
+      "components": [
+        "ability:peace_accords",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 435.58,
+          "end": 475.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1908.16,
+          "end": 1948.22
+        }
+      ],
+      "segment_ids": [
+        "s000091",
+        "s000093",
+        "s000095",
+        "s000105",
+        "s000500",
+        "s000506",
+        "s000512",
+        "s000515",
+        "s000092",
+        "s000094",
+        "s000501",
+        "s000502"
+      ]
+    },
+    {
+      "id": "C08",
+      "statement": "Use Xxcha's agent primarily to ready one of its own planets; the speakers consider removing another player's infantry to ready their planet rarely worthwhile.",
+      "conditions": "The value depends on which planet can be refreshed and what resource or influence spend remains available.",
+      "compatibility": "Agent discussion in SCPT 264; exact current leader text not verified.",
+      "uncertainty": "The second clause is the hosts' strategic judgment.",
+      "components": [
+        "leader:xxchaagent"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 824.84,
+          "end": 885.68
+        }
+      ],
+      "segment_ids": [
+        "s000216",
+        "s000218",
+        "s000220",
+        "s000222",
+        "s000224",
+        "s000225"
+      ]
+    },
+    {
+      "id": "C09",
+      "statement": "Diplomacy's value compounds with the hero and exploration attachments: refreshing improved planets can create repeated high-value spending opportunities.",
+      "conditions": "Requires accessible planets, useful attachments and timing that allows a refreshed planet to be spent; balance against exposure and opportunity cost.",
+      "compatibility": "Strategic interaction described for the source-era hero and exploration rules; current compatibility not checked.",
+      "uncertainty": "The episode gives illustrative examples and enthusiasm, not a guaranteed yield.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1965.54,
+          "end": 2117.74
+        }
+      ],
+      "segment_ids": [
+        "s000522",
+        "s000528",
+        "s000552",
+        "s000565",
+        "s000525",
+        "s000526",
+        "s000527",
+        "s000529",
+        "s000566"
+      ]
+    },
+    {
+      "id": "C10",
+      "statement": "Prefer Trade when the visible payout from commodities, neighbors or an objective is strong; compare that known income with Diplomacy's less visible but potentially higher upside.",
+      "conditions": "Table composition, first-pick timing and willingness to trade determine the comparison; do not assume deals will occur.",
+      "compatibility": "Opening-card advice from SCPT 264; table/economy assumptions vary.",
+      "uncertainty": "The hosts explicitly preserve Trade as a good choice in high-value situations.",
+      "components": [
+        "strategy-card:pok5trade",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2008.94,
+          "end": 2067.58
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2461.08,
+          "end": 2522.04
+        }
+      ],
+      "segment_ids": [
+        "s000538",
+        "s000543",
+        "s000550",
+        "s000675",
+        "s000688",
+        "s000699",
+        "s000678",
+        "s000689",
+        "s000690",
+        "s000692",
+        "s000694",
+        "s000695"
+      ]
+    },
+    {
+      "id": "C11",
+      "statement": "Leadership is not a routine pick in the hosts' plan; an early Lead from the Front objective is their named exception.",
+      "conditions": "Reassess when public objectives require command tokens or the table's card selection changes the value.",
+      "compatibility": "SCPT 264 opening evaluation; objective deck mix not verified.",
+      "uncertainty": "The episode gives a narrow situational opinion, not a universal ranking.",
+      "components": [
+        "strategy-card:pok1leadership",
+        "public-objective:lead"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1800.0,
+          "end": 1827.76
+        }
+      ],
+      "segment_ids": [
+        "s000464",
+        "s000467",
+        "s000468"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Politics usually falls behind Diplomacy, but can be justified when speaker order and known next-round objectives materially improve scoring or when a constrained secret makes its cards useful.",
+      "conditions": "The source's examples include discarding five action cards or setting up a score; weigh this against other secondaries and taking Diplomacy.",
+      "compatibility": "SCPT 264's historical strategy-card discussion.",
+      "uncertainty": "The hosts debate the edge cases and do not settle on Politics as a normal pick.",
+      "components": [
+        "strategy-card:pok3politics",
+        "strategy-card:pok2diplomacy",
+        "strategy-card:pok8imperial"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2209.28,
+          "end": 2361.72
+        }
+      ],
+      "segment_ids": [
+        "s000589",
+        "s000600",
+        "s000612",
+        "s000636",
+        "s000640",
+        "s000616",
+        "s000617",
+        "s000618"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Imperial in round two can enable a second public-objective score and draw a second secret, improving the chance of scoring three objectives by the agenda phase if Xxcha prepares two stage ones.",
+      "conditions": "This is a conditional listener proposal endorsed by the hosts; it depends on Imperial being available, speaker order and having two scoreable stage-one objectives. Drawing a second secret improves the chance to score a secret; the draw itself is not a point.",
+      "compatibility": "SCPT 264, with then-current objective/hero assumptions.",
+      "uncertainty": "Not guaranteed; the speakers say round-two Imperial is not commonly selected in their experience, and the extra secret is only another candidate to score.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2938.24,
+          "end": 2998.48
+        }
+      ],
+      "segment_ids": [
+        "s000838",
+        "s000841",
+        "s000845",
+        "s000852",
+        "s000857",
+        "s000839",
+        "s000840",
+        "s000842",
+        "s000843",
+        "s000844"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "Warfare is often better taken by another player so Xxcha can use the secondary if it needs more expansion; taking the primary is a specific response to a control objective or poor access.",
+      "conditions": "Map, carrier count, card order and available secondaries matter; a nearby multi-planet system can make the secondary valuable.",
+      "compatibility": "SCPT 264 opening advice.",
+      "uncertainty": "The hosts describe Warfare as awkward for Xxcha rather than categorically bad.",
+      "components": [
+        "strategy-card:pok6warfare"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2583.42,
+          "end": 2753.16
+        }
+      ],
+      "segment_ids": [
+        "s000720",
+        "s000728",
+        "s000731",
+        "s000734",
+        "s000751",
+        "s000763",
+        "s000744",
+        "s000746",
+        "s000747",
+        "s000755",
+        "s000757"
+      ]
+    },
+    {
+      "id": "C15",
+      "statement": "Technology is not an automatic round-one pick, and ordinary double-teching can leave Xxcha short on early ships; prioritize it when an objective, slice or timing need makes the purchase worthwhile.",
+      "conditions": "A rich opening or technology objective can change the choice; taking Technology can also save resources compared with following its secondary.",
+      "compatibility": "SCPT 264 guide-era strategy; exact current technology prerequisites not checked here.",
+      "uncertainty": "The speakers offer a counterargument for taking Technology when timing and ship funds matter.",
+      "components": [
+        "strategy-card:pok7technology"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2766.84,
+          "end": 2935.78
+        }
+      ],
+      "segment_ids": [
+        "s000771",
+        "s000772",
+        "s000781",
+        "s000794",
+        "s000804",
+        "s000830",
+        "s000836",
+        "s000810",
+        "s000813",
+        "s000814"
+      ]
+    },
+    {
+      "id": "C16",
+      "statement": "The agent and Peace Accords are distinct tools: the agent readies a planet, while resolving Diplomacy can also satisfy Peace Accords to gain an adjacent empty planet.",
+      "conditions": "Check Peace Accords' adjacency, occupancy and Mecatol restrictions independently of whether Diplomacy was taken or followed.",
+      "compatibility": "Episode interpretation, not current rules verification.",
+      "uncertainty": "ASR may distort component names; IDs are resolved against the supplied component reference.",
+      "components": [
+        "leader:xxchaagent",
+        "ability:peace_accords",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 435.58,
+          "end": 475.96
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 824.84,
+          "end": 885.68
+        }
+      ],
+      "segment_ids": [
+        "s000093",
+        "s000095",
+        "s000216",
+        "s000224"
+      ]
+    },
+    {
+      "id": "C17",
+      "statement": "Instinct Training and Nullification Field are situational late-game faction technologies, not the core plan; their strategy-pool token costs feel easier only after Xxcha's economy develops.",
+      "conditions": "Instinct Training may fit an action-card-heavy game; Nullification Field may help when ships need to leave home, but opponents can bypass it. A useful skip and tactical need improve the case.",
+      "compatibility": "Faction-tech discussion under the source-era Codex-3 faction sheet; current tech text not verified.",
+      "uncertainty": "Both exhaust when used and are limited by readiness; the guide describes counters and timing uncertainty.",
+      "components": [
+        "technology:it",
+        "technology:nf"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1439.44,
+          "end": 1649.0
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4022.06,
+          "end": 4134.38
+        }
+      ],
+      "segment_ids": [
+        "s000376",
+        "s000384",
+        "s000390",
+        "s000410",
+        "s000424",
+        "s001170",
+        "s001182",
+        "s001197",
+        "s000412",
+        "s000415",
+        "s000416",
+        "s000418",
+        "s000419",
+        "s000393",
+        "s001169"
+      ]
+    },
+    {
+      "id": "C18",
+      "statement": "Concentrating planet value under the hero can reduce how many planets Xxcha needs to protect as late-game risk rises.",
+      "conditions": "Depends on valuable planets, access, refresh timing, map and opponent reach.",
+      "compatibility": "Illustrative strategic observation in SCPT 264.",
+      "uncertainty": "The speakers describe this as an ideal situation, not a guaranteed defense outcome.",
+      "components": [
+        "leader:xxchahero",
+        "strategy-card:pok2diplomacy"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1982.1,
+          "end": 1998.52
+        }
+      ],
+      "segment_ids": [
+        "s000528",
+        "s000530",
+        "s000531",
+        "s000534"
+      ]
+    },
+    {
+      "id": "C19",
+      "statement": "Quash is a situational agenda veto: spend a strategy-pool command token to discard a revealed agenda and reveal a replacement; preserve tokens before the late game.",
+      "conditions": "The guide suggests using it on harmful agendas and allows occasional fishing for a point-granting agenda, while warning against indiscriminate repeated quashes.",
+      "compatibility": "SCPT 264's post-Codex-3 assessment; current timing and ability wording not checked.",
+      "uncertainty": "The hosts differ slightly on the amount of agenda fishing worth doing.",
+      "components": [
+        "ability:quash",
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 485.36,
+          "end": 560.54
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 5102.24,
+          "end": 5240.98
+        }
+      ],
+      "segment_ids": [
+        "s000111",
+        "s000119",
+        "s000120",
+        "s001503",
+        "s001513",
+        "s001525",
+        "s001540",
+        "s000109",
+        "s000110",
+        "s000112",
+        "s000115",
+        "s000129",
+        "s000130"
+      ]
+    },
+    {
+      "id": "C20",
+      "statement": "Political Favor is difficult to sell because it duplicates Xxcha's Quash; usually keep it unless another player offers an unusually good deal or needs it immediately.",
+      "conditions": "Value depends on agenda knowledge and the buyer's urgency.",
+      "compatibility": "Promissory-note analysis in SCPT 264; current rules not verified.",
+      "uncertainty": "The speakers call the sale case rare and context-specific.",
+      "components": [
+        "ability:quash"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 681.58,
+          "end": 730.04
+        }
+      ],
+      "segment_ids": [
+        "s000168",
+        "s000173",
+        "s000176",
+        "s000179"
+      ]
+    },
+    {
+      "id": "C21",
+      "statement": "The guide advises against casually giving away Xxcha's Alliance after the hero change, arguing that Xxcha's own agenda-phase vote power is now much larger than the old shared-vote bargain.",
+      "conditions": "Reassess based on alliance text, current hero rules, negotiation value and political commitments in the actual game.",
+      "compatibility": "Explicitly compares pre-Codex-3 and post-Codex-3 expectations in a 2022 guide; current compatibility not checked.",
+      "uncertainty": "This is table-market advice, not a categorical rule; historical source-era assumptions are central.",
+      "components": [
+        "leader:xxchahero",
+        "leader:xxchacommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4800.0,
+          "end": 4902.32
+        }
+      ],
+      "segment_ids": [
+        "s001420",
+        "s001431",
+        "s001433",
+        "s001446",
+        "s001448",
+        "s001423",
+        "s001424",
+        "s001426",
+        "s001438",
+        "s001444"
+      ]
+    },
+    {
+      "id": "C22",
+      "statement": "A red-leaning War Sun plan can turn Xxcha's later cash into movement, bombardment and a substantial fleet for defense or win-slay, addressing weak production and movement.",
+      "conditions": "Treat as a mid/late-game plan; it depends on surviving early, building production capacity and having enough time and resources.",
+      "compatibility": "SCPT 264 guide-era plan; no present-day rules verification.",
+      "uncertainty": "The speakers are enthusiastic but acknowledge poor early tempo and no guaranteed unlock or build timing.",
+      "components": [
+        "technology:ws",
+        "unit:xxcha_flagship",
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3154.1,
+          "end": 3216.9
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3357.92,
+          "end": 3390.1
+        }
+      ],
+      "segment_ids": [
+        "s000909",
+        "s000913",
+        "s000922",
+        "s000930",
+        "s000932",
+        "s000979",
+        "s000983",
+        "s000931"
+      ]
+    },
+    {
+      "id": "C23",
+      "statement": "The proposed red route starts with AI Development Algorithm, then considers Plasma Scoring or Self-Assembly Routines according to immediate use; a red skip can accelerate War Suns.",
+      "conditions": "Plasma is more attractive with bombardment or a PDS plan; Self-Assembly can add a mech outside production capacity. Prioritize whichever helps the current board.",
+      "compatibility": "Technology route proposed by SCPT 264; tech requirements and current rules not checked.",
+      "uncertainty": "The source says AI Development may be replaced by Psychoarchaeology when the slice has the needed skips.",
+      "components": [
+        "technology:aida",
+        "technology:ps",
+        "technology:sar",
+        "technology:ws",
+        "technology:pa"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3237.56,
+          "end": 3322.24
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4140.48,
+          "end": 4216.62
+        }
+      ],
+      "segment_ids": [
+        "s000941",
+        "s000950",
+        "s000953",
+        "s000958",
+        "s000968",
+        "s001200",
+        "s001220",
+        "s000951",
+        "s000956",
+        "s000966"
+      ]
+    },
+    {
+      "id": "C24",
+      "statement": "War Suns support a longer closeout by giving Xxcha force to contest late scoring and win-slay while it waits for a favorable stage-two opportunity.",
+      "conditions": "Use when the game is likely to continue and the investment produces enough fleet power to affect leaders; coordinate with point tempo.",
+      "compatibility": "Strategic closeout advice in SCPT 264.",
+      "uncertainty": "The source discusses round five/six as a common horizon, not a rules or tournament guarantee.",
+      "components": [
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3357.92,
+          "end": 3390.1
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 5244.78,
+          "end": 5416.44
+        }
+      ],
+      "segment_ids": [
+        "s000979",
+        "s000983",
+        "s001566",
+        "s001584"
+      ]
+    },
+    {
+      "id": "C25",
+      "statement": "Cruiser II can bridge Xxcha's movement gap and support timely point denial while it waits for a larger fleet plan; the hosts rank it ahead of PDS II for broad usefulness.",
+      "conditions": "Choose based on the map, targets, opponent tempo and whether the upgrade helps this round; it is a stopgap, not an automatic detour.",
+      "compatibility": "SCPT 264 technology assessment; current upgrade details not verified.",
+      "uncertainty": "The guide's ranking is experience-based and board-dependent.",
+      "components": [
+        "technology:cr2"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3395.48,
+          "end": 3553.38
+        }
+      ],
+      "segment_ids": [
+        "s000986",
+        "s000988",
+        "s000992",
+        "s001006",
+        "s001019",
+        "s001020"
+      ]
+    },
+    {
+      "id": "C26",
+      "statement": "PDS II with Xxcha's flagship and additional PDS can deter attacks and support defense or a win-slay; Construction makes the route more attractive when structures also score.",
+      "conditions": "Use when the objective deck, construction access and defensive geography repay the investment; the guide says the mechs alone are not a strong substitute.",
+      "compatibility": "SCPT 264 strategy advice; current unit/technology text not audited.",
+      "uncertainty": "The hosts still favor Cruiser II in more situations and describe PDS investment as conditional.",
+      "components": [
+        "technology:pds2",
+        "unit:xxcha_flagship",
+        "strategy-card:pok4construction"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 2400.0,
+          "end": 2444.74
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3511.08,
+          "end": 3545.8
+        }
+      ],
+      "segment_ids": [
+        "s000656",
+        "s000660",
+        "s000663",
+        "s000664",
+        "s001014",
+        "s001017",
+        "s001016"
+      ]
+    },
+    {
+      "id": "C27",
+      "statement": "Blue technology is a fallback when movement, map skips or production facilities justify it; the speakers prefer the red War Sun route in ordinary conditions, while Space Dock II is a luxury that can improve a blue plan.",
+      "conditions": "A blue skip or unusually strong production setup can change the comparison; do not assume carrier upgrades solve a large cash-to-plastic mismatch by themselves.",
+      "compatibility": "Historical strategic comparison in SCPT 264.",
+      "uncertainty": "The hosts present blue as viable in good circumstances but less aligned with their default plan.",
+      "components": [
+        "technology:gd",
+        "technology:sd2",
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3662.0,
+          "end": 3804.16
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4233.54,
+          "end": 4349.4
+        }
+      ],
+      "segment_ids": [
+        "s001059",
+        "s001064",
+        "s001067",
+        "s001089",
+        "s001095",
+        "s001232",
+        "s001240",
+        "s001264"
+      ]
+    },
+    {
+      "id": "C28",
+      "statement": "Scanlink Drone Network is an optional exploration route the hosts enjoy for attachment hunting, particularly early enough for finds to repay the technology; late acquisition is a desperate, deck-dependent gamble.",
+      "conditions": "Consider remaining exploration tokens, already explored planets, attachment value and how many scoring rounds remain.",
+      "compatibility": "SCPT 264 guide-era exploration advice; current component rules not verified.",
+      "uncertainty": "The speakers explicitly distinguish personal enjoyment from optimality.",
+      "components": [
+        "technology:sdn",
+        "leader:xxchahero"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4356.12,
+          "end": 4615.8
+        }
+      ],
+      "segment_ids": [
+        "s001275",
+        "s001286",
+        "s001318",
+        "s001344",
+        "s001355"
+      ]
+    },
+    {
+      "id": "C29",
+      "statement": "Expect neighbors to resist helping Xxcha early once they recognize the hero payoff; build enough plastic and consider diplomacy or a PDS deterrent to avoid being an easy target.",
+      "conditions": "The guide expects the faction to become much stronger later, but whether the table refuses deals or attacks depends on players and map.",
+      "compatibility": "Table-meta forecast in a 2022 podcast, not a rules claim.",
+      "uncertainty": "The speakers present this as a prediction about evolving player behavior.",
+      "components": [
+        "strategy-card:pok2diplomacy",
+        "technology:pds2",
+        "unit:xxcha_flagship"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4631.46,
+          "end": 4739.92
+        }
+      ],
+      "segment_ids": [
+        "s001365",
+        "s001371",
+        "s001377",
+        "s001382",
+        "s001388"
+      ]
+    },
+    {
+      "id": "C30",
+      "statement": "Track point tempo and choose between a fast objective route and a longer recovery game; if a round-five finish is slipping, prepare early to extend the game and contest another scoring window.",
+      "conditions": "A longer game requires enough fleet power and table coordination to stop opponents while Xxcha converts its later economy into points.",
+      "compatibility": "SCPT 264 closeout strategy; round timing is contextual.",
+      "uncertainty": "The episode says the shift can begin around round three but does not promise Xxcha can force it.",
+      "components": [
+        "leader:xxchahero",
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 5244.78,
+          "end": 5416.44
+        }
+      ],
+      "segment_ids": [
+        "s001553",
+        "s001566",
+        "s001581",
+        "s001584",
+        "s001585"
+      ]
+    },
+    {
+      "id": "C31",
+      "statement": "Mecatol Rex plus Imperial is a possible catch-up line, but the hosts worry it may require repeated Imperial access and speaker control; do not rely on it as the sole plan.",
+      "conditions": "Evaluate the board, speaker order, remaining scoring opportunities and whether Xxcha can keep the game alive.",
+      "compatibility": "Source-era strategic judgment; current objective and card mix not checked.",
+      "uncertainty": "The hosts disagree in emphasis and present the route alongside a longer War Sun/win-slay plan.",
+      "components": [
+        "strategy-card:pok8imperial",
+        "technology:ws"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 5244.78,
+          "end": 5383.81
+        }
+      ],
+      "segment_ids": [
+        "s001550",
+        "s001553",
+        "s001564",
+        "s001571",
+        "s001578",
+        "s001574",
+        "s001576"
+      ]
+    },
+    {
+      "id": "C32",
+      "statement": "Opponents can counter Xxcha by withholding early help, coordinating votes against decisive agendas and denying it both agenda outcomes; the hosts think full-table exclusion may be unrealistic.",
+      "conditions": "Coordination, available votes and each player's incentives determine whether this works; Xxcha may try to divide the table.",
+      "compatibility": "Podcast table advice, not a deterministic counter or current-rules review.",
+      "uncertainty": "This is explicitly a meta prediction and the speakers question whether five opponents can coordinate fully.",
+      "components": [
+        "leader:xxchahero",
+        "leader:xxchacommander"
+      ],
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 5019.58,
+          "end": 5056.92
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4636.98,
+          "end": 4668.2
+        }
+      ],
+      "segment_ids": [
+        "s001483",
+        "s001485",
+        "s001488",
+        "s001490",
+        "s001365",
+        "s001372",
+        "s001486"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "strategy-card:pok2diplomacy",
+      "to": "ability:peace_accords",
+      "relation": "enables",
+      "conditions": "Resolving either Diplomacy primary or secondary is the trigger described in the faction ability; Peace Accords still requires an eligible adjacent empty planet.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 435.58,
+          "end": 475.96
+        }
+      ],
+      "segment_ids": [
+        "s000091",
+        "s000095",
+        "s000105",
+        "s000092",
+        "s000094"
+      ]
+    },
+    {
+      "from": "leader:xxchaagent",
+      "to": "leader:xxchahero",
+      "relation": "synergizes-with",
+      "conditions": "The agent can ready a planet so Xxcha may make another qualifying spend with the hero, if timing and planet availability allow.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 866.86,
+          "end": 885.68
+        }
+      ],
+      "segment_ids": [
+        "s000224",
+        "s000225"
+      ]
+    },
+    {
+      "from": "strategy-card:pok2diplomacy",
+      "to": "leader:xxchahero",
+      "relation": "synergizes-with",
+      "conditions": "Diplomacy refreshes planets; the hero increases their combined value when exhausted for qualifying spends.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1965.54,
+          "end": 2067.58
+        }
+      ],
+      "segment_ids": [
+        "s000522",
+        "s000538",
+        "s000550",
+        "s000527",
+        "s000528",
+        "s000529"
+      ]
+    },
+    {
+      "from": "leader:xxchahero",
+      "to": "leader:xxchacommander",
+      "relation": "synergizes-with",
+      "conditions": "The hero improves vote spends and the commander adds a vote per planet, as the source interprets their combined agenda-phase impact; unlock requirements remain separate.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 940.98,
+          "end": 974.4
+        },
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 1182.38,
+          "end": 1217.76
+        }
+      ],
+      "segment_ids": [
+        "s000240",
+        "s000244",
+        "s000314",
+        "s000241",
+        "s000242"
+      ]
+    },
+    {
+      "from": "technology:aida",
+      "to": "technology:ws",
+      "relation": "enables",
+      "conditions": "The proposed route uses AI Development Algorithm as an entry toward later technology choices including War Suns; a red skip can change the sequence.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3237.56,
+          "end": 3322.24
+        }
+      ],
+      "segment_ids": [
+        "s000941",
+        "s000950",
+        "s000968"
+      ]
+    },
+    {
+      "from": "technology:ws",
+      "to": "leader:xxchahero",
+      "relation": "synergizes-with",
+      "conditions": "War Suns are an expensive way to convert the late economy described by the hero into military reach, if Xxcha survives to build them.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3154.1,
+          "end": 3216.9
+        }
+      ],
+      "segment_ids": [
+        "s000913",
+        "s000919",
+        "s000932"
+      ]
+    },
+    {
+      "from": "technology:cr2",
+      "to": "technology:ws",
+      "relation": "enables",
+      "conditions": "Cruiser II can provide movement and point denial as a stopgap while the War Sun plan is still developing.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3395.48,
+          "end": 3505.54
+        }
+      ],
+      "segment_ids": [
+        "s000986",
+        "s000992",
+        "s001005",
+        "s001009",
+        "s001001",
+        "s001002"
+      ]
+    },
+    {
+      "from": "technology:pds2",
+      "to": "unit:xxcha_flagship",
+      "relation": "synergizes-with",
+      "conditions": "The guide describes PDS II and the flagship together as a deterrent when Xxcha has the investment and geography to support it.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 3511.08,
+          "end": 3545.8
+        }
+      ],
+      "segment_ids": [
+        "s001015",
+        "s001017",
+        "s001016"
+      ]
+    },
+    {
+      "from": "technology:sdn",
+      "to": "leader:xxchahero",
+      "relation": "synergizes-with",
+      "conditions": "Scanlink can increase the chance of finding attachments that improve planet values for later hero spending; it is worthwhile only when exploration timing and draws justify the detour.",
+      "citations": [
+        {
+          "kind": "episode",
+          "episode": "scpt-264-4e5271acc518",
+          "start": 4356.12,
+          "end": 4433.86
+        }
+      ],
+      "segment_ids": [
+        "s001283",
+        "s001290",
+        "s001294",
+        "s001297",
+        "s001298"
+      ]
+    }
+  ]
+}

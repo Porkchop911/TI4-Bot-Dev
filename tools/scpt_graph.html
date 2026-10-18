@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TI4 · Wiki graph</title>
+<style>
+:root{color-scheme:dark;--bg:#10151b;--panel:#171f28;--ink:#e6edf4;--muted:#a7b6c5;--line:#344352;--fact:#65cbb2;--strategy:#e8bd74;--mention:#9b92c8;--focus:#99c8ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}button,input,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px}button,a,select{cursor:pointer}button:hover{border-color:var(--focus)}:focus-visible{outline:2px solid var(--focus);outline-offset:3px}a{color:var(--focus)}header{padding:20px 28px 12px;border-bottom:1px solid var(--line)}.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:23px;letter-spacing:-.5px;margin:0;font-weight:600}h1 span{font-weight:400;color:var(--muted)}.small{color:var(--muted);font-size:13px}.search{position:relative;flex:1;min-width:240px;max-width:520px}.search input{width:100%}.toolbar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:16px 0 6px}.checks{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.checks label{display:flex;gap:6px;align-items:center}.checks input{accent-color:var(--fact)}.checks label:nth-child(2) input{accent-color:var(--strategy)}.checks label:nth-child(3) input{accent-color:var(--mention)}.results{position:absolute;z-index:5;top:46px;left:0;right:0;max-height:340px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 10px 30px #0006}.results:empty{display:none}.results button{display:block;width:100%;border:0;border-radius:0;text-align:left;overflow-wrap:anywhere}.results button:hover{background:#263547}.results span{display:block;color:var(--muted);font-size:12px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px}.map{position:relative;min-width:0;height:calc(100vh - 182px);min-height:540px;overflow:hidden}.map svg{width:100%;height:100%;touch-action:none;display:block}.map-tools{position:absolute;left:22px;top:16px;display:flex;gap:8px}.map-tools button{background:var(--bg)}#status{position:absolute;left:24px;bottom:16px;right:24px;pointer-events:none;color:var(--muted);font-size:13px}.legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:8px}.legend span{display:flex;align-items:center;gap:6px}.swatch{height:2px;width:22px;background:var(--fact)}.swatch.strategy{background:var(--strategy)}.swatch.mention{background:var(--mention)}aside{border-left:1px solid var(--line);padding:22px;background:var(--panel);max-height:calc(100vh - 182px);overflow:auto;overflow-wrap:anywhere}aside h2{margin:4px 0 6px;font-size:21px;font-weight:600}aside h3{font-size:14px;font-weight:600;margin:22px 0 6px;color:var(--muted)}aside p{margin:8px 0;white-space:pre-wrap}aside dl{display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,1fr);gap:6px 14px;margin:8px 0}dt{color:var(--muted);font-size:13px}dd{margin:0;font-size:13px}.id{color:var(--muted);font-size:12px}.connections{display:flex;flex-direction:column;gap:8px}.connection{padding:9px 0;border-bottom:1px solid var(--line)}.connection button{padding:2px 0;border:0;background:none;text-align:left;color:var(--focus);font-weight:500}.connection .relation{font-size:12px;color:var(--muted)}.connection p{font-size:13px}.connection a{font-size:12px}.warning{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}.node{cursor:pointer}.node text{fill:var(--ink);font:12px system-ui;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}.node circle{stroke:var(--bg);stroke-width:2}.node.selected circle{stroke:var(--focus);stroke-width:3}.edge{stroke-width:1.2;opacity:.5}.edge.strategy{stroke-dasharray:6 4}.edge.mention{stroke-dasharray:2 5;opacity:.3}.edge-title{pointer-events:none}
+@media(max-width:850px){.layout{grid-template-columns:1fr}.map{height:560px;min-height:420px}aside{max-height:none;border-left:0;border-top:1px solid var(--line)}header{padding:18px}.toolbar{gap:12px}.search{max-width:none}button,select{min-height:44px}.checks label{min-height:44px}.map-tools{left:12px}#status{left:16px;right:16px}.node text{font-size:13px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+.crowded .node text{opacity:0}.crowded .node.selected text,.crowded .node:hover text,.crowded .node:focus text{opacity:1}
+</style>
+</head>
+<body>
+<header>
+<div class="top"><h1>TI4 <span>/ Wiki graph</span></h1><nav><a href="README.md">Wiki index</a> · <a href="RULES_REFERENCE.md">Rules scope</a></nav></div>
+<div class="toolbar">
+<div class="search"><label for="search" class="small">Find a faction, component or rule</label><input id="search" type="search" placeholder="Sol, Gravity Drive, Coexist…" autocomplete="off" aria-controls="results"><div class="results" id="results" aria-label="Search results"></div></div>
+<div class="checks"><label><input id="facts" type="checkbox" checked>Corpus links</label><label><input id="strategies" type="checkbox" checked>Strategy drafts</label><label><input id="mentions" type="checkbox">ASR mentions</label></div>
+<label class="small" for="depth">Neighborhood <select id="depth"><option value="1">1 step</option><option value="2">2 steps</option></select></label>
+</div>
+<div class="legend small"><span><i class="swatch"></i>Explicit corpus fields</span><span><i class="swatch strategy"></i>Conditional strategy</span><span><i class="swatch mention"></i>Unverified transcript matches</span></div>
+</header>
+<main class="layout">
+<section class="map" aria-label="Knowledge graph">
+<svg id="graph" role="group" aria-label="Selected node and its connected wiki entries"><g id="scene"></g></svg>
+<div class="map-tools"><button id="fit" type="button">Fit view</button><button id="back" type="button" disabled>Back</button></div>
+<div id="status" role="status" aria-live="polite"></div>
+</section>
+<aside id="detail" aria-label="Selected wiki entry"></aside>
+</main>
+<script id="wiki-data" type="application/json">__WIKI_GRAPH_DATA__</script>
+<script>
+(()=>{
+'use strict';
+const data=JSON.parse(document.getElementById('wiki-data').textContent), nodes=new Map(data.nodes.map(n=>[n.id,n])), edges=data.edges;
+const $=id=>document.getElementById(id), svg=$('graph'), scene=$('scene'), detail=$('detail'), results=$('results'), history=[];
+function hashId(){try{return decodeURIComponent(location.hash.slice(1))}catch{return ''}}
+let selected=nodes.has(hashId())?hashId():'faction:sol';
+let scale=1,tx=0,ty=0,visible=[],drawn=[],drag=null;
+const adjacency=new Map(data.nodes.map(n=>[n.id,[]]));
+for(const e of edges){adjacency.get(e.from)?.push(e);if(e.to!==e.from)adjacency.get(e.to)?.push(e)}
+const enabled=e=>$(e.group==='fact'?'facts':e.group==='strategy'?'strategies':'mentions').checked;
+const other=(e,id)=>e.from===id?e.to:e.from;
+function element(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
+function link(text,href){const a=element('a',text);a.href=href;return a}
+function xml(tag,attrs={}){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);return e}
+function choose(id,push=true){if(!nodes.has(id))return;if(push&&id!==selected)history.push(selected);selected=id;location.hash=encodeURIComponent(id);$('back').disabled=!history.length;$('search').value='';results.replaceChildren();render()}
+function transform(){scene.setAttribute('transform',`translate(${tx} ${ty}) scale(${scale})`);for(const label of scene.querySelectorAll('text')){label.style.fontSize=`${12/scale}px`;label.style.strokeWidth=`${3/scale}px`;label.setAttribute('x',(Number(label.dataset.side)*13)/scale);label.setAttribute('y',4/scale)}for(const dot of scene.querySelectorAll('circle'))dot.setAttribute('r',Number(dot.dataset.radius)/scale);for(const edge of scene.querySelectorAll('line'))edge.style.strokeWidth=`${1.1/scale}px`}
+function fit(){const w=svg.clientWidth,h=svg.clientHeight;const maxX=Math.max(100,...visible.map(n=>Math.abs(n.x))),maxY=Math.max(100,...visible.map(n=>Math.abs(n.y)));scale=Math.min(Math.max(80,w-(visible.length>35?90:260))/(maxX*2),Math.max(100,h-100)/(maxY*2),1.3);tx=w/2;ty=h/2;transform()}
+function neighborhood(){
+ const found=new Set([selected]);let frontier=[selected];
+ for(let depth=0;depth<Number($('depth').value);depth++){
+  const next=[];for(const id of frontier)for(const e of adjacency.get(id)||[]){if(!enabled(e))continue;const target=other(e,id);if(!found.has(target)){found.add(target);next.push(target)}}frontier=next;
+ }
+ const ranked=[...found].filter(id=>id!==selected).sort((a,b)=>{
+  const direct=id=>(adjacency.get(selected)||[]).some(e=>enabled(e)&&other(e,selected)===id)?0:1;
+  return direct(a)-direct(b)||a.localeCompare(b);
+ });
+ const ids=new Set([selected,...ranked.slice(0,89)]);
+ drawn=edges.filter(e=>enabled(e)&&ids.has(e.from)&&ids.has(e.to));
+ visible=[...ids].map((id,i)=>({id,x:i?Math.cos((i-1)*2.39996)*Math.sqrt(i)*52:0,y:i?Math.sin((i-1)*2.39996)*Math.sqrt(i)*40:0}));
+ // Deterministic bounded layout; the focus stays at the origin.
+ const lookup=new Map(visible.map(n=>[n.id,n]));
+ for(let step=0;step<160;step++){
+  const forces=new Map(visible.map(n=>[n.id,{x:0,y:0}]));
+  for(let i=0;i<visible.length;i++)for(let j=i+1;j<visible.length;j++){
+   const a=visible[i],b=visible[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.max(30,Math.hypot(dx,dy)),f=1600/(d*d);
+   forces.get(a.id).x+=dx*f;forces.get(a.id).y+=dy*f;forces.get(b.id).x-=dx*f;forces.get(b.id).y-=dy*f;
+  }
+  for(const e of drawn){if(e.from===e.to)continue;const a=lookup.get(e.from),b=lookup.get(e.to),dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),f=(d-170)*.012;
+   forces.get(a.id).x+=dx/d*f;forces.get(a.id).y+=dy/d*f;forces.get(b.id).x-=dx/d*f;forces.get(b.id).y-=dy/d*f;
+  }
+  for(const n of visible){if(n.id===selected)continue;const f=forces.get(n.id);n.x+=Math.max(-7,Math.min(7,f.x-n.x*.003));n.y+=Math.max(-7,Math.min(7,f.y-n.y*.003))}
+ }
+ const count=found.size;
+ $('status').textContent=`${visible.length} of ${count} connected entries · ${drawn.length} links${count>90?' · view capped at 90; choose a node to explore further':''}${visible.length>35?' · point to or focus a node for its label':''} · drag to pan, scroll to zoom`;
+}
+function renderGraph(){
+ scene.replaceChildren();scene.classList.toggle('crowded',visible.length>35);const lookup=new Map(visible.map(n=>[n.id,n]));
+ for(const e of drawn){const a=lookup.get(e.from),b=lookup.get(e.to),line=xml('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:`var(--${e.group==='fact'?'fact':e.group==='strategy'?'strategy':'mention'})`,class:`edge ${e.group}`});const title=xml('title');title.textContent=`${nodes.get(e.from).name} → ${nodes.get(e.to).name}: ${e.relation}`;line.append(title);scene.append(line)}
+ for(const n of visible){const model=nodes.get(n.id),group=xml('g',{transform:`translate(${n.x} ${n.y})`,class:`node${n.id===selected?' selected':''}`,role:'button','aria-label':model.name,tabindex:'0','data-node-id':n.id});
+  const color=model.kind==='faction'?'var(--focus)':model.kind==='rule'?'var(--strategy)':'var(--fact)';
+  group.append(xml('circle',{'data-radius':n.id===selected?10:model.kind==='faction'?7:5,fill:color}));const side=n.x<0?-1:1,label=xml('text',{'data-side':side,'text-anchor':side<0?'end':'start'});const max=svg.clientWidth<650?17:24;label.textContent=model.name.length>max?model.name.slice(0,max-1)+'…':model.name;group.append(label);const title=xml('title');title.textContent=model.name+' · '+n.id;group.append(title);
+  group.addEventListener('click',ev=>{ev.stopPropagation();choose(n.id)});group.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();choose(n.id)}});scene.append(group)
+ }
+ fit();
+}
+function showDetail(){
+ const n=nodes.get(selected);detail.replaceChildren(element('div',n.kind.replaceAll('-',' '),'small'),element('h2',n.name),element('div',n.id,'id'));
+ detail.append(element('p',`Source: ${n.source||'unspecified'}`,'small'));
+ detail.append(link(n.kind==='faction'?'Open faction guide':'Open component entry',n.page));
+ if(n.fields.length){detail.append(element('h3','Corpus properties'));const dl=element('dl');for(const [key,value]of n.fields){dl.append(element('dt',key),element('dd',String(value)))}detail.append(dl)}
+ for(const [label,text]of n.texts){detail.append(element('h3',label),element('p',text))}
+ const related=(adjacency.get(selected)||[]).filter(enabled);
+ detail.append(element('h3',`Connections (${related.length})`));const list=element('div',undefined,'connections');
+ for(const e of related.slice().sort((a,b)=>a.group.localeCompare(b.group)||a.relation.localeCompare(b.relation))){const id=other(e,selected),row=element('div',undefined,'connection');const button=element('button',nodes.get(id).name);button.type='button';button.onclick=()=>choose(id);row.append(button,element('div',`${e.from===selected?'→':'←'} ${e.relation} · ${e.group==='fact'?'corpus field':e.group==='strategy'?'strategy draft':'unverified ASR'}`,'relation'));
+  if(e.conditions)row.append(element('p',e.conditions));if(e.context)row.append(link('Source context',e.context));
+  for(const citation of e.citations||[])row.append(document.createTextNode(' · '),link(citation.label,citation.url));list.append(row)
+ }
+ detail.append(list,element('div','Corpus text is not certification of official accuracy or engine implementation. Strategy links are conditional drafts; ASR mentions are unverified. Isolated entries remain searchable.','warning'));
+}
+function render(){neighborhood();renderGraph();showDetail()}
+$('search').addEventListener('input',()=>{const q=$('search').value.trim().toLowerCase();results.replaceChildren();if(!q)return;const matches=data.nodes.filter(n=>(n.name+' '+n.id).toLowerCase().includes(q)).sort((a,b)=>Number(b.id==='faction:'+q)-Number(a.id==='faction:'+q)||a.name.localeCompare(b.name));
+ for(const n of matches.slice(0,30)){const button=element('button',n.name);button.type='button';button.append(element('span',n.id));button.onclick=()=>choose(n.id);results.append(button)}if(!matches.length)results.append(element('p','No matching entries.'));
+});
+$('search').addEventListener('keydown',ev=>{if(ev.key==='Escape')results.replaceChildren();if(ev.key==='Enter'){const first=results.querySelector('button');if(first){ev.preventDefault();first.click()}}});
+document.addEventListener('click',ev=>{if(!ev.target.closest('.search'))results.replaceChildren()});
+for(const id of ['facts','strategies','mentions','depth'])$(id).addEventListener('change',render);
+$('fit').onclick=fit;$('back').onclick=()=>{const id=history.pop();if(id)choose(id,false)};
+svg.addEventListener('wheel',ev=>{ev.preventDefault();const rect=svg.getBoundingClientRect(),x=ev.clientX-rect.left,y=ev.clientY-rect.top,next=Math.max(.15,Math.min(5,scale*Math.exp(-ev.deltaY*.001)));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform()},{passive:false});
+svg.addEventListener('pointerdown',ev=>{if(ev.target.closest('.node'))return;drag={x:ev.clientX,y:ev.clientY,tx,ty};svg.setPointerCapture(ev.pointerId)});
+svg.addEventListener('pointermove',ev=>{if(!drag)return;tx=drag.tx+ev.clientX-drag.x;ty=drag.ty+ev.clientY-drag.y;transform()});
+svg.addEventListener('pointerup',()=>drag=null);svg.addEventListener('pointercancel',()=>drag=null);
+window.addEventListener('resize',fit);window.addEventListener('hashchange',()=>{const id=hashId();if(nodes.has(id)&&id!==selected)choose(id,false)});
+render();
+})();
+</script>
+</body>
+</html>
