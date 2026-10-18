@@ -171,6 +171,27 @@ it.skipIf(!built)(
 );
 
 it.skipIf(!built)(
+  "a turn whose ground steps have no fact of the ground (a bombardment with no landing) opens at its invasion",
+  async () => {
+    const { update, events = [] } = await game("ongoing_invasion_coexistence");
+    // The same turn as a bombardment that lands nothing: its board keeps the ground steps, and no
+    // landing, control or end of a ground combat is told.
+    const ground = new Set(["landed", "control_gained"]);
+    const bombarded = events.map((entry) =>
+      entry.fact &&
+      (ground.has(entry.fact.kind) ||
+        (entry.fact.kind === "combat_ended" && entry.fact.combat !== "space"))
+        ? { ...entry, fact: undefined }
+        : entry,
+    );
+    const past = pastTactical(selectPastTurn(update, bombarded, { turn: "action_1", step: null }));
+    expect(past.action.tabs.map((tab) => tab.name)).toEqual(["Activation", "Invasion"]);
+    expect(past.action.task.content.kind).toBe("invasion");
+  },
+  60_000,
+);
+
+it.skipIf(!built)(
   "the shell has the turn in place of the step sheet, and the board of its step with its system marked",
   async () => {
     const played = await game("ongoing_combat");

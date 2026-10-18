@@ -362,7 +362,15 @@ function tacticalOf(
   const activationAt = activated ? stepEnd(activated.at) : stepEnd(start);
   const movementAt = moved.length ? stepEnd(lastOf([...moved, ...loaded])) : activationAt;
   const combatAt = spaceEnd ? stepEnd(spaceEnd.at) : movementAt;
-  const invasionAt = groundFacts.length || ground.length ? stepEnd(lastOf(groundFacts)) : combatAt;
+  // A bombardment with no landing has ground steps and no fact of the ground: its change of the
+  // board ends the step.
+  const groundChanges = entries.filter(
+    ({ entry }) => entry.event.kind === "board_changed" && entry.board?.ground_steps,
+  );
+  const invasionAt =
+    groundFacts.length || ground.length
+      ? stepEnd(lastOf([...groundFacts, ...groundChanges]))
+      : combatAt;
   const productionAt = produced.length ? stepEnd(lastOf(produced)) : stepEnd(last);
   // A space combat of the turn that is under way (the turn that is played now): its open round.
   const fighting = board(stepEnd(last)).board.combat;
