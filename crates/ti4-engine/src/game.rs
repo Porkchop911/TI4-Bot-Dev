@@ -11646,6 +11646,98 @@ mod tests {
         assert_eq!(gained, 3, "each gained token is still announced");
     }
 
+    /// Felix's `RULES_COMMAND_TOKEN_POOL` (an exploration card's tokens are asked one by one)
+    /// and ProbablyPlayable's `RULES_STATUS_GAIN` (the status gain is part of the one
+    /// redistribution) at the current version, for the same seat in the same round: the tokens
+    /// of the exploration card are asked and placed once each, and the status phase then asks
+    /// one redistribution over everything held plus its own gain, never a token on its own.
+    #[test]
+    fn an_exploration_token_and_the_status_gain_are_each_placed_once() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        assert_eq!(state.rules_version, ti4_model::state::RULES_VERSION);
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        for (seat, pools) in [(&a, (3, 3, 2)), (&b, (5, 5, 5))] {
+            let seat = state.player_mut(seat).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = pools;
+        }
+
+        // The action phase: a Keleres frontier card gains two tokens, a tactic and a fleet one.
+        let (decider, explored) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new(["tactic_tokens", "fleet_tokens"]),
+        ));
+        let mut table = Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: ti4_model::content_types::DEFAULT,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            timing: None,
+        };
+        assert!(crate::exploration::resolve_instant(
+            &mut state, &mut ctx, &a, None, "kel1"
+        ));
+        let pool_questions = explored
+            .borrow()
+            .iter()
+            .filter(|choice| choice.prompt.contains("command token into which pool"))
+            .count();
+        assert_eq!(pool_questions, 2, "one question per explored token");
+        assert_eq!(
+            state.player(&a).map(|seat| (
+                seat.tactic_tokens,
+                seat.fleet_tokens,
+                seat.strategic_tokens
+            )),
+            Some((4, 4, 2)),
+            "each explored token is placed once"
+        );
+
+        // The status phase: one redistribution per seat over the held tokens and the gain.
+        state.phase = Phase::Status;
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut game = Game::with_table(state, content, Table::with_default(Box::new(decider)));
+        let order = [a.clone(), b.clone()];
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&game.state, content, &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
+        ));
+        assert_eq!(game.step().error, None);
+
+        let asked = seen.borrow();
+        let subtypes: Vec<(PlayerId, String)> = asked
+            .iter()
+            .map(|choice| {
+                let context = choice.context.as_ref().expect("typed context");
+                (choice.player.clone(), context.subtype.clone())
+            })
+            .collect();
+        assert_eq!(
+            subtypes,
+            [
+                (a.clone(), "status_redistribute_tokens".to_owned()),
+                (b.clone(), "status_redistribute_tokens".to_owned()),
+            ],
+            "no token is asked on its own"
+        );
+        assert_eq!(asked[0].details["total"], 10 + 2);
+        assert_eq!(asked[0].details["gained"], 2);
+        assert_eq!(game.pools_of(&a).iter().sum::<i32>(), 12);
+        assert_eq!(game.pools_of(&b).iter().sum::<i32>(), 16);
+        let gained = game
+            .events
+            .iter()
+            .filter(|event| event.starts_with("COMMAND_TOKEN_GAINED:"))
+            .count();
+        assert_eq!(gained, 3, "only the status gain is announced by the status phase");
+    }
+
     /// A game from before `RULES_STATUS_GAIN` asks the pool of each gained token on its own
     /// (52.4), and the redistribution after it is over the tokens already placed, with no gain.
     /// The status phase's gain of a game of rules version 11, open and answered by `table`.

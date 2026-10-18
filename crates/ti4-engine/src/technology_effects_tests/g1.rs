@@ -109,6 +109,40 @@ fn amd_2_space_cannon_against_the_owner_gets_minus_one() {
     );
 }
 
+/// The merge of 2026-10-18: Antimass Deflectors is applied per shot of PP's `CannonShot` list
+/// (`combat::space_cannon_shots`, which the movement screen also reads), after Plasma Scoring
+/// has picked its gun at the printed value: the gun keeps its extra die and asks 1 more of each.
+#[test]
+fn amd_2_applies_to_each_cannon_shot_and_keeps_plasma_scorings_die() {
+    let shots_at = |owner: bool, version: u32| {
+        let (mut state, _galaxy, ids) = tactical_fixture();
+        state.rules_version = version;
+        let system = ids[0].clone();
+        put(&mut state, &system, "cruiser", &pid("a"), 1);
+        put_on_planet(&mut state, &system, &PlanetId::new("p"), "pds", &pid("b"), 1);
+        give(&mut state, "b", "ps");
+        if owner {
+            give(&mut state, "a", "amd");
+        }
+        crate::combat::space_cannon_shots(&state, content(), POK, &system, &pid("a"), None)
+            .into_iter()
+            .map(|shot| (shot.owner.to_string(), shot.dice, shot.hits_on))
+            .collect::<Vec<_>>()
+    };
+    let now = ti4_model::state::RULES_VERSION;
+    assert_eq!(shots_at(false, now), [("b".to_owned(), 2, 6)], "PDS with Plasma Scoring");
+    assert_eq!(
+        shots_at(true, now),
+        [("b".to_owned(), 2, 7)],
+        "Antimass Deflectors: the same two dice, each needs 1 more"
+    );
+    assert_eq!(
+        shots_at(true, ti4_model::state::RULES_TECH_EFFECTS - 1),
+        [("b".to_owned(), 2, 6)],
+        "before the version: no -1"
+    );
+}
+
 #[test]
 fn gd_1_adds_one_to_one_ships_move_once_per_activation() {
     let mut state = game(&["a"]);
