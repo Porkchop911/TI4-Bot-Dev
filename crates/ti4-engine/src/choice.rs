@@ -1411,8 +1411,14 @@ impl<'a> Observed<'a> {
         if upgraded { bill * 1300 } else { bill * 1000 }
     }
 
+    /// Cumulative per-mille value of this seat's units removed for being over fleet supply.
+    #[must_use]
+    pub fn scuttled_permille(&self, player: &PlayerId) -> i64 {
+        self.state.player(player).map_or(0, |seat| seat.scuttled_permille)
+    }
+
     /// One ship or ground force's share of [`Self::fleet_value_permille`].
-    fn unit_value_permille(
+    pub(crate) fn unit_value_permille(
         stats: ti4_content::units::UnitType<'_>,
         types: &BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     ) -> i64 {

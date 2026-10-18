@@ -187,6 +187,11 @@ pub struct Reward {
     /// spending, unlike the fleet-value potential. Off by default.
     #[serde(default)]
     pub build_weight: f64,
+    /// Claw-back for units scuttled to get under fleet supply (37.3): `scuttle_multiplier` times
+    /// `build_weight` per resource removed, valued like a build, charged on the decision before the
+    /// removal is first seen. Needs `build_weight > 0`. Off (0) by default.
+    #[serde(default)]
+    pub scuttle_multiplier: f64,
     /// One small Stage-2 bonus on the first observed entry into the Fracture. Paid once per
     /// seat-game, before discounting, and never again for leaving and re-entering. Off by default;
     /// an experiment must select its value explicitly.
@@ -292,6 +297,7 @@ impl Default for Reward {
             overpay_penalty: 0.0,
             unused_resources_weight: 0.0,
             build_weight: 0.0,
+            scuttle_multiplier: 0.0,
             fracture_entry_bonus: 0.0,
             fracture_planet_bonus: 0.0,
             zero_terminal_objectives: false,
@@ -577,6 +583,9 @@ pub struct ProductionTerms {
     pub unused: Vec<(usize, i64)>,
     /// Build value in per-mille resources: full bill, upgraded ships at 1.3x.
     pub built_permille: Vec<(usize, i64)>,
+    /// Value of units removed for being over fleet supply, per-mille, at the decision before the
+    /// snapshot that first shows the removal (`Progress::scuttled_permille` is cumulative).
+    pub scuttled_permille: Vec<(usize, i64)>,
 }
 
 /// A window runs from the first decision offering a produce option until the first later decision
@@ -589,7 +598,7 @@ pub struct ProductionTerms {
 pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
     let mut terms = ProductionTerms::default();
     let mut window: Option<(i64, i64, bool)> = None; // bill, pool drop, valid
-    let (mut prev_pool, mut prev_round) = (0, 0);
+    let (mut prev_pool, mut prev_round, mut prev_scuttled) = (0, 0, 0);
     let mut last_action: std::collections::BTreeMap<u32, (usize, i64)> =
         std::collections::BTreeMap::new();
     for (index, now) in snapshots.iter().enumerate() {
@@ -615,6 +624,12 @@ pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
         if now.built_value_permille > 0 {
             terms.built_permille.push((index, now.built_value_permille));
         }
+        if now.scuttled_permille > prev_scuttled {
+            terms
+                .scuttled_permille
+                .push((index.saturating_sub(1), now.scuttled_permille - prev_scuttled));
+        }
+        prev_scuttled = now.scuttled_permille.max(prev_scuttled);
         if now.action_phase {
             last_action.insert(now.round_number, (index, now.ready_planet_resources));
         }
@@ -673,6 +688,7 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
     if reward.overpay_penalty > 0.0
         || reward.unused_resources_weight > 0.0
         || reward.build_weight > 0.0
+        || reward.scuttle_multiplier > 0.0
     {
         let terms = production_terms(snapshots);
         #[expect(clippy::cast_precision_loss, reason = "resource counts are small")]
@@ -687,6 +703,10 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
                 if let Some(paid) = rewards.get_mut(slot) {
                     *paid += reward.build_weight * permille as f64 / 1000.0;
                 }
+            }
+            for &(slot, permille) in &terms.scuttled_permille {
+                rewards[slot] -=
+                    reward.scuttle_multiplier * reward.build_weight * permille as f64 / 1000.0;
             }
         }
     }
@@ -1606,6 +1626,28 @@ mod tests {
         // Rewards 0.26 (upgraded bill 2), 0.1 (bill-1 infantry, full), 0.3 (bill 3), 0.2 (bill 2) at decisions
         // 1, 2, 4 and 6; returns are their suffix sums.
         assert_shift(&shifted, &[0.86, 0.86, 0.6, 0.5, 0.5, 0.2, 0.2, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn scuttled_units_claw_back_a_multiple_of_the_build_value() {
+        let scuttled = |permille| Progress {
+            scuttled_permille: permille,
+            ..step(1, 0, 0)
+        };
+        // Cumulative 4000 shows at decision 2 (slot 1), another 5200 at the final snapshot (slot 2).
+        let episode = holdings_episode(
+            vec![scuttled(0), scuttled(0), scuttled(4000)],
+            scuttled(9200),
+        );
+        let terms = production_terms(&snapshots(&episode));
+        assert_eq!(terms.scuttled_permille, vec![(1, 4000), (2, 5200)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.build_weight = 0.1;
+        reward.scuttle_multiplier = 2.0;
+        // Charges 0.8 at slot 1 and 1.04 at slot 2; returns are their suffix sums.
+        assert_shift(&shift(&episode, &reward), &[-1.84, -1.84, -1.04]);
+        reward.scuttle_multiplier = 0.0;
+        assert_shift(&shift(&episode, &reward), &[0.0, 0.0, 0.0]);
     }
 
     #[test]

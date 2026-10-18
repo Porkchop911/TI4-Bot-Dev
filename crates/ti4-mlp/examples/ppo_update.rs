@@ -58,7 +58,8 @@ use ti4_model::id::{FactionId, PlayerId};
 /// `--factions a,b,c,d,e,f`.
 /// Overpay, unused ready-planet resources and build value (per-mille resources) and final fleet value (per-mille) summed over this
 /// update's seat-games; read and reset when the update is reported.
-static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 4] = [
+static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 5] = [
+    std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
     std::sync::atomic::AtomicI64::new(0),
@@ -68,7 +69,7 @@ static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 4] = [
 thread_local! {
     /// The same four counters for the game the current thread is playing: the async rollout reads
     /// it after each game so a batch's telemetry describes exactly that batch's games.
-    static GAME_TELEMETRY: std::cell::Cell<[i64; 4]> = const { std::cell::Cell::new([0; 4]) };
+    static GAME_TELEMETRY: std::cell::Cell<[i64; 5]> = const { std::cell::Cell::new([0; 5]) };
 }
 
 static FACTIONS: std::sync::LazyLock<[&'static str; 6]> = std::sync::LazyLock::new(|| {
@@ -278,6 +279,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--overpay-penalty",
     "--unused-resources-weight",
     "--build-weight",
+    "--scuttle-multiplier",
     "--unit-weight",
     "--updates",
     "--vp-weight",
@@ -962,11 +964,12 @@ fn play_one(
             let mut all = episode.steps.clone();
             all.push(episode.final_progress);
             let terms = ti4_training::reward::production_terms(&all);
-            let seat_terms: [i64; 4] = [
+            let seat_terms: [i64; 5] = [
                 terms.overpay.iter().map(|t| t.1).sum(),
                 terms.unused.iter().map(|t| t.1).sum(),
                 terms.built_permille.iter().map(|t| t.1).sum(),
                 episode.final_progress.fleet_value_permille,
+                terms.scuttled_permille.iter().map(|t| t.1).sum(),
             ];
             for (counter, value) in PRODUCTION_TELEMETRY.iter().zip(seat_terms) {
                 counter.fetch_add(value, std::sync::atomic::Ordering::Relaxed);
@@ -1502,7 +1505,7 @@ mod cadence_tests {
 }
 
 /// One finished game of the async rollout: job index, policy version it was played with, result.
-type Finished = (usize, usize, Result<Played, String>, [i64; 4]);
+type Finished = (usize, usize, Result<Played, String>, [i64; 5]);
 
 /// A batch the freeze thread has already turned into `Batch`es (the games' steps are moved out of
 /// the played games), so the optimiser only optimises.
@@ -1511,7 +1514,7 @@ struct Prefrozen {
     decisions: usize,
     freeze: Duration,
     /// Overpay, unused, built and fleet counters summed over exactly this batch's games.
-    telemetry: [i64; 4],
+    telemetry: [i64; 5],
 }
 
 /// Shared state of `--async-batch-games`: the rollout workers, which play games continuously, and
@@ -2035,6 +2038,7 @@ fn main() {
         reward.unused_resources_weight,
     );
     reward.build_weight = weight("--build-weight", reward.build_weight);
+    reward.scuttle_multiplier = weight("--scuttle-multiplier", reward.scuttle_multiplier);
     // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
     // must select it explicitly, but no flag existed, so the term could not be selected at all:
     // runs built before that change had it silently on at 0.1, and runs built after it silently
@@ -2057,6 +2061,7 @@ fn main() {
         ("--overpay-penalty", reward.overpay_penalty),
         ("--unused-resources-weight", reward.unused_resources_weight),
         ("--build-weight", reward.build_weight),
+        ("--scuttle-multiplier", reward.scuttle_multiplier),
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
         // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
@@ -2162,8 +2167,11 @@ fn main() {
             reward.fracture_planet_bonus
         );
         println!(
-            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (all units at cost, upgraded ships x1.3)",
-            reward.overpay_penalty, reward.unused_resources_weight, reward.build_weight
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (all units at cost, upgraded ships x1.3) | scuttle {} x build weight per resource removed over fleet supply",
+            reward.overpay_penalty,
+            reward.unused_resources_weight,
+            reward.build_weight,
+            reward.scuttle_multiplier
         );
     }
     println!(
@@ -2528,7 +2536,7 @@ fn main() {
                 let started = Instant::now();
                 let frozen = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut steps: Vec<Step> = Vec::new();
-                    let mut telemetry = [0i64; 4];
+                    let mut telemetry = [0i64; 5];
                     for game in &mut batch {
                         if let Ok(played) = &mut game.2 {
                             steps.extend(std::mem::take(&mut played.0));
@@ -2597,7 +2605,7 @@ fn main() {
                         .as_ref()
                         .map(|model| FrozenInference::Infer(Arc::clone(model)));
                     let (seed, rotation) = (seed_base + (job / rotations) as u64, job % rotations);
-                    GAME_TELEMETRY.with(|cell| cell.set([0; 4]));
+                    GAME_TELEMETRY.with(|cell| cell.set([0; 5]));
                     let played = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         play_one(
                             &local,
@@ -3479,7 +3487,7 @@ fn main() {
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
-            let [overpaid, unused, built, fleet] = batch_telemetry.map_or_else(
+            let [overpaid, unused, built, fleet, scuttled] = batch_telemetry.map_or_else(
                 || {
                     std::array::from_fn(|i| {
                         PRODUCTION_TELEMETRY[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64
@@ -3493,7 +3501,11 @@ fn main() {
                 unused / seats,
                 built / 1000.0 / seats
             );
-            println!("              fleet/seat {:.1}", fleet / 1000.0 / seats);
+            println!(
+                "              fleet/seat {:.1}  scuttled/seat {:.3} (resources removed over fleet supply)",
+                fleet / 1000.0 / seats,
+                scuttled / 1000.0 / seats
+            );
             if self_imitation > 0.0 {
                 println!(
                     "              self-imitation  {sil_selected_count} decisions from {sil_seat_count} seats this update, buffer {}",

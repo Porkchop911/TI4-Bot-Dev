@@ -771,6 +771,16 @@ fn remove_one(
     state
         .system_mut(system)
         .remove(std::slice::from_ref(&doomed));
+    // Training bookkeeping: what a seat scuttles to get under fleet supply (37.3), valued like a build.
+    if reason == "fleet supply" {
+        let types = catalogue(content, sources);
+        if let Some(stats) = types.get(doomed.type_id.as_str()) {
+            let value = Observed::unit_value_permille(*stats, &types);
+            if let Some(seat) = state.player_mut(player) {
+                seat.scuttled_permille += value;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1236,6 +1246,26 @@ mod tests {
                 .all(|option| ["remove cruiser", "remove destroyer"]
                     .contains(&option.label.as_str()))
         );
+    }
+
+    #[test]
+    fn a_fleet_supply_removal_is_booked_as_scuttled_value_but_a_capacity_one_is_not() {
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 2;
+        put(&mut state, &system, "dreadnought", &player, 1);
+        put(&mut state, &system, "cruiser", &player, 2);
+        let mut table = Table::new();
+        let content = ContentStore::embedded();
+        enforce(&mut state, content, POK, &mut table, &player, &system).unwrap();
+        // The default decider takes the first option, the dreadnought: cost 4, not upgraded.
+        assert_eq!(state.player(&player).unwrap().scuttled_permille, 4000);
+
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 9;
+        put(&mut state, &system, "carrier", &player, 1);
+        put(&mut state, &system, "fighter", &player, 9);
+        enforce(&mut state, content, POK, &mut table, &player, &system).unwrap();
+        assert_eq!(state.player(&player).unwrap().scuttled_permille, 0);
     }
 
     #[test]

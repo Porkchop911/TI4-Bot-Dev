@@ -108,6 +108,10 @@ pub struct Progress {
     /// `fleet_value_permille` convention, `SeatObservation::build_value_permille`).
     #[serde(default)]
     pub built_value_permille: i64,
+    /// Cumulative value, in per-mille resources, of units this seat has removed for being over
+    /// fleet supply (37.3), valued like a build; reward bookkeeping only.
+    #[serde(default)]
+    pub scuttled_permille: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -216,6 +220,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         produce_offered: false,
         built_cost: 0,
         built_value_permille: 0,
+        scuttled_permille: seen.scuttled_permille(player),
         non_home_planet_value: {
             let home = seen
                 .seat(player)
