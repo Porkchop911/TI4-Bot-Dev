@@ -230,6 +230,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--negotiation-step-penalty",
     "--r1-expansion-weight",
     "--sftt-weight",
+    "--require-faction",
     "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
@@ -285,6 +286,7 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--hash-games",
     "--diplomacy",
     "--separate-models",
+    "--collect-only",
 ];
 
 fn check_flags() {
@@ -2149,6 +2151,15 @@ fn main() {
         );
     }
 
+    // --collect-only: play and record, never optimise or checkpoint (gathering data from a fixed model).
+    let collect_only = std::env::args().any(|a| a == "--collect-only");
+    let require_faction = argument("--require-faction");
+    if let Some(faction) = &require_faction {
+        ti4_mlp::FactionRow::of(faction).unwrap_or_else(|error| refuse(&error.to_string()));
+        if faction_focus > 0.0 {
+            refuse("--require-faction filters the unweighted draw; use --faction-focus 0");
+        }
+    }
     let recorder = argument("--record-best").map(|directory| {
         let bars =
             argument("--record-vp").unwrap_or_else(|| refuse("--record-best needs --record-vp"));
@@ -2349,6 +2360,23 @@ fn main() {
                 all[start..start + seeds_per_update as usize].to_vec()
             },
         );
+        // --require-faction: only the seeds whose faction draw seats that faction.
+        let update_seeds: Vec<u64> = match &require_faction {
+            None => update_seeds,
+            Some(wanted) => update_seeds
+                .into_iter()
+                .filter(|seed| {
+                    ti4_training::rollout::game_factions(
+                        content, roster, &*FACTIONS, &players, DEFAULT, *seed,
+                    )
+                    .is_ok_and(|drawn| drawn.iter().any(|faction| faction.as_str() == wanted))
+                })
+                .collect(),
+        };
+        if update_seeds.is_empty() {
+            println!("  update {update:>3}  no seed seats the required faction");
+            continue;
+        }
         let jobs: Vec<(u64, usize)> = update_seeds
             .into_iter()
             .flat_map(|seed| (0..rotations).map(move |rotation| (seed, rotation)))
@@ -2630,6 +2658,13 @@ fn main() {
                 "{seated_decisions} decisions were recorded across seats but {} reached the batch",
                 steps.len()
             ));
+        }
+        // --collect-only: the games were played (and recorded); nothing is trained.
+        if collect_only {
+            println!(
+                "  update {update:>3}  games {games}  decisions {seated_decisions:>7}  rollout {rollout_time:>6.1?}  (collect only, no update)"
+            );
+            continue;
         }
 
         // ---- optimise ----
@@ -3086,8 +3121,10 @@ fn main() {
         }
     }
 
-    for ((after_parameters, after_state), (before_parameters, before_state)) in
-        fingerprints(&models).into_iter().zip(&before)
+    for ((after_parameters, after_state), (before_parameters, before_state)) in fingerprints(&models)
+        .into_iter()
+        .zip(&before)
+        .filter(|_| !collect_only)
     {
         if after_parameters == *before_parameters {
             refuse(
