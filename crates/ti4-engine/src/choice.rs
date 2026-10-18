@@ -643,6 +643,11 @@ pub struct Observed<'a> {
     /// reachability question from more than one feature family; the position cannot change while
     /// it is borrowed, so the answer cannot either.
     movable: std::cell::RefCell<BTreeMap<(PlayerId, SystemId), Vec<crate::tactical::Movable>>>,
+    /// [`Self::adjacency_for`] answers: building one runs the movement hooks, so it is done at most
+    /// once per seat per position.
+    adjacency: std::cell::RefCell<
+        BTreeMap<PlayerId, std::sync::Arc<crate::movement::PlayerAdjacency<'static>>>,
+    >,
 }
 
 impl<'a> Observed<'a> {
@@ -671,6 +676,7 @@ impl<'a> Observed<'a> {
             sources,
             galaxy,
             movable: std::cell::RefCell::new(BTreeMap::new()),
+            adjacency: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -1009,6 +1015,78 @@ impl<'a> Observed<'a> {
     #[must_use]
     pub fn active_breach_in(&self, system: &SystemId) -> bool {
         crate::factions::crimson::active_breaches(self.state).contains(system)
+    }
+
+    /// A public faction-module bookkeeping row. Rows that are private to a seat or staged
+    /// (`private:`, `cards:staged:`, `cards:reveal:`) are never returned.
+    #[must_use]
+    pub fn faction_mark(&self, key: &str) -> Option<&'a str> {
+        if ["private:", "cards:staged:", "cards:reveal:"]
+            .iter()
+            .any(|hidden| key.starts_with(hidden))
+        {
+            return None;
+        }
+        self.state.faction_marks.get(key).map(String::as_str)
+    }
+
+    /// Public faction-module rows whose key starts with `prefix`, in key order. Empty for a hidden
+    /// prefix (see [`Self::faction_mark`]).
+    #[must_use]
+    pub fn faction_marks_with_prefix(&self, prefix: &str) -> Vec<(&'a str, &'a str)> {
+        if ["private:", "cards:staged:", "cards:reveal:"]
+            .iter()
+            .any(|hidden| prefix.starts_with(hidden) || hidden.starts_with(prefix))
+        {
+            return Vec::new();
+        }
+        self.state
+            .faction_marks
+            .range(prefix.to_owned()..)
+            .take_while(|(key, _)| key.starts_with(prefix))
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect()
+    }
+
+    /// Whether `system` holds a breach token, active or not. Public: the token is on the board.
+    #[must_use]
+    pub fn breach_in(&self, system: &SystemId) -> bool {
+        crate::factions::crimson::has_breach(self.state, system)
+    }
+
+    /// Wormhole kinds (`ALPHA`, `BETA`, `GAMMA`, `DELTA`) that tokens put on `system`: Creuss
+    /// tokens, gamma tokens, the ion storm's face, the opened Nexus. Not the tile's printed ones.
+    /// Empty without a galaxy.
+    #[must_use]
+    pub fn wormhole_tokens_in(&self, system: &str) -> Vec<&'a str> {
+        self.galaxy
+            .and_then(|galaxy| galaxy.token_wormholes.get(system))
+            .map_or_else(Vec::new, |kinds| kinds.iter().map(String::as_str).collect())
+    }
+
+    /// Adjacency as `player` sees it (map, wormholes, breaches, faction links), built once per
+    /// seat per position. `None` without a galaxy. Public: every input is on the board.
+    #[must_use]
+    pub fn adjacency_for(
+        &self,
+        player: &PlayerId,
+    ) -> Option<std::sync::Arc<crate::movement::PlayerAdjacency<'static>>> {
+        let galaxy = self.galaxy?;
+        if let Some(found) = self.adjacency.borrow().get(player) {
+            return Some(found.clone());
+        }
+        let built = std::sync::Arc::new(crate::movement::PlayerAdjacency::new(
+            self.state,
+            self.content,
+            self.sources,
+            galaxy,
+            player,
+        )
+        .into_owned());
+        self.adjacency
+            .borrow_mut()
+            .insert(player.clone(), built.clone());
+        Some(built)
     }
 
     /// Non-home systems containing a planet `player` controls, the count the Bastion flagship

@@ -836,6 +836,16 @@ impl<'a> PlayerAdjacency<'a> {
         }
     }
 
+    /// The same adjacency owning its galaxy, so it can be kept past the borrow it was built from.
+    #[must_use]
+    pub fn into_owned(self) -> PlayerAdjacency<'static> {
+        PlayerAdjacency {
+            galaxy: Cow::Owned(self.galaxy.into_owned()),
+            links: self.links,
+            blocked: self.blocked,
+        }
+    }
+
     /// Systems adjacent to `system` for this player.
     #[must_use]
     pub fn neighbours(&self, system: &str) -> BTreeSet<String> {

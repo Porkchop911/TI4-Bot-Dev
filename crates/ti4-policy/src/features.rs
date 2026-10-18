@@ -906,6 +906,56 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
             f64::from(fragments),
         ));
     }
+    // Faction-module bookkeeping the seat's own faction keeps in public marks.
+    let mark_count = |key: String| {
+        seen.faction_mark(&key).map_or(0, |list| {
+            list.split(',').filter(|entry| !entry.is_empty()).count()
+        })
+    };
+    match seat.faction.as_str() {
+        "mahact" => {
+            let held = mark_count(ti4_engine::factions::mahact::fleet_mark(player));
+            if held > 0 {
+                facts.push((
+                    "actor-inventory:mahact-pool-tokens".to_owned(),
+                    count_value(held) / 8.0,
+                ));
+            }
+        }
+        "nomad" => {
+            let goods: i32 = seen
+                .faction_mark(&format!("nomad:artuno:{player}"))
+                .and_then(|goods| goods.parse().ok())
+                .unwrap_or(0);
+            if goods > 0 {
+                facts.push((
+                    "actor-inventory:artuno-goods".to_owned(),
+                    f64::from(goods),
+                ));
+            }
+        }
+        "titans" => {
+            let own = format!("{player}|");
+            let placed = seen
+                .faction_marks_with_prefix("titans:sleeper:")
+                .into_iter()
+                .filter(|(_, owner)| owner.starts_with(&own))
+                .count();
+            if placed > 0 {
+                facts.push(("actor-inventory:sleepers-placed".to_owned(), count_value(placed)));
+            }
+        }
+        "nekro" => {
+            let placed = mark_count(format!("nekro:token:{player}:Z"));
+            if placed > 0 {
+                facts.push((
+                    "actor-inventory:nekro-z-tokens".to_owned(),
+                    count_value(placed) / 7.0,
+                ));
+            }
+        }
+        _ => {}
+    }
     if seat.breakthrough.is_some() {
         facts.push(("actor-inventory:breakthrough-held".to_owned(), 1.0));
     }
@@ -2584,7 +2634,7 @@ fn structured_features(
             if let Some(origin) = payload_string(option, "origin") {
                 add_system_features(seen, origin, player, context, "origin", features);
                 if let Some(destination) = active {
-                    add_route_features(seen, origin, destination.as_str(), features);
+                    add_route_features(seen, player, origin, destination.as_str(), features);
                 }
             }
             if let Some(destination) = active {
@@ -2642,6 +2692,7 @@ fn structured_features(
 
 fn add_route_features(
     seen: &Observed<'_>,
+    player: &PlayerId,
     origin: &str,
     destination: &str,
     features: &mut FeatureVector,
@@ -2661,6 +2712,15 @@ fn add_route_features(
         format_args!("route:adjacent"),
         f64::from(u8::from(galaxy.are_adjacent(origin, destination))),
     );
+    // Adjacent for this seat through a breach pair or a faction link, which `route:adjacent` (the
+    // map's own adjacency) does not see.
+    if !galaxy.are_adjacent(origin, destination)
+        && seen
+            .adjacency_for(player)
+            .is_some_and(|adjacency| adjacency.are_adjacent(origin, destination))
+    {
+        add_named(features, format_args!("route:link-adjacent"), 1.0);
+    }
 }
 
 fn add_unit_features(
@@ -2926,6 +2986,31 @@ fn add_system_features(
             f64::from(u8::from(record.is_anomaly())),
         );
     }
+    // Board state the printed tile record cannot show: breach tokens and token-borne wormholes.
+    let id = SystemId::new(system_id);
+    if seen.breach_in(&id) {
+        add_named(features, format_args!("{prefix}:breach"), 1.0);
+        add_named(
+            features,
+            format_args!("{prefix}:breach-active"),
+            f64::from(u8::from(seen.active_breach_in(&id))),
+        );
+    }
+    for planet in &planet_ids {
+        if let Some(owner) = seen.faction_mark(&format!("titans:sleeper:{planet}")) {
+            add_named(features, format_args!("{prefix}:sleeper"), 1.0);
+            if owner.split('|').next() == Some(player.as_str()) {
+                add_named(features, format_args!("{prefix}:sleeper-own"), 1.0);
+            }
+        }
+    }
+    for kind in seen.wormhole_tokens_in(system_id) {
+        add_named(
+            features,
+            format_args!("{prefix}:wormhole-token:{}", kind.to_ascii_lowercase()),
+            1.0,
+        );
+    }
     // Distance to the nearest system this seat already has units in, and to Mecatol. Two systems
     // with identical contents are still different moves if one is next to your fleet.
     let nearest = context
@@ -3032,6 +3117,9 @@ fn add_system_features(
         ),
     ] {
         add_named(features, format_args!("{prefix}:{name}"), value);
+    }
+    if system_link_reachable(seen, player, system_id) {
+        add_named(features, format_args!("{prefix}:link-reachable"), 1.0);
     }
 
     // OBS-006: which *kind* of opponent is here, not just how many. The slot index is OBS-005's
@@ -3209,6 +3297,60 @@ fn system_reachable(seen: &Observed<'_>, player: &PlayerId, target: &str) -> boo
                                 .is_some_and(|distance| {
                                     distance <= i32::try_from(stats.move_value()).unwrap_or(0)
                                 })
+                    })
+            })
+    })
+}
+
+/// Whether `target` is within `move_value` jumps of `from` over the seat's adjacency (map, wormholes,
+/// breaches, faction links). Breadth-first; the jump count, not the hex distance.
+fn reachable_via_links(
+    adjacency: &ti4_engine::movement::PlayerAdjacency<'_>,
+    from: &str,
+    target: &str,
+    move_value: i64,
+) -> bool {
+    let mut seen_systems = std::collections::BTreeSet::from([from.to_owned()]);
+    let mut frontier = vec![from.to_owned()];
+    for _ in 0..move_value {
+        let mut next = Vec::new();
+        for system in &frontier {
+            for neighbour in adjacency.neighbours(system) {
+                if neighbour == target {
+                    return true;
+                }
+                if seen_systems.insert(neighbour.clone()) {
+                    next.push(neighbour);
+                }
+            }
+        }
+        frontier = next;
+    }
+    false
+}
+
+/// Reachable only through links: a ship could get there through breaches, wormholes or faction
+/// links within its move, but not by the hex test `system_reachable` applies.
+fn system_link_reachable(seen: &Observed<'_>, player: &PlayerId, target: &str) -> bool {
+    if system_reachable(seen, player, target) {
+        return false;
+    }
+    let Some(adjacency) = seen.adjacency_for(player) else {
+        return false;
+    };
+    let pinned = seen.systems_with_token(player);
+    seen.board().iter().any(|(origin, state)| {
+        !pinned.contains(origin)
+            && state.units.iter().any(|unit| {
+                unit.owner == *player
+                    && unit_stats(seen, unit).is_some_and(|stats| {
+                        stats.is_ship()
+                            && reachable_via_links(
+                                &adjacency,
+                                origin.as_str(),
+                                target,
+                                stats.move_value(),
+                            )
                     })
             })
     })
@@ -8121,5 +8263,245 @@ mod tests {
             first, second,
             "the same position names the same facts twice"
         );
+    }
+
+    // -- observation gaps: breaches, wormhole tokens, links ---------------------------------------
+
+    const NEW_NAMES: [&str; 5] = [
+        ":breach",
+        ":breach-active",
+        ":link-reachable",
+        ":wormhole-token:",
+        "route:link-adjacent",
+    ];
+
+    fn is_new_name(name: &str) -> bool {
+        if name.ends_with(":sleeper") || name.ends_with(":sleeper-own") {
+            return true;
+        }
+        NEW_NAMES.iter().any(|new| {
+            if new.starts_with(':') && !new.ends_with(':') {
+                name.ends_with(new)
+            } else {
+                name.contains(new)
+            }
+        })
+    }
+
+    fn activation_features(
+        state: &GameState,
+        galaxy: &ti4_content::galaxy::Galaxy,
+        target: &str,
+    ) -> FeatureVector {
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let option = ChoiceOption::labelled(target, "activate", format!("activate {target}"));
+        let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(state, content, POK, Some(galaxy));
+        explicit_option_features(
+            &seen,
+            &choice,
+            &option,
+            &player,
+            &held(state, content, Some(galaxy)),
+        )
+    }
+
+    /// The system farthest from player a's home that none of its ships can hex-reach.
+    fn unreachable_target(
+        state: &GameState,
+        galaxy: &ti4_content::galaxy::Galaxy,
+    ) -> (String, String) {
+        let player = PlayerId::new("a");
+        let home = state.player(&player).unwrap().home_system.clone().unwrap();
+        let far = galaxy
+            .system_ids()
+            .into_iter()
+            .filter(|id| galaxy.distance(home.as_str(), id).is_some())
+            .max_by_key(|id| galaxy.distance(home.as_str(), id))
+            .unwrap()
+            .to_owned();
+        (home.to_string(), far)
+    }
+
+    fn sorted_pairs(features: &FeatureVector) -> Vec<(String, u64)> {
+        let mut pairs: Vec<(String, u64)> = names_of(features)
+            .into_iter()
+            .map(|name| {
+                let value = value_of(features, &name).unwrap();
+                (name, value.to_bits())
+            })
+            .filter(|(name, _)| !is_new_name(name))
+            .collect();
+        pairs.sort();
+        pairs
+    }
+
+    #[test]
+    fn breach_features_follow_the_tokens_and_make_linked_systems_reachable() {
+        let (mut state, galaxy) = observed_three_player_board();
+        let (home, far) = unreachable_target(&state, &galaxy);
+        let before = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&before, "target:reachable"), None);
+        assert!(
+            names_of(&before)
+                .iter()
+                .all(|name| !is_new_name(name) || name.ends_with(":link-reachable"))
+        );
+
+        // One active breach at the fleet's home and one at the far system, plus an inactive one
+        // beside the far system: only the active pair is linked.
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("crimson");
+        for system in [&home, &far] {
+            let id = SystemId::new(system);
+            state.breach_tokens.insert(id.clone());
+            ti4_engine::factions::crimson::flip_breach(&mut state, &id);
+        }
+        let after = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&after, "target:breach"), Some(1.0));
+        assert_eq!(value_of(&after, "target:breach-active"), Some(1.0));
+        assert_eq!(
+            value_of(&after, "target:reachable"),
+            None,
+            "hex test is unchanged"
+        );
+        assert_eq!(value_of(&after, "target:link-reachable"), Some(1.0));
+
+        // Flip the far breach off: still a breach, no longer active, no longer linked.
+        ti4_engine::factions::crimson::flip_breach(&mut state, &SystemId::new(&far));
+        let inactive = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&inactive, "target:breach"), Some(1.0));
+        assert_eq!(value_of(&inactive, "target:breach-active"), None);
+        assert_eq!(value_of(&inactive, "target:link-reachable"), None);
+    }
+
+    #[test]
+    fn route_link_adjacent_marks_breach_neighbours_only() {
+        let (mut state, galaxy) = observed_three_player_board();
+        let (home, far) = unreachable_target(&state, &galaxy);
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("crimson");
+        for system in [&home, &far] {
+            let id = SystemId::new(system);
+            state.breach_tokens.insert(id.clone());
+            ti4_engine::factions::crimson::flip_breach(&mut state, &id);
+        }
+        let content = ti4_content::ContentStore::embedded();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let mut linked = FeatureVector::new();
+        add_route_features(&seen, &player, &home, &far, &mut linked);
+        assert_eq!(value_of(&linked, "route:link-adjacent"), Some(1.0));
+        assert_eq!(value_of(&linked, "route:adjacent"), None);
+        let mut hex = FeatureVector::new();
+        let next = galaxy.adjacent(&home).into_iter().next().unwrap();
+        add_route_features(&seen, &player, &home, next, &mut hex);
+        assert_eq!(value_of(&hex, "route:link-adjacent"), None);
+    }
+
+    #[test]
+    fn wormhole_tokens_are_named_by_kind_and_absent_otherwise() {
+        let (state, mut galaxy) = observed_three_player_board();
+        let (_, far) = unreachable_target(&state, &galaxy);
+        let plain = activation_features(&state, &galaxy, &far);
+        assert!(
+            names_of(&plain)
+                .iter()
+                .all(|name| !name.contains(":wormhole-token:"))
+        );
+        galaxy
+            .token_wormholes
+            .entry(far.clone())
+            .or_default()
+            .insert("GAMMA".to_owned());
+        let tokened = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&tokened, "target:wormhole-token:gamma"), Some(1.0));
+    }
+
+    #[test]
+    fn a_standard_state_without_breaches_keeps_every_old_name_and_value() {
+        let (state, galaxy) = observed_three_player_board();
+        let (_, far) = unreachable_target(&state, &galaxy);
+        let features = activation_features(&state, &galaxy, &far);
+        assert!(
+            names_of(&features)
+                .iter()
+                .all(|n| !n.ends_with(":breach") && !n.ends_with(":breach-active"))
+        );
+        // FNV-1a over the sorted (name, bits) pairs minus the new names, captured on the code before
+        // the breach/link features were added.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for (name, bits) in sorted_pairs(&features) {
+            for byte in name.bytes().chain(bits.to_le_bytes()) {
+                hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        assert_eq!(hash, 4_675_559_690_909_611_059, "snapshot");
+    }
+
+    #[test]
+    fn faction_mark_inventory_facts_read_only_the_acting_seats_marks() {
+        let (mut state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let facts_of = |state: &GameState| {
+            let seen = Observed::new(state, content, POK, Some(&galaxy));
+            actor_inventory_facts(&seen, &PlayerId::new("a"))
+        };
+        let get = |facts: &[(String, f64)], name: &str| {
+            facts.iter().find(|(n, _)| n == name).map(|(_, v)| *v)
+        };
+        let marks = |state: &mut GameState, faction: &str| {
+            state.player_mut(&PlayerId::new("a")).unwrap().faction =
+                ti4_model::id::FactionId::new(faction);
+            let m = &mut state.faction_marks;
+            m.insert("mahact:fleet:a".to_owned(), "b,b,c".to_owned());
+            m.insert("nomad:artuno:a".to_owned(), "3".to_owned());
+            m.insert("titans:sleeper:mr".to_owned(), "a|18".to_owned());
+            m.insert("titans:sleeper:arretze".to_owned(), "b|26".to_owned());
+            m.insert("nekro:token:a:Z".to_owned(), "sol,hacan".to_owned());
+        };
+        let none = facts_of(&state);
+        for name in ["mahact-pool-tokens", "artuno-goods", "sleepers-placed", "nekro-z-tokens"] {
+            assert_eq!(get(&none, &format!("actor-inventory:{name}")), None);
+        }
+        marks(&mut state, "mahact");
+        assert_eq!(get(&facts_of(&state), "actor-inventory:mahact-pool-tokens"), Some(3.0 / 8.0));
+        marks(&mut state, "nomad");
+        assert_eq!(get(&facts_of(&state), "actor-inventory:artuno-goods"), Some(3.0));
+        marks(&mut state, "titans");
+        assert_eq!(get(&facts_of(&state), "actor-inventory:sleepers-placed"), Some(1.0));
+        marks(&mut state, "nekro");
+        assert_eq!(get(&facts_of(&state), "actor-inventory:nekro-z-tokens"), Some(2.0 / 7.0));
+        marks(&mut state, "sol");
+        assert!(facts_of(&state).iter().all(|(n, _)| !n.contains("pool-tokens")
+            && !n.contains("artuno")
+            && !n.contains("sleepers")
+            && !n.contains("z-tokens")));
+    }
+
+    #[test]
+    fn a_sleeper_planet_marks_its_system_and_whose_it_is() {
+        let (mut state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let (_, far) = unreachable_target(&state, &galaxy);
+        let planet = ti4_content::galaxy::planets_in(content, &far, POK)
+            .first()
+            .expect("the farthest system has a planet")
+            .id()
+            .to_owned();
+        let none = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&none, "target:sleeper"), None);
+        state
+            .faction_marks
+            .insert(format!("titans:sleeper:{planet}"), format!("b|{far}"));
+        let theirs = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&theirs, "target:sleeper"), Some(1.0));
+        assert_eq!(value_of(&theirs, "target:sleeper-own"), None);
+        state
+            .faction_marks
+            .insert(format!("titans:sleeper:{planet}"), format!("a|{far}"));
+        let own = activation_features(&state, &galaxy, &far);
+        assert_eq!(value_of(&own, "target:sleeper-own"), Some(1.0));
     }
 }
