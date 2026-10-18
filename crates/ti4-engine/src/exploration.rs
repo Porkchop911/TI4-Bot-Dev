@@ -225,9 +225,9 @@ fn ask_decorated(
     let mut choice = decorate(choice);
     if COMMODITY_REWARDS.contains(&card) {
         // Display only: what the seat holds now, so "gain 2" or "convert" reads against it.
-        choice = choice.detailed(
+        choice = choice.hinted(
             "commodities",
-            crate::strategy_cards::commodity_standing(state, ctx.content, player),
+            &crate::strategy_cards::commodity_standing(state, ctx.content, player),
         );
     }
     ctx.ask_seeing(state, &choice).ok().map(|answer| answer.id)

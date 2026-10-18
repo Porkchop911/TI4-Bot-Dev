@@ -10,9 +10,9 @@ playable.
 
 `GameState::rules_version: u32` (crates/ti4-model/src/state.rs). Constants next to it:
 
-- `RULES_VERSION` (now 15): what a **new** game plays. `GameState::new` sets it, so every way of
+- `RULES_VERSION` (now 22): what a **new** game plays. `GameState::new` sets it, so every way of
   creating a game (server, lobby, wasm host, selfplay, tests) gets the latest.
-- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_COMMAND_TOKEN_POOL = 12`, `RULES_SELF_ASSEMBLY = 13`, `RULES_AGENDA_GRANT_REVEAL = 14`, `RULES_TECH_EFFECTS = 15`): the first version with one gated change.
+- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_COMMAND_TOKEN_POOL = 12`, `RULES_SELF_ASSEMBLY = 13`, `RULES_AGENDA_GRANT_REVEAL = 14`, `RULES_TECH_EFFECTS = 15`, `RULES_FACTION_EFFECTS = 16`, `RULES_STATUS_GAIN = 17`, `RULES_TIMING_DOUBLE_PASS = 18`, `RULES_EXPLORE_BEFORE_CONTROL = 19`, `RULES_FLOATING_FACTORY_SPACE = 20`, `RULES_TE_MECATOL_LANDING = 21`, `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES = 22`, `RULES_STATUS_REDISTRIBUTION_REFUSED = 22`, `RULES_REVERSE_ENGINEER_QUALIFIER = 22`): the first version with one gated change.
 A state without the field is **version 0**, the legacy rules (what the alpha ran until 2026-10-16).
 
 ## How it is stored (the checksum rule)
@@ -201,6 +201,91 @@ Version 16 = faction effects (`faction-effect-fixes`, `RULES_FACTION_EFFECTS`). 
 
 Version < 16: none of these. The ability slot of item 2 is only registered at 16, so older logs replay unchanged. Rule bot golden benches v1 to v4 are hash-identical with `RULES_VERSION` pinned to 11; v5's `baseline.json` needs a deliberate re-record only if its games reach these effects.
 
+Version 17 = the status-phase gain in the redistribution (cf5af3e0, `RULES_STATUS_GAIN`):
+
+1. `Game::finish_status_phase`: each seat is asked one redistribution (81.5) over what it holds
+   plus what it gains, capped by the reinforcements (20.4a), with `gained` in the details
+   (`TokenRedistribution::with_gain`); `COMMAND_TOKEN_GAINED` is still emitted for each token.
+   Version < 17: `Game::step_token_gain` asks the pool of each gained token
+   (`gain_command_token`, `TokenGain::pending_choice`), then the redistribution gains nothing.
+
+Version 18 = the second pass closes a window (niko 98fe8b1d, `RULES_TIMING_DOUBLE_PASS`):
+
+1. `Resolver::run_window_with_context`: a seat that passes twice in a row closes the window, and a
+   reaction slot opened and backed out of with no card played (the hand is unchanged) is a pass.
+   Version < 18: every resolution clears the passes, and a backed-out slot is a resolution. The
+   window with no state (`Resolver::emit`, tests only) has the new rule at every version.
+
+Version 19 = exploration before control (niko, `RULES_EXPLORE_BEFORE_CONTROL`):
+
+1. `InvasionWindow::advance_control`: a planet nobody controls is explored before control is
+   established, and only while the invader still has a ground force there (35.1). Version < 19:
+   explored after control was gained (`finish_control_gain`).
+
+Version 20 = the Floating Factory in space (niko, `RULES_FLOATING_FACTORY_SPACE`):
+
+1. `strategy_cards::construction_unit`: Saar's Floating Factory is placed by Construction and the
+   Construction Rider in the space area. Version < 20: the generic space dock on the planet.
+
+Version 21 = the Thunder's Edge Mecatol (niko, `RULES_TE_MECATOL_LANDING`):
+
+1. `invasion::landable_planets`: `mrte` is not landable while the custodians token is on it, as
+   `mr`. Version < 21: only `mr` is held back.
+
+Version 22 = the research payment window, the refused redistribution and the Reverse Engineer
+qualifier (`mock-removal`, three constants of one version):
+
+1. `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES`, `strategy_cards::paid_research` (Technology secondary,
+   and the primary's second technology): the payment is asked inside the research's own payment
+   window (`production::pay_in_window`; the Keleres agent is offered once, before the research
+   question, not again by the payment). The planets whose specialties the chosen technology's
+   prerequisites exhaust (`technology::specialties_spent_by_research`) are kept out of the payment,
+   and a technology is offered only when it can be paid without them (`research_payable`). The
+   `kept` of `details.payment` (`ResearchPaymentHints`) lists those planets, and is empty for an
+   older game. Version 6..21: `production::pay_seeing` over every ready planet, every researchable
+   technology offered (version 0..5: the cheapest plan, automatically).
+2. `RULES_STATUS_REDISTRIBUTION_REFUSED`, `Game::finish_status_phase`: a status-phase
+   redistribution (81.5) whose answer the engine refuses is an error of the step, and nothing is
+   gained or announced for the seat. Version < 22: the refusal is passed over, and the gain goes
+   into the tactic pool. Both versions keep the gain of `RULES_STATUS_GAIN` (version < 17: token
+   by token).
+3. `RULES_REVERSE_ENGINEER_QUALIFIER`, `action_cards::reaction_can_matter`
+   (`reverse_engineer_can_take`): Reverse Engineer is offered in the window of
+   `ACTION_CARD_DISCARDED` only when the discarded card (the event's `card`, else the frame's
+   `last_action_discarded`) has a component action, another player discarded it, and it is still
+   in the discard pile. Version < 22: it is offered after every discard of another player, and the
+   qualifier is checked only when the card resolves (`reverse_engineer`), so a play on a card with
+   no component action is spent for nothing (the reaction preview's `no_component_action`).
+
+## Fork renumbering of 2026-10-18 (Felix 12-16, ProbablyPlayable 12-17 -> 17-22)
+
+Both forks numbered their gates from 12 after the shared version 11. In the integration of
+2026-10-18 (`docs/FORKS_2026-10-18_INTEGRATION.md`) Felix's numbers stayed, ProbablyPlayable's
+moved up by five, in the same order:
+
+| Constant | Felix | ProbablyPlayable before | Now |
+| --- | --- | --- | --- |
+| `RULES_COMMAND_TOKEN_POOL` | 12 | - | 12 |
+| `RULES_SELF_ASSEMBLY` | 13 | - | 13 |
+| `RULES_AGENDA_GRANT_REVEAL` | 14 | - | 14 |
+| `RULES_TECH_EFFECTS` | 15 | - | 15 |
+| `RULES_FACTION_EFFECTS` | 16 | - | 16 |
+| `RULES_STATUS_GAIN` | - | 12 | 17 |
+| `RULES_TIMING_DOUBLE_PASS` | - | 13 | 18 |
+| `RULES_EXPLORE_BEFORE_CONTROL` | - | 14 | 19 |
+| `RULES_FLOATING_FACTORY_SPACE` | - | 15 | 20 |
+| `RULES_TE_MECATOL_LANDING` | - | 16 | 21 |
+| `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES`, `RULES_STATUS_REDISTRIBUTION_REFUSED`, `RULES_REVERSE_ENGINEER_QUALIFIER` | - | 17 | 22 |
+
+`RULES_VERSION` is 22: a new game has every gate of both forks.
+
+**Saves of a ProbablyPlayable build at version 12 or higher** (`rules_version` 12..17 in
+`init.json`'s `initial_state`, in a wasm `HostSave`/`Restart`, or in a `Resume`) do not replay
+under this numbering as they are: version 12 now also means Felix's command token pool question,
+and version 17 means only the status gain. Such a save needs its version mapped by the table
+(old PP `n` -> `n + 5`) before it is loaded; nothing in the save says which fork wrote it, so the
+mapping cannot be applied automatically. Felix's saves at 12..16 and every save at 0..11 load
+unchanged. No load-time migration is built.
 ## Adding the next gate
 
 1. Raise `RULES_VERSION` in state.rs and add `pub const RULES_<NAME>: u32 = <new>;`.

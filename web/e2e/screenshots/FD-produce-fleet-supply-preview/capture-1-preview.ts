@@ -38,8 +38,8 @@ const scenarios: { name: string; supply: Record<string, unknown>; stage: number;
   { name: "2-within-limit", supply: { used: 2, limit: 5 }, stage: 2, text: "2 +2 / 5", over: false },
   { name: "3-at-limit", supply: { used: 2, limit: 5 }, stage: 3, text: "2 +3 / 5", over: false },
   { name: "4-over-limit", supply: { used: 2, limit: 5 }, stage: 4, text: "2 +4 / 5", over: true },
-  { name: "5-letnev-armada", supply: { used: 2, limit: 5, armada: 2 }, stage: 3, text: "2 +3 / 5", over: false },
-  { name: "6-letnev-armada-over", supply: { used: 2, limit: 5, armada: 2 }, stage: 4, text: "2 +4 / 5", over: true },
+  { name: "5-letnev-armada", supply: { used: 2, limit: 5, fleet_supply_bonus: 2 }, stage: 3, text: "2 +3 / 5", over: false },
+  { name: "6-letnev-armada-over", supply: { used: 2, limit: 5, fleet_supply_bonus: 2 }, stage: 4, text: "2 +4 / 5", over: true },
 ];
 
 for (const [sizeName, size] of Object.entries(SIZES)) {

@@ -129,7 +129,7 @@ hero_unlock! {
 
 #[test]
 fn every_leader_of_these_factions_has_a_handler() {
-    let missing = leaders::unimplemented(content(), FACTIONS);
+    let missing = leaders::unimplemented(content(), ti4_model::content_types::DEFAULT, FACTIONS);
     assert!(missing.is_empty(), "leaders wired to nothing: {missing:?}");
 }
 

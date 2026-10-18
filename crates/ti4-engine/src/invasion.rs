@@ -894,7 +894,15 @@ pub(crate) fn landable_planets(
                 .filter(|planet| planet.in_sources(sources))
                 .map(|_| PlanetId::new(name))
         })
-        .filter(|planet| !crate::seating::is_mecatol_planet(planet.as_str()) || state.custodians_removed)
+        .filter(|planet| {
+            // Before `RULES_TE_MECATOL_LANDING` only the base Mecatol Rex was held back.
+            let mecatol = if state.rules_version >= ti4_model::state::RULES_TE_MECATOL_LANDING {
+                crate::seating::is_mecatol_planet(planet.as_str())
+            } else {
+                planet.as_str() == "mr"
+            };
+            !mecatol || state.custodians_removed
+        })
         // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
         // a space station." They are listed in the system's `planets` array because they carry a
         // planet card, so without this they were offered to every invasion like any other planet --
@@ -2591,6 +2599,7 @@ impl InvasionWindow {
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
         if taken == held
             && victims.len() == 1
             && state
@@ -3636,6 +3645,7 @@ impl InvasionWindow {
                 harrow_hits: harrow,
             });
         }
+        record_ground_step(state);
         // After the whole round, so a handler sees the board once every hit has landed.
         for (name, payload) in log {
             self.emit_ground_event(state, ctx, name, payload);
@@ -3924,7 +3934,8 @@ impl InvasionWindow {
                             .is_some_and(UnitType::is_ground_force)
                     })
             };
-            if unowned
+            if state.rules_version >= ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL
+                && unowned
                 && holds_ground()
                 && !crate::coexistence::is_coexisting(state, &self.system, &planet, &self.invader)
                 && let Some(deck) =
@@ -4107,7 +4118,16 @@ impl InvasionWindow {
         // `choose_deck` rather than `trait_of`: a planet with two printed traits (several
         // Thunder's Edge worlds do) is the invader's choice of deck, not a fixed pick of
         // whichever trait happens to sort first.
-        // (The exploration itself now resolves in `advance_control`, before control is gained.)
+        // From `RULES_EXPLORE_BEFORE_CONTROL` the exploration resolves in `advance_control`, before
+        // control is gained.
+        if state.rules_version < ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL
+            && previous.is_none()
+            && let Some(deck) = crate::exploration::choose_deck(ctx, state, &self.invader, planet)
+            && let Some(outcome) =
+                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
+        {
+            self.report.explored.push((planet.clone(), outcome));
+        }
     }
 }
 
@@ -4922,6 +4942,7 @@ fn space_cannon_defense(
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
     }
 }
 
@@ -4960,6 +4981,31 @@ pub fn resolve(
         window.settle(state, &mut ctx);
     }
     Ok(window.into_report())
+}
+
+/// The step of the invasion that was just resolved, for the record of the turn
+/// ([`ti4_model::state::FightLog`]): an invasion that ends in this step of the engine leaves no
+/// board that shows it.
+fn record_ground_step(state: &mut GameState) {
+    let Some(active) = state.active_invasion.as_ref() else {
+        return;
+    };
+    let Some(step) = active.last_step.clone() else {
+        return;
+    };
+    // A step that this call did not resolve is still the last one: it is recorded once.
+    if state.fight_log.ground.last().is_some_and(|last| {
+        last.invasion_seq == active.seq && last.system == active.system && last.step == step
+    }) {
+        return;
+    }
+    let record = ti4_model::state::GroundStepRecord {
+        system: active.system.clone(),
+        invasion_seq: active.seq,
+        invader: active.invader.clone(),
+        step,
+    };
+    state.fight_log.ground.push(record);
 }
 
 #[cfg(test)]
@@ -5192,6 +5238,20 @@ mod tests {
     /// whole tile must offer nothing; 109 carries Bellatrix *and* Tsion Station, so it must offer
     /// exactly the real planet -- which is the case that distinguishes "filtered" from "skipped
     /// the tile".
+    /// The Thunder's Edge Mecatol Rex is held back while the custodians are on it from
+    /// `RULES_TE_MECATOL_LANDING`; an older game offers it.
+    #[test]
+    fn the_thunders_edge_mecatol_is_landable_only_in_an_older_game_while_the_custodians_hold_it() {
+        let content = ti4_content::ContentStore::embedded();
+        let mecatol = SystemId::new(crate::seating::MECATOL_TE);
+        let mut state = crate::fixtures::game(&["a"]);
+        assert!(!state.custodians_removed);
+        let landable = |state: &GameState| landable_planets(state, content, ALL_SOURCES, &mecatol);
+        assert!(landable(&state).is_empty(), "{:?}", landable(&state));
+        state.rules_version = ti4_model::state::RULES_TE_MECATOL_LANDING - 1;
+        assert_eq!(landable(&state), [PlanetId::new("mrte")]);
+    }
+
     #[test]
     fn ground_forces_cannot_land_on_a_space_station() {
         let content = ti4_content::ContentStore::embedded();
@@ -6167,8 +6227,9 @@ mod tests {
     fn taking_an_unowned_planet_explores_it_and_taking_one_off_a_rival_does_not() {
         // 35.1. A caller told merely that control changed would explore every conquest and
         // draw cards the rules do not give.
-        let explore_once = |previous_holder: Option<PlayerId>| {
+        let explore_once = |previous_holder: Option<PlayerId>, rules_version: u32| {
             let (mut state, system, planet) = arena();
+            state.rules_version = rules_version;
             // A planet with a trait, so it has a deck to explore into.
             let deck = crate::exploration::trait_of(ContentStore::embedded(), POK, &planet)?;
             state
@@ -6217,11 +6278,15 @@ mod tests {
             Some(window.into_report().explored.len())
         };
 
-        if let Some(unowned) = explore_once(None) {
-            assert_eq!(unowned, 1, "a planet nobody held is explored");
-        }
-        if let Some(conquered) = explore_once(Some(holder())) {
-            assert_eq!(conquered, 0, "a planet taken off a rival is not");
+        // Before control from `RULES_EXPLORE_BEFORE_CONTROL`, after it before.
+        let current = ti4_model::state::RULES_EXPLORE_BEFORE_CONTROL;
+        for rules_version in [current, current - 1] {
+            if let Some(unowned) = explore_once(None, rules_version) {
+                assert_eq!(unowned, 1, "a planet nobody held is explored");
+            }
+            if let Some(conquered) = explore_once(Some(holder()), rules_version) {
+                assert_eq!(conquered, 0, "a planet taken off a rival is not");
+            }
         }
     }
 

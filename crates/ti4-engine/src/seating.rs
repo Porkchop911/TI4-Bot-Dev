@@ -437,7 +437,10 @@ fn weighted_order(
     while !remaining.is_empty() {
         let total: u64 = remaining.iter().map(|(_, w)| w).sum();
         // shortcut: die() takes u32; weights are capped by the caller far below u32::MAX in total.
-        let mut ticket = u64::from(rng.die(WEIGHTED_ROSTER_DOMAIN, u32::try_from(total).unwrap_or(u32::MAX)));
+        let mut ticket = u64::from(rng.die(
+            WEIGHTED_ROSTER_DOMAIN,
+            u32::try_from(total).unwrap_or(u32::MAX),
+        ));
         let index = remaining
             .iter()
             .position(|(_, w)| {

@@ -3,7 +3,10 @@
 // (`wasmTransport.ts`, over `engineLink`) speak the same protocol: `ClientMessage` in,
 // `ServerMessage` out. What only one of them has is in `MessagePlay`.
 import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
+import { type EventLog, NO_EVENTS, eventsOf, withEvent as withPublicEvent } from "./events";
 import type { PlanStep } from "./movementPlan";
+import { checkBoard, type BoardCheck } from "./history";
+import { NO_ROLLS, type RollLog, actionRolls, logOf, withEvent } from "./rolls";
 import { type LegacyStaged, seatSync } from "./seatStore";
 import { modesOf, passedOf, planStoppedOf, rejection, updateOf } from "./serverMessages";
 import type { Capabilities, PlanStopped, Transport, TransportEvent } from "./transport";
@@ -12,6 +15,10 @@ import {
   type Catalog,
   type ClientRequest,
   type DraftStep,
+  type FleetCounts,
+  type FleetStanding,
+  type GroundOddsRequest,
+  type GroundOddsResponse,
   type PlanScope,
   PROTOCOL_VERSION,
   type ReactionModes,
@@ -29,6 +36,8 @@ export interface MessagePlay {
   /** The printed cards of the engine of this page. A snapshot of other cards is refused. */
   catalog: Catalog | null;
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
+  groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
+  fleetStanding(counts: FleetCounts): Promise<FleetStanding>;
   capabilities?: Capabilities;
   /** The side plays a seat, and has staged work. A spectator has none. */
   player: boolean;
@@ -123,6 +132,12 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   let undoing = false;
   /** The notes of the game that were told. A note has an id so that a repeat can be dropped. */
   const noted = new Set<string>();
+  /** The public rolls that the events told, for the update of the action that is played now. */
+  let rolls: RollLog = NO_ROLLS;
+  /** The public events of the game, for the Log. */
+  let events: EventLog = NO_EVENTS;
+  /** In development: the board of the last update at the end of a step, to check the next. */
+  let board: BoardCheck = null;
   /** The last `replaying` that was told, and when. */
   let shown = 0;
   const replies = typeof link.request === "function";
@@ -170,7 +185,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
     }
     const { version: _, ...event } = latest;
     const seat = play.stepping?.() ?? null;
-    return seat === null ? event : { ...event, stepping: { seat } };
+    const told = { ...event, rolls: actionRolls(rolls), events };
+    return seat === null ? told : { ...told, stepping: { seat } };
   };
   /**
    * Tells the game as it is now, once more: what was staged against it starts again. `plan`
@@ -208,6 +224,10 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
         );
       }
       play.snapshot?.();
+      // A snapshot has every event of the game: an undo took the later ones back.
+      rolls = logOf(message.events);
+      events = eventsOf(message.events);
+      board = null;
     }
     settle();
     const told = modesOf(message.reaction_modes ?? {});
@@ -225,6 +245,9 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
       }
     }
     const update = updateOf(message);
+    if (import.meta.env.DEV) {
+      board = checkBoard(board, update.view, events);
+    }
     // The game tells the game again when only a card setting changed. The page then keeps what
     // is staged: nothing of the game is new.
     const same =
@@ -309,6 +332,10 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
               ? play.stagedRefused
               : message.message,
         });
+      case "event":
+        rolls = withEvent(rolls, message.entry);
+        events = withPublicEvent(events, message.entry);
+        return;
       case "seat_staged":
         if (play.player) {
           staged.receive(message);
@@ -396,6 +423,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   const transport: Transport = {
     catalog: play.catalog,
     odds: play.odds,
+    groundOdds: play.groundOdds,
+    fleetStanding: play.fleetStanding,
     capabilities: play.capabilities ?? {},
     ...(play.player ? { staged: staged.store } : {}),
     subscribe(listener) {

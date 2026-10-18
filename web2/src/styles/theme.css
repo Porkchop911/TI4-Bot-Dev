@@ -2,8 +2,17 @@
 @import "./board.css";
 
 /* The phone shell: a portrait phone shows one pane at a time (see AGENTS.md, "Screen size").
-   `phone:` is for layout, `touch:` is for the size of a control under a finger. */
-@custom-variant phone (@media (max-width: 720px));
+   `phone:` is for layout, `touch:` is for the size of a control under a finger. The step sheet over
+   the board on desktop is in the phone layout too: `PhoneScope` (src/ui/usePhone.ts) marks it with
+   `data-phone`. */
+@custom-variant phone {
+  @media (max-width: 720px) {
+    @slot;
+  }
+  &:where([data-phone] *) {
+    @slot;
+  }
+}
 @custom-variant touch (@media (pointer: coarse));
 
 /* Design tokens. Taken from the tactical-action click dummy; every component uses these names. */
@@ -67,7 +76,8 @@
   }
 }
 
-/* Follows the workspace: gold in a draft, cyan in live, green when the action is complete.
+/* Follows the workspace: gold in a draft, cyan in live, green when the action is complete, the
+   muted grey of the text in the history mode.
    Inline, so that a subtree which sets --accent changes every accent utility inside it. */
 @theme inline {
   --color-accent: var(--accent);

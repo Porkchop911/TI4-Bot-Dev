@@ -1,4 +1,4 @@
-import type { PendingChoiceDto } from "../protocol/types.ts";
+import type { CommandPools, FleetSupplyHints, PendingChoiceDto } from "../protocol/types.ts";
 import { suggestAutoPay, type PayablePlanet, type PaymentDraft, type PaymentOffer } from "./paymentDraft.ts";
 
 const GAIN_PROMPT = "gain a command token into which pool";
@@ -128,7 +128,8 @@ export function describeCommandTokens(
 ): CommandTokenView | null {
   const view = describeBase(choice, canBatch, resourcesOf);
   if (!view) return null;
-  return { ...view, fleetSupplyBonus: asCount(choice.details?.fleet_supply_bonus) ?? 0 };
+  const pools = choice.details?.pools as Partial<CommandPools> | undefined;
+  return { ...view, fleetSupplyBonus: asCount(pools?.fleet_supply_bonus) ?? 0 };
 }
 
 function describeBase(
@@ -762,14 +763,15 @@ export interface FleetSupplyDetail {
   used: number;
   limit: number;
   /** Ships Armada adds, already inside `limit` (Letnev only). */
-  armada: number;
+  fleetSupplyBonus: number;
 }
 
+/** The engine's typed `FleetSupplyHints` of a movement or production choice. */
 export function readFleetSupply(raw: unknown): FleetSupplyDetail | null {
   if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
+  const value = raw as Partial<Record<keyof FleetSupplyHints, unknown>>;
   const used = asCount(value.used);
   const limit = asCount(value.limit);
   if (used === null || limit === null) return null;
-  return { used, limit, armada: asCount(value.armada) ?? 0 };
+  return { used, limit, fleetSupplyBonus: asCount(value.fleet_supply_bonus) ?? 0 };
 }

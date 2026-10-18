@@ -215,13 +215,8 @@ impl SelfPlay {
                     .copied()
                     .unwrap_or_default();
                 tuning::set(t);
-                let (picked, smart, _) = ti4_rule_bot::choose_explained(
-                    choice,
-                    Some(seen),
-                    sh.seed,
-                    seat,
-                    index,
-                );
+                let (picked, smart, _) =
+                    ti4_rule_bot::choose_explained(choice, Some(seen), sh.seed, seat, index);
                 (choice.options[picked].clone(), smart)
             }
             _ => (sh.random.choose(choice)?, false),

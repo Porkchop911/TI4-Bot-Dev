@@ -2563,9 +2563,7 @@ fn land_leftover(
             .clone()
             .filter(|u| &u.owner == me && is_ground(seen, u))
             .count();
-        let defended = units
-            .clone()
-            .any(|u| &u.owner != me && is_ground(seen, u));
+        let defended = units.clone().any(|u| &u.owner != me && is_ground(seen, u));
         let held = board.planet_control.get(&planet) == Some(me);
         if defended && mine == 0 && !held {
             continue;
@@ -5157,7 +5155,11 @@ mod tests {
         let choice = Choice::new(
             me(),
             "pay 4 more resources",
-            vec![pay("trade_good", 1, 4), pay("exhaust|big", 5, 4), pay("exhaust|fit", 4, 4)],
+            vec![
+                pay("trade_good", 1, 4),
+                pay("exhaust|big", 5, 4),
+                pay("exhaust|fit", 4, 4),
+            ],
         );
         assert!(choice.options.iter().all(|o| o.kind == "pay"));
         let (state, hub, _, _) = board();

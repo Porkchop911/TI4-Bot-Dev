@@ -315,7 +315,7 @@ const FACTIONS: [&str; 7] = [
 
 #[test]
 fn f3_every_leader_of_the_pok_factions_is_handled_by_the_engine() {
-    let missing = crate::leaders::unimplemented(ContentStore::embedded(), &FACTIONS);
+    let missing = crate::leaders::unimplemented(ContentStore::embedded(), ti4_model::content_types::DEFAULT, &FACTIONS);
     assert!(missing.is_empty(), "leaders nothing answers: {missing:?}");
 }
 

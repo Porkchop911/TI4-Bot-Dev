@@ -265,7 +265,11 @@ fn a_save_without_a_rules_version_resumes_as_a_legacy_game() {
         legacy.messages[0]["state"].get("rules_version").is_none(),
         "a legacy game's state is written without the field"
     );
-    assert_eq!(legacy.asks[0]["resume_check"]["ok"], true, "{}", legacy.asks[0]["resume_check"]);
+    assert_eq!(
+        legacy.asks[0]["resume_check"]["ok"], true,
+        "{}",
+        legacy.asks[0]["resume_check"]
+    );
 }
 
 #[test]
@@ -367,7 +371,10 @@ fn slow_an_undo_of_the_last_turn_goes_back_to_its_start_and_the_game_goes_on_the
     ]);
     install(&undoing, seed, "a");
     let end = start(&setup(seed, 3), None);
-    assert_eq!(end["end"]["left"], true, "a turn undo ends the run and asks for a new one");
+    assert_eq!(
+        end["end"]["left"], true,
+        "a turn undo ends the run and asks for a new one"
+    );
     let restart = undoing.lock().unwrap().replies.last().unwrap()["restart"].clone();
     assert_eq!(restart["generation"], 1);
     let answers = restart["answers"].as_array().unwrap().len();
@@ -378,13 +385,20 @@ fn slow_an_undo_of_the_last_turn_goes_back_to_its_start_and_the_game_goes_on_the
     // The new run waits at the start of the turn, and plays on to the same end.
     let again = page(vec![Act::Probe(Box::new(|page| {
         let (_, _, choice, _) = pending(&page.messages).unwrap();
-        assert_eq!(choice.prompt, "action phase", "the turn is asked again from its start");
+        assert_eq!(
+            choice.prompt, "action phase",
+            "the turn is asked again from its start"
+        );
     }))]);
     install(&again, seed, "a");
     let resume = restart.clone();
     let end = start(&setup(seed, 3), Some(&resume));
     assert_eq!(end["end"]["finished"], true);
-    assert_eq!(decisions_hash(), want, "the same answers give the same game");
+    assert_eq!(
+        decisions_hash(),
+        want,
+        "the same answers give the same game"
+    );
 }
 
 #[test]

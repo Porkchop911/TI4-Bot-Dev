@@ -1,7 +1,8 @@
 // A reaction window: what opened it, in game values, and what the viewer can use now, as printed.
 // The engine says both (`reaction` of the update); this file words the trigger and the rows.
 // No rule is decided here, and no rule text is written here.
-import type { MenuRowView, OfferMode, OfferView } from "../../model";
+import { optionWords } from "./notes";
+import type { BlockView, InterruptView, MenuRowView, OfferMode, OfferView } from "../../model";
 import type {
   Catalog,
   Choice,
@@ -11,7 +12,9 @@ import type {
   SessionUpdate,
 } from "../wire";
 import { plain, timing } from "./components";
-import { factionName, strategyCard, humanizeId } from "./names";
+import { systemLabel, tilesOf } from "./movement";
+import { humanizeId, phaseName, seatLabel, sentence, strategyCard } from "./names";
+import { printedSource } from "./printed";
 
 const KEYS = "123456789";
 
@@ -45,8 +48,8 @@ export function triggerText(
     return "Reaction";
   }
   const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
-  const faction = (seat: string) =>
-    factionName(update.view.players.find((player) => player.id === seat)?.faction ?? seat, catalog);
+  // The seat as the page names it everywhere: its player, else its faction.
+  const faction = (seat: string) => seatLabel(update, seat, catalog);
   const { actor, system } = trigger;
   const mine = !!actor && actor === viewer;
   // "Hacan activates", "you activate"; "Hacan’s", "your".
@@ -81,8 +84,12 @@ export function triggerText(
       case "MOVEMENT_FINISHED":
       case "SHIP_MOVED":
         return whose && `${whose} movement${system ? ` to system ${system}` : ""}`;
-      case "AGENDA_REVEALED":
-        return "an agenda is revealed";
+      case "AGENDA_REVEALED": {
+        const agenda = trigger.agenda
+          ? catalog?.components.agendas.find((item) => item.id === trigger.agenda)?.name
+          : undefined;
+        return agenda ? `${agenda} is revealed` : "an agenda is revealed";
+      }
       default:
         return null;
     }
@@ -103,6 +110,8 @@ export interface ReactionWindow {
   rows: MenuRowView[];
   /** The option that passes. Null: the window must be answered. */
   pass: string | null;
+  /** What the main button says for the staged row: "Play Sabotage", "Use T'ro". Null: none is staged. */
+  use: string | null;
 }
 
 /**
@@ -141,15 +150,195 @@ export function selectReaction(
     ...choice.options
       .filter((option) => option.kind !== "decline" && !offered.has(option.id))
       .map((option) => ({
-        title: option.label || option.id,
+        title: optionWords(choice, option, update, catalog).text,
         selected: option.id === staged,
         disabled: false,
         intent: { type: "chooseOption" as const, option: option.id },
       })),
   ];
+  // A slot of several action cards is one option: the game asks which card after it.
+  const using = facts.offers.filter((item) => item.option === staged);
+  const use = !staged
+    ? null
+    : using.length === 1
+      ? `${using[0].kind === "action_card" ? "Play" : "Use"} ${using[0].name}`
+      : using.length
+        ? "Play an action card"
+        : "Use";
   return {
     heading: triggerText(facts.trigger, update, catalog),
     rows: rows.map((row, index) => ({ key: KEYS[index] ?? "", ...row })),
     pass: choice.options.find((option) => option.kind === "decline")?.id ?? null,
+    use,
+  };
+}
+
+/**
+ * The window on top of the action panel: its rows. A window of any question has this shape (a
+ * window in a space combat too); the main button of the footer is Pass or Use. What opened it is
+ * the name of the band: the heading and its context say it on the screen.
+ */
+export function interruptOf(window: ReactionWindow, system?: string | null): InterruptView {
+  return {
+    label: `Reaction · ${window.heading}`,
+    source: null,
+    question: null,
+    link: system ? [`sys:${system}`] : [],
+    blocks: [{ kind: "menu", rows: window.rows }],
+  };
+}
+
+/**
+ * The system that the open window is about, as the engine says it: the system or the planet of
+ * its trigger, the target of the question, else the active system of the tactical action.
+ */
+export function windowSystem(update: SessionUpdate, choice: Choice | null): string | null {
+  const trigger = update.reaction?.trigger ?? choice?.context?.trigger;
+  const target = choice?.context?.target;
+  const planet = trigger?.planet;
+  const onMap = planet
+    ? (update.view.board.map_tiles ?? []).find((tile) =>
+        (tile.planets ?? []).some((item) => item.id === planet),
+      )?.system_id
+    : undefined;
+  const aimed =
+    target && "System" in target
+      ? target.System
+      : target && "Planet" in target
+        ? target.Planet.system
+        : target && "Unit" in target
+          ? target.Unit.system
+          : undefined;
+  return trigger?.system ?? onMap ?? aimed ?? update.view.board.active_system ?? null;
+}
+
+/** The action that a window is over, as the panel shows it under the window. */
+export interface ReactedAction {
+  /** What the heading does not say: the kind of action and its seat, its system, or the phase. */
+  context: string | null;
+  heading: string;
+  /** What stays in view: the card that was played, the active system. */
+  blocks: BlockView[];
+}
+
+/** The events of a tactical action: the window is over the action of the seat in its system. */
+const TACTICAL = new Set(["system_activated", "ship_moved", "action_completed"]);
+const TACTICAL_EVENTS = new Set([
+  "SYSTEM_ACTIVATED",
+  "TACTICAL_ACTION_ENDED",
+  "MOVEMENT_FINISHED",
+  "SHIP_MOVED",
+]);
+
+/**
+ * The action that opened the window, from what the engine says of its trigger: a played card
+ * as printed, a strategic action with its card, a tactical action with its system. Anything else
+ * is the turn of the seat, or the phase.
+ */
+export function reactedAction(
+  update: SessionUpdate,
+  trigger: DecisionTrigger | undefined,
+  catalog: Catalog | null,
+): ReactedAction {
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const actor = trigger?.actor ?? null;
+  const mine = !!actor && actor === viewer;
+  const who = actor ? (mine ? "You" : seatLabel(update, actor, catalog)) : "";
+  const card = trigger?.card;
+  const kind = trigger?.kind;
+  if (
+    card &&
+    (kind === "action_card_played" ||
+      kind === "action_card_discarded" ||
+      trigger.event_type === "ACTION_CARD_PLAYED" ||
+      trigger.event_type === "ACTION_CARD_DISCARDED")
+  ) {
+    const printed = printedSource({ ActionCard: card }, catalog) ?? {
+      name: humanizeId(card),
+      type: "Action card",
+      text: "",
+    };
+    return {
+      context: who ? `Action card · ${who}` : "Action card",
+      heading: printed.name,
+      blocks: [
+        { kind: "source", ...printed },
+        // A window "when" a card is played is before the card does anything.
+        ...(trigger.relation === "when"
+          ? [{ kind: "note" as const, tone: "quiet" as const, text: "Not resolved yet." }]
+          : []),
+      ],
+    };
+  }
+  if (
+    card &&
+    (kind === "strategic_action_began" || trigger.event_type === "STRATEGIC_ACTION_BEGAN")
+  ) {
+    // The card as printed: its primary, then its secondary, each a source block.
+    const parts = [false, true].flatMap((secondary) => {
+      const part = printedSource({ StrategyCard: { card, secondary } }, catalog);
+      return part?.text ? [{ kind: "source" as const, ...part }] : [];
+    });
+    const name = parts[0]?.name ?? strategyCard(card, catalog).name;
+    return {
+      context: who ? `Strategic action · ${who}` : "Strategic action",
+      heading: name,
+      blocks: parts,
+    };
+  }
+  const system = trigger?.system ?? update.view.board.active_system ?? undefined;
+  const tactical =
+    !!trigger && (TACTICAL.has(trigger.kind) || TACTICAL_EVENTS.has(trigger.event_type));
+  if (actor && system && (tactical || update.view.board.active_system)) {
+    // The system is marked on the map; the context names it.
+    return {
+      context: systemLabel(tilesOf(update), system),
+      heading: mine ? "Your tactical action" : `${who}’s tactical action`,
+      blocks: [],
+    };
+  }
+  // The turn of the seat, or the phase: the trigger says what happened in it.
+  const phase = phaseName(update.view.phase);
+  const said = trigger ? sentence(triggerText(trigger, update, catalog)) : null;
+  return {
+    context: said ?? (actor ? phase : null),
+    heading: actor ? (mine ? "Your turn" : `${who}’s turn`) : phase,
+    blocks: [],
+  };
+}
+
+/**
+ * The action that an ability interrupts, said in short under its band: the strategic action of
+ * its card, the tactical action of the active player in its system, the turn of that player, or
+ * the phase.
+ */
+export function interruptedAction(update: SessionUpdate, catalog: Catalog | null): ReactedAction {
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const actor = update.view.phase === "action" ? (update.view.active_player ?? null) : null;
+  const mine = !!actor && actor === viewer;
+  const who = actor ? (mine ? "You" : seatLabel(update, actor, catalog)) : "";
+  const strategic = update.secondary;
+  if (strategic) {
+    const primary =
+      strategic.primary === viewer ? "You" : seatLabel(update, strategic.primary, catalog);
+    return {
+      context: `Strategic action · ${primary}`,
+      heading: strategic.name,
+      blocks: [],
+    };
+  }
+  const system = update.view.board.active_system;
+  if (actor && system) {
+    return {
+      context: systemLabel(tilesOf(update), system),
+      heading: mine ? "Your tactical action" : `${who}’s tactical action`,
+      blocks: [],
+    };
+  }
+  const phase = phaseName(update.view.phase);
+  return {
+    context: actor ? phase : null,
+    heading: actor ? (mine ? "Your turn" : `${who}’s turn`) : phase,
+    blocks: [],
   };
 }

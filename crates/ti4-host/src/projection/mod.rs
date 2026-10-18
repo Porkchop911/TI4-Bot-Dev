@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::Choice;
+use ti4_engine::production::Spend;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::{ObjectiveId, PlanetId, PlayerId};
 use ti4_model::state::{GameState, Player};
@@ -210,22 +211,45 @@ pub fn project_combat_view_for(
     })
 }
 
-/// Projects the board systems, planets, and units without map tiles.
-#[must_use]
-pub fn project_board_view(state: &GameState) -> BoardView {
-    project_board_view_with_map(state, &[])
+/// A value of a planet now, when it differs from the printed one.
+fn value_now(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &PlanetId,
+    kind: Spend,
+) -> Option<i64> {
+    let now = ti4_engine::production::planet_value_now(state, content, sources, planet, kind);
+    (now != ti4_engine::production::planet_value(content, sources, planet, kind)).then_some(now)
 }
 
-/// Projects the board systems, planets, and units.
-#[must_use]
-pub fn project_board_view_with_map(state: &GameState, map_tiles: &[BoardTileView]) -> BoardView {
-    project_board_view_full(state, map_tiles, None, &[], None)
+/// The technology specialties of `planet` now, when its attachments changed the printed ones.
+fn specialties_now(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &PlanetId,
+) -> Option<Vec<String>> {
+    let now = ti4_engine::planets::tech_specialties_now(state, content, sources, planet);
+    let printed: Vec<String> = ti4_content::galaxy::planet(content, planet.as_str(), sources)
+        .map(|record| {
+            record
+                .tech_specialties()
+                .into_iter()
+                .map(str::to_ascii_lowercase)
+                .collect()
+        })
+        .unwrap_or_default();
+    (now != printed).then_some(now)
 }
 
-/// Projects the full board view with combat and dice information.
+/// Projects the full board view with combat and dice information, with the content and the
+/// sources of the game.
 #[must_use]
 pub fn project_board_view_full(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     map_tiles: &[BoardTileView],
     pending_choice: Option<&Choice>,
     dice_rolls: &[crate::protocol::view::CombatDieRoll],
@@ -252,9 +276,7 @@ pub fn project_board_view_full(
                         .cloned()
                         .unwrap_or_default(),
                     value_boosts: ti4_engine::production::planet_value_boosts(
-                        state,
-                        ti4_content::ContentStore::embedded(),
-                        &planet_id,
+                        state, content, &planet_id,
                     )
                     .into_iter()
                     .map(|(source, r, i)| PlanetValueBoost {
@@ -263,6 +285,9 @@ pub fn project_board_view_full(
                         influence: i32::try_from(i).unwrap_or(0),
                     })
                     .collect(),
+                    resources: value_now(state, content, sources, &planet_id, Spend::Resources),
+                    influence: value_now(state, content, sources, &planet_id, Spend::Influence),
+                    tech_specialties: specialties_now(state, content, sources, &planet_id),
                 },
             );
         }
@@ -412,14 +437,9 @@ pub fn project_board_view_full(
             }
         }
 
-        // H2: Filter out boring invasions (no defenders) from spectator views
-        let has_defenders = odds_context.values().any(|ctx| ctx.opponent.is_some());
-        if !has_defenders && viewer.is_some() && !viewer.as_ref().unwrap().is_actor(&active.invader)
-        {
-            // Hide this invasion for non-invading players when no defenders are present
-            return None;
-        }
-
+        // Every viewer gets the same invasion, one with no defenders too: the board is the same
+        // for every viewer (`protocol::board_delta`), and whether an invasion with no defenders
+        // is worth showing to the other seats is a decision of the page.
         Some(crate::protocol::view::InvasionView {
             system_id: active.system.clone(),
             invasion_seq: active.seq,
@@ -435,33 +455,88 @@ pub fn project_board_view_full(
             defender: active.defender.clone(),
             ground_round: active.ground_round,
             odds_context,
-            last_step: active.last_step.as_ref().map(|step| {
-                let placed = |unit: &ti4_model::units::Unit| PlacedUnitView {
-                    unit_type: unit.type_id.clone(),
-                    owner: unit.owner.clone(),
-                    planet: Some(step.planet.clone()),
-                    damaged: unit.sustained_damage,
-                    galvanized: unit.galvanized,
-                };
-                crate::protocol::view::InvasionStepView {
-                    planet: step.planet.clone(),
-                    kind: step.kind.clone(),
-                    round: step.round,
-                    before: step.before.iter().map(placed).collect(),
-                    after: step.after.iter().map(placed).collect(),
-                    dice: step.dice.clone(),
-                    hits: step.hits.clone(),
-                    harrow_hits: step.harrow_hits,
-                }
-            }),
+            last_step: active.last_step.as_ref().map(invasion_step_view),
         })
     });
+    let log = &state.fight_log;
     BoardView {
         systems,
         active_system: state.active_system.clone(),
         map_tiles: map_tiles.to_vec(),
         combat: project_combat_view_for(state, pending_choice, dice_rolls, viewer),
         invasion,
+        space_rounds: log.space.iter().map(space_round_view).collect(),
+        ground_steps: log
+            .ground
+            .iter()
+            .map(|record| crate::protocol::view::GroundStepView {
+                system_id: record.system.clone(),
+                invasion_seq: record.invasion_seq,
+                invader: record.invader.clone(),
+                step: invasion_step_view(&record.step),
+            })
+            .collect(),
+    }
+}
+
+/// A unit in the space area, as a die roll of a space combat round names it.
+fn space_unit(unit: &ti4_model::units::Unit) -> PlacedUnitView {
+    PlacedUnitView {
+        unit_type: unit.type_id.clone(),
+        owner: unit.owner.clone(),
+        planet: None,
+        damaged: unit.sustained_damage,
+        galvanized: unit.galvanized,
+    }
+}
+
+fn combat_die(roll: &ti4_model::state::CombatRollRecord) -> crate::protocol::view::CombatDieRoll {
+    crate::protocol::view::CombatDieRoll {
+        player: Some(roll.player.clone()),
+        unit: roll.unit.clone(),
+        roll: roll.roll,
+        target: roll.target,
+        hit: roll.hit,
+    }
+}
+
+fn space_round_view(
+    record: &ti4_model::state::SpaceRoundRecord,
+) -> crate::protocol::view::SpaceRoundView {
+    crate::protocol::view::SpaceRoundView {
+        system_id: record.system.clone(),
+        attacker: record.attacker.clone(),
+        defender: record.defender.clone(),
+        battle_seq: record.battle_seq,
+        round: record.round,
+        round_start: record.round_start.iter().map(space_unit).collect(),
+        barrage_start: record.barrage_start.iter().map(space_unit).collect(),
+        barrage_dice: record.barrage_dice.iter().map(combat_die).collect(),
+        barrage_hits: record.barrage_hits.clone(),
+        dice_rolls: record.dice.iter().map(combat_die).collect(),
+        hits: record.hits.clone(),
+    }
+}
+
+fn invasion_step_view(
+    step: &ti4_model::state::InvasionStep,
+) -> crate::protocol::view::InvasionStepView {
+    let placed = |unit: &ti4_model::units::Unit| PlacedUnitView {
+        unit_type: unit.type_id.clone(),
+        owner: unit.owner.clone(),
+        planet: Some(step.planet.clone()),
+        damaged: unit.sustained_damage,
+        galvanized: unit.galvanized,
+    };
+    crate::protocol::view::InvasionStepView {
+        planet: step.planet.clone(),
+        kind: step.kind.clone(),
+        round: step.round,
+        before: step.before.iter().map(placed).collect(),
+        after: step.after.iter().map(placed).collect(),
+        dice: step.dice.clone(),
+        hits: step.hits.clone(),
+        harrow_hits: step.harrow_hits,
     }
 }
 
@@ -662,20 +737,13 @@ pub fn project_table_view(state: &GameState) -> TableView {
     project_table_view_with_map(state, &[])
 }
 
-/// Projects the entire game state for a specific viewer role with static map tiles.
-#[must_use]
-pub fn project_game_view_with_map(
-    state: &GameState,
-    viewer: &ViewerRole,
-    map_tiles: &[BoardTileView],
-) -> GameView {
-    project_game_view_full(state, viewer, map_tiles, None, &[])
-}
-
-/// Projects the entire game state for a specific viewer role with pending choice and combat dice.
+/// Projects the entire game state for a specific viewer role with pending choice and combat dice,
+/// with the content and the sources of the game.
 #[must_use]
 pub fn project_game_view_full(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     viewer: &ViewerRole,
     map_tiles: &[BoardTileView],
     pending_choice: Option<&Choice>,
@@ -714,11 +782,18 @@ pub fn project_game_view_full(
         phase: redacted.phase,
         speaker: redacted.speaker.clone(),
         seating_order: redacted.seating_order.clone(),
+        initiative_order: if redacted.phase == ti4_model::state::Phase::Action {
+            redacted.initiative_order()
+        } else {
+            Vec::new()
+        },
         active_player: redacted.active.clone(),
         finished: redacted.finished,
         players,
         board: project_board_view_full(
             &redacted,
+            content,
+            sources,
             map_tiles,
             pending_choice,
             dice_rolls,
@@ -770,10 +845,14 @@ pub fn redacted_state(state: &GameState, viewer: &ViewerRole) -> GameState {
     }
 }
 
-/// Projects the entire game state for a specific viewer role.
+/// Projects the entire game state for a specific viewer role, without map tiles, with the content
+/// and the sources of [`facts_context`].
 #[must_use]
 pub fn project_game_view(state: &GameState, viewer: &ViewerRole) -> GameView {
-    project_game_view_with_map(state, viewer, &[])
+    let FactsContext {
+        content, sources, ..
+    } = facts_context(None);
+    project_game_view_full(state, content, sources, viewer, &[], None, &[])
 }
 
 /// Whether `choice` is a reaction window: a seat is asked whether to play an action card (or a
@@ -966,7 +1045,15 @@ pub fn project_session_update(
     let choice = pending_choice.map(|(choice, _)| choice);
     let mut update = SessionUpdate {
         viewer: viewer.clone(),
-        view: project_game_view_full(state, viewer, map_tiles, choice, &[]),
+        view: project_game_view_full(
+            state,
+            facts.content,
+            facts.sources,
+            viewer,
+            map_tiles,
+            choice,
+            &[],
+        ),
         pending_choice: project_pending_choice(viewer, pending_choice),
         turn_status: project_turn_status_for(state, choice, viewer),
         tactical: None,
@@ -1248,6 +1335,7 @@ mod tests {
             of: None,
             refs: vec!["fs1".to_owned()],
             fizzles: None,
+            phrase: ti4_engine::phrases::Phrase::default(),
         };
         choice.context = choice
             .context
@@ -1367,6 +1455,46 @@ mod tests {
     }
 
     #[test]
+    fn the_view_has_the_initiative_order_of_the_action_phase_with_its_overrides() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "sol"), ("b", "hacan"), ("c", "naalu")],
+            ti4_model::content_types::DEFAULT,
+        );
+        for (seat, card, initiative) in [("a", "early", 1), ("b", "late", 8), ("c", "mid", 4)] {
+            let card = ti4_model::id::StrategyCardId::new(card);
+            state.card_initiative.insert(card.clone(), initiative);
+            state
+                .player_mut(&PlayerId::new(seat))
+                .unwrap()
+                .strategy_cards
+                .push(card);
+        }
+        let ids = |order: &[&str]| {
+            order
+                .iter()
+                .map(|id| PlayerId::new(*id))
+                .collect::<Vec<_>>()
+        };
+        state.phase = ti4_model::state::Phase::Action;
+        let view = project_game_view(&state, &ViewerRole::Spectator);
+        assert_eq!(view.initiative_order, ids(&["a", "c", "b"]));
+        // The Naalu "0" token puts its holder first, ahead of the printed 1.
+        assert!(ti4_engine::strategy::set_initiative_override(
+            &mut state,
+            &PlayerId::new("c"),
+            0
+        ));
+        let view = project_game_view(&state, &ViewerRole::Player(PlayerId::new("b")));
+        assert_eq!(view.initiative_order, ids(&["c", "a", "b"]));
+        // Outside the action phase there is no order of turns, and the field is absent.
+        state.phase = ti4_model::state::Phase::Status;
+        let view = project_game_view(&state, &ViewerRole::Spectator);
+        assert!(view.initiative_order.is_empty());
+        let json = serde_json::to_value(view).unwrap();
+        assert!(json.get("initiative_order").is_none());
+    }
+
+    #[test]
     fn a_tied_game_goes_to_the_first_seat_in_initiative_order() {
         let ids: Vec<PlayerId> = ["player_1", "player_2", "player_3"]
             .iter()
@@ -1479,7 +1607,17 @@ mod tests {
         state
             .system_mut(&SystemId::new("14"))
             .set_control(planet.clone(), PlayerId::new("a"));
-        let board = |state: &GameState| project_board_view(state);
+        let board = |state: &GameState| {
+            project_board_view_full(
+                state,
+                ContentStore::embedded(),
+                ti4_model::content_types::FULL,
+                &[],
+                None,
+                &[],
+                None,
+            )
+        };
         let boosts = |state: &GameState| {
             board(state).systems[&SystemId::new("14")].planets[&planet]
                 .value_boosts
@@ -1518,5 +1656,73 @@ mod tests {
         assert_eq!(listed[1].resources, 2);
         assert_eq!(listed[2].resources, 2);
         assert_eq!(listed[2].influence, 1);
+    }
+
+    /// The values of a planet now are its printed values plus every boost the view lists.
+    #[test]
+    fn a_planet_view_value_now_is_the_printed_value_plus_its_boosts() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "xxcha"), ("b", "letnev")],
+            ti4_model::content_types::DEFAULT,
+        );
+        let planet = PlanetId::new("archontau");
+        state
+            .system_mut(&SystemId::new("14"))
+            .set_control(planet.clone(), PlayerId::new("a"));
+        state.planet_attachments.insert(
+            planet.clone(),
+            vec!["miningworld".into(), "dysonsphere".into()],
+        );
+        state
+            .laws
+            .insert("senate_sanctuary".into(), planet.to_string());
+        let content = ContentStore::embedded();
+        let full = ti4_model::content_types::FULL;
+        let board = project_board_view_full(&state, content, full, &[], None, &[], None);
+        let view = &board.systems[&SystemId::new("14")].planets[&planet];
+        assert_eq!(view.value_boosts.len(), 3);
+        let printed = |kind| ti4_engine::production::planet_value(content, full, &planet, kind);
+        let resources: i64 = view
+            .value_boosts
+            .iter()
+            .map(|b| i64::from(b.resources))
+            .sum();
+        let influence: i64 = view
+            .value_boosts
+            .iter()
+            .map(|b| i64::from(b.influence))
+            .sum();
+        assert_eq!(view.resources, Some(printed(Spend::Resources) + resources));
+        assert_eq!(view.influence, Some(printed(Spend::Influence) + influence));
+    }
+
+    #[test]
+    fn a_planet_has_the_technology_specialty_that_an_attachment_gave_it() {
+        let player = PlayerId::new("a");
+        let mut state =
+            GameState::new(std::slice::from_ref(&player), &[], BTreeMap::new(), None, 1);
+        // Archon Tau has no specialty printed; Archon Ren keeps what is printed.
+        let system = state.system_mut(&SystemId::new("14"));
+        system.set_control(PlanetId::new("archontau"), player.clone());
+        system.set_control(PlanetId::new("archonren"), player.clone());
+        state
+            .planet_attachments
+            .insert(PlanetId::new("archontau"), vec!["warfare".to_owned()]);
+        let board = project_board_view_full(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::DEFAULT,
+            &[],
+            None,
+            &[],
+            None,
+        );
+        let planets = &board.systems[&SystemId::new("14")].planets;
+        assert_eq!(
+            planets[&PlanetId::new("archontau")].tech_specialties,
+            Some(vec!["warfare".to_owned()])
+        );
+        // A planet as printed sends none.
+        assert_eq!(planets[&PlanetId::new("archonren")].tech_specialties, None);
     }
 }

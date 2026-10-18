@@ -285,6 +285,50 @@ impl Choice {
         self
     }
 
+    /// Attach one typed display-only fact for clients under `key`, as [`Choice::detailed`]
+    /// does: the look-ahead of a strategy card is a struct of the engine with the wire traits,
+    /// written into the details as JSON, so the details stay a map and records are unaffected.
+    /// [`Choice::hint`] reads it back.
+    ///
+    /// # Panics
+    /// When `hints` does not serialize to JSON (a map with keys that are not strings).
+    #[must_use]
+    pub fn hinted(self, key: &str, hints: &impl Serialize) -> Self {
+        let value = serde_json::to_value(hints).expect("look-ahead details serialize to JSON");
+        self.detailed(key, value)
+    }
+
+    /// The typed fact that [`Choice::hinted`] attached under `key`. None when it is absent or
+    /// has another shape.
+    #[must_use]
+    pub fn hint<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+        serde_json::from_value(self.details.get(key)?.clone()).ok()
+    }
+
+    /// Attach a typed display-only look-ahead whose fields are top-level keys of the details,
+    /// for a card whose look-ahead was never one nested object (Diplomacy's `ready_hints` and
+    /// `ready_count`): each field of `hints` is written as [`Choice::detailed`] does, in the
+    /// order of the struct. [`Choice::hint_fields`] reads it back.
+    ///
+    /// # Panics
+    /// When `hints` does not serialize to a JSON object.
+    #[must_use]
+    pub fn hinted_fields(mut self, hints: &impl Serialize) -> Self {
+        let Ok(Value::Object(fields)) = serde_json::to_value(hints) else {
+            panic!("look-ahead fields serialize to a JSON object");
+        };
+        self.details.extend(fields);
+        self
+    }
+
+    /// The typed look-ahead that [`Choice::hinted_fields`] attached, read from the whole
+    /// details (other keys are ignored). None when one of its fields is absent or has another
+    /// shape.
+    #[must_use]
+    pub fn hint_fields<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
+        serde_json::from_value(Value::Object(self.details.clone())).ok()
+    }
+
     /// Present the question as an offer card for clients (display only, like [`Choice::detailed`]):
     /// `card` names what is asked (see [`offer_card`]), `facts` is a list of [`offer_fact`]s and
     /// `captions` maps option ids to [`offer_caption`]s that say what each answer does. Option ids,

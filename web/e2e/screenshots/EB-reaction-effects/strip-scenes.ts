@@ -1,5 +1,6 @@
 import type { ActiveEffectDto } from "../../../src/protocol/types";
 import { ME, RIVAL } from "./cards";
+import { type EffectFacts, wordedEffect } from "./words";
 
 export interface StripScene {
   key: string;
@@ -12,7 +13,10 @@ export interface StripScene {
 }
 
 /** Shapes as `ti4_host::view::effects::project_active_effects` serializes them. */
-export const STRIP_SCENES: StripScene[] = [
+/** A scene as written here: the facts of its effects, which `wordedEffect` gives their words. */
+type StripFacts = Omit<StripScene, "effects"> & { effects: EffectFacts[] };
+
+const FACTS: StripFacts[] = [
   {
     key: "combat-round",
     phase: "action",
@@ -101,3 +105,5 @@ export const STRIP_SCENES: StripScene[] = [
     effects: [{ seat: ME, effect: "black_market", until: "negotiation", card: "blackmarketdealing" }],
   },
 ];
+
+export const STRIP_SCENES: StripScene[] = FACTS.map((scene) => ({ ...scene, effects: scene.effects.map(wordedEffect) }));

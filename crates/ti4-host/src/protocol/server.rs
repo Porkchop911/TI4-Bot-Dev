@@ -2,9 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use ti4_engine::dice::RollSubject;
 use ti4_model::id::PlayerId;
 
 use super::error::ErrorKind;
+pub use super::public_fact::PublicFact;
 use super::status::{PublicTurnStatus, RejectionReason, ViewerRole};
 use super::view::GameView;
 use crate::map::GalaxyLayout;
@@ -201,6 +203,13 @@ pub enum GameEventKind {
     DecisionResolved,
     /// A die roll the table would see: gravity rifts, combat, abilities. Carries [`GameEvent::roll`].
     DiceRolled,
+    /// A public change of the state that no decision told (a unit destroyed by the game, the
+    /// end of a combat, a planet taken, a card drawn, an agenda resolved). Carries
+    /// [`GameEvent::fact`] ([`super::state_fact`]).
+    StateChanged,
+    /// What one step of the engine changed of the public board. Carries [`GameEvent::board`]
+    /// ([`super::board_delta`]).
+    BoardChanged,
     PhaseTransition {
         phase: Phase,
         round: u32,
@@ -249,6 +258,10 @@ pub struct GameEvent {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub movement: Option<MovementFact>,
+    /// What the decision did, in public ids ([`super::public_fact`]). Built by the same rule as
+    /// `detail`, so every viewer may see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact: Option<PublicFact>,
     /// Stored only in authoritative history; stripped from every projected event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat_detail: Option<SeatDecisionDetail>,
@@ -258,6 +271,9 @@ pub struct GameEvent {
     /// The roll behind a [`GameEventKind::DiceRolled`] event. Public: dice are rolled in the open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roll: Option<PublicRoll>,
+    /// The change behind a [`GameEventKind::BoardChanged`] event. Public: the board is in view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<super::board_delta::BoardDelta>,
 }
 
 /// One public die roll: who rolled, what for, what showed, and what it did.
@@ -294,6 +310,10 @@ pub struct PublicRoll {
     /// What it did ("ship destroyed", "2 hits").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// The unit that rolled, when the engine said: the ship of a gravity rift roll (with where it
+    /// started and what it carried), the gun of a space cannon roll (with the seat it fires at).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<RollSubject>,
 }
 
 /// Rolls whose face decides a hidden draw. Showing the die would show which card was taken.
@@ -344,6 +364,7 @@ pub fn public_roll(
         rerolled: roll.rerolled.iter().copied().collect(),
         system: roll.system.clone().or_else(|| active.map(str::to_owned)),
         outcome,
+        subject: roll.subject.clone(),
     })
 }
 
@@ -450,7 +471,8 @@ pub fn stage_for(subtype: &str) -> Option<&'static str> {
         | "warfare_redistribute_tokens"
         | "imperial_score_objective"
         | "warfare_free_tactical"
-        | "construction_choose_ability" => "strategy",
+        | "construction_choose_ability"
+        | ti4_engine::strategy::FOLLOW_SUBTYPE => "strategy",
         "discard_over_hand_limit"
         | "expedition_discard_action_card"
         | "return_over_secret_hand_limit"
@@ -510,6 +532,43 @@ fn public_choice_detail(
                 _ => return None,
             };
             format!("{actor} gained a {pool} command token")
+        }
+        ti4_engine::strategy::FOLLOW_SUBTYPE => {
+            let ti4_engine::decision_context::DecisionSource::StrategyCard {
+                card,
+                secondary: true,
+            } = &context.source
+            else {
+                return None;
+            };
+            let name = strategy_card_name(card)?;
+            if option.is_decline() || id == "no" {
+                format!("{actor} declined the secondary of {name}")
+            } else {
+                format!("{actor} followed {name}")
+            }
+        }
+        ti4_engine::fleet::REMOVE_EXCESS_SUBTYPE
+            if option.kind == ti4_engine::fleet::REMOVE_KIND =>
+        {
+            match (
+                option.label.strip_prefix("remove "),
+                context.target.as_ref(),
+            ) {
+                (
+                    Some(unit),
+                    Some(ti4_engine::decision_context::DecisionTarget::System(system)),
+                ) if ti4_content::units::unit_type(
+                    ti4_content::ContentStore::embedded(),
+                    unit,
+                    ti4_model::content_types::DEFAULT,
+                )
+                .is_some() =>
+                {
+                    format!("{actor} removed {unit} in #{system}")
+                }
+                _ => return None,
+            }
         }
         "buy_token_with_influence" => match id {
             "yes" => format!("{actor} bought a command token with influence"),
@@ -619,6 +678,9 @@ fn public_choice_detail(
         {
             return None;
         }
+        "end_turn" if id == ti4_engine::game::END_TURN_ID => format!("{actor} ended their turn"),
+        // The action of a turn is told by `verified_decision_facts`, from the offered option.
+        "action_menu" | "end_turn" => return None,
         subtype => {
             // The subtype identifies the public question; its selected option may be private.
             format!("{actor} resolved {}", subtype.replace('_', " "))
@@ -981,27 +1043,44 @@ pub fn verified_decision_facts(
         private = None;
     }
     // The action selection says what was chosen. A recorded selection carries its `action_menu`
-    // context, for which the generic fallback ("resolved action menu") would hide the card.
+    // context, for which a generic fallback ("resolved action menu") would hide the card.
     let generic = record
         .context
         .as_ref()
         .is_some_and(|context| context.subtype == "action_menu");
     if (detail.is_none() || generic)
-        && record.prompt == "action phase"
-        && let Some(option) = offered.filter(|option| option.id == record.chosen)
+        && (record.prompt == "action phase"
+            || record.context.as_ref().is_some_and(|context| {
+                matches!(context.subtype.as_str(), "action_menu" | "end_turn")
+            }))
     {
-        detail = match option.id.as_str() {
-            "tactical" => Some(format!("{} began a tactical action", record.player)),
-            "pass" => Some(format!("{} passed their turn", record.player)),
-            // One strategy card: the web names it from the seat's single unexhausted card.
-            "strategic" => Some(format!("{} began a strategic action", record.player)),
-            id if id.starts_with("strategic|") => id
-                .strip_prefix("strategic|")
-                .and_then(strategy_card_name)
-                .map(|name| format!("{} played {name}", record.player))
-                .or(detail),
-            _ => Some(format!("{} began a component action", record.player)),
-        };
+        use super::public_fact::{PublicFact, TurnAction};
+        let actor = &record.player;
+        detail = super::public_fact::decision_fact(record, offered, destination, state)
+            .map(|fact| {
+                match fact {
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Tactical,
+                    } => format!("{actor} began a tactical action"),
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Pass,
+                    } => format!("{actor} passed their turn"),
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Strategic { card },
+                    } => card.as_deref().and_then(strategy_card_name).map_or_else(
+                        // One strategy card: the web names it from the seat's single
+                        // unexhausted card.
+                        || format!("{actor} began a strategic action"),
+                        |name| format!("{actor} played {name}"),
+                    ),
+                    PublicFact::TransactionOpened { with } => {
+                        format!("{actor} opened a transaction with {with}")
+                    }
+                    PublicFact::TurnEnded => format!("{actor} ended their turn"),
+                    _ => format!("{actor} began a component action"),
+                }
+            })
+            .or(detail);
     }
     if let Some(option) = offered
         && let Some(context) = record.context.as_ref()
@@ -1022,6 +1101,33 @@ pub fn verified_decision_facts(
         }
     }
     (detail, movement, private)
+}
+
+/// Everything an event says about the decision it resolves.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DecisionFacts {
+    pub detail: Option<String>,
+    pub movement: Option<MovementFact>,
+    pub seat_detail: Option<SeatDecisionDetail>,
+    pub fact: Option<PublicFact>,
+}
+
+/// [`verified_decision_facts`] and the typed [`PublicFact`] of the same offered option.
+#[must_use]
+pub fn verified_event_facts(
+    record: &ti4_engine::choice::DecisionRecord,
+    offered: Option<&ChoiceOption>,
+    destination: Option<&str>,
+    state: &GameState,
+) -> DecisionFacts {
+    let (detail, movement, seat_detail) =
+        verified_decision_facts(record, offered, destination, state);
+    DecisionFacts {
+        detail,
+        movement,
+        seat_detail,
+        fact: super::public_fact::decision_fact(record, offered, destination, state),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1049,6 +1155,7 @@ mod roll_tests {
             by: Some("p1".to_owned()),
             system: None,
             outcome: None,
+            subject: None,
         }
     }
 
@@ -1071,6 +1178,39 @@ mod roll_tests {
             public.describe(),
             "p1 rolled Gravity rift in system 67: 2 (ship destroyed)"
         );
+    }
+
+    #[test]
+    fn a_roll_names_its_unit_its_cargo_and_its_target_when_the_engine_said() {
+        let mut rift = roll("gravity rift", &[2], Some(4));
+        let carrier = RollSubject {
+            unit: Some("carrier".to_owned()),
+            damaged: true,
+            origin: Some("41".to_owned()),
+            cargo: vec!["infantry".to_owned(), "infantry".to_owned()],
+            target: None,
+        };
+        rift.subject = Some(carrier.clone());
+        let public = public_roll(0, &rift, None).unwrap();
+        assert_eq!(public.subject, Some(carrier));
+        let mut gun = roll("space cannon", &[7], Some(6));
+        let pds = RollSubject {
+            unit: Some("pds".to_owned()),
+            target: Some(PlayerId::new("p2")),
+            ..RollSubject::default()
+        };
+        gun.subject = Some(pds.clone());
+        let public = public_roll(1, &gun, None).unwrap();
+        assert_eq!(public.subject, Some(pds));
+        let wire = serde_json::to_value(&public).unwrap();
+        assert_eq!(
+            wire["subject"],
+            serde_json::json!({"unit": "pds", "target": "p2"}),
+            "the subject leaves out what it does not have"
+        );
+        // A roll without a subject has none.
+        let bare = public_roll(2, &roll("space combat", &[3], Some(7)), None).unwrap();
+        assert_eq!(bare.subject, None);
     }
 
     #[test]
@@ -1129,9 +1269,11 @@ mod roll_tests {
             stage: None,
             detail: Some(public.describe()),
             movement: None,
+            fact: None,
             seat_detail: None,
             private_detail: None,
             roll: Some(public),
+            board: None,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["event"]["kind"], "dice_rolled");
@@ -1671,9 +1813,11 @@ mod fact_tests {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail,
             private_detail: None,
             roll: None,
+            board: None,
         };
         let actor = event
             .for_viewer(&ViewerRole::Player(PlayerId::new("p1")))
@@ -2087,6 +2231,10 @@ pub struct ScriptStopped {
     /// it refused an entry and nothing was sent.
     pub interrupted: bool,
     pub reason: String,
+    /// The entry that the game refused, and why. `None` when it refused none: the game asked
+    /// something else first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<crate::planning::draft::EntryRefusal>,
 }
 
 /// What became of `ClientMessage::ApplyDraft`, for the seat that sent it.

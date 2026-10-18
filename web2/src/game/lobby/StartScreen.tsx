@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Button, Dialog, Kbd, usePhone } from "../../ui";
+import { useEffect, useRef, useState } from "react";
+import { Button, Dialog, Kbd, usePhoneScreen } from "../../ui";
 import { keyIsFree } from "../shell/shortcuts";
 import { NICKNAME_MAX, type ValidName } from "./LobbyScreen";
 
@@ -35,6 +35,9 @@ export function StartScreen({
   warning = null,
   onDelete,
   onDeleteOld,
+  onExport,
+  onImport,
+  failure = null,
   nickname,
   onNickname,
   validName,
@@ -48,14 +51,21 @@ export function StartScreen({
   warning?: string | null;
   onDelete?: (id: string) => void;
   onDeleteOld?: () => void;
+  /** Writes the export file of a saved game. */
+  onExport?: (id: string) => void;
+  /** Takes an export file as a new saved game. The list is then shown also with no game. */
+  onImport?: (file: File) => void;
+  /** Why the last export or import failed, in words. */
+  failure?: string | null;
   /** The name of the player at a table. It is kept for the next visit. */
   nickname: string;
   onNickname: (name: string) => void;
   /** A name that the server refuses is marked: a table is made with the default name. */
   validName: ValidName;
 }) {
-  const phone = usePhone();
+  const phone = usePhoneScreen();
   const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const file = useRef<HTMLInputElement>(null);
   const confirm = () => {
     if (deleting && "row" in deleting) {
       onDelete?.(deleting.row.id);
@@ -102,15 +112,32 @@ export function StartScreen({
           className="min-h-9 min-w-0 flex-1 rounded border border-line bg-well px-2.5 text-base text-text aria-[invalid=true]:border-red touch:min-h-11"
         />
       </label>
-      {(saves.length > 0 || old > 0 || warning) && (
+      {(saves.length > 0 || old > 0 || warning || onImport) && (
         <section
           aria-label="Saved games"
           className="flex max-h-[50dvh] w-full max-w-[720px] flex-col rounded border border-line bg-surface"
         >
-          <h2 className="px-4 pt-2 pb-1 text-sm text-muted">Saved games</h2>
+          <div className="flex items-center gap-2 pt-1 pr-2.5 pl-4">
+            <h2 className="mr-auto py-1 text-sm text-muted">Saved games</h2>
+            {onImport && (
+              <Button
+                tone="quiet"
+                size="icon"
+                icon="import"
+                aria-label="Import"
+                title="Import a saved game"
+                onClick={() => file.current?.click()}
+              />
+            )}
+          </div>
           {warning && (
             <p role="alert" className="px-4 pb-1.5 text-sm text-orange">
               ⚠ {warning}
+            </p>
+          )}
+          {failure && (
+            <p role="alert" className="px-4 pb-1.5 text-sm text-red">
+              {failure}
             </p>
           )}
           <div className="min-h-0 overflow-y-auto">
@@ -121,22 +148,36 @@ export function StartScreen({
               >
                 <a
                   href={row.href}
-                  className="flex min-h-10 min-w-0 flex-1 items-center gap-3 px-4 hover:bg-cyan/[.06]"
+                  className="flex min-h-10 min-w-0 flex-1 items-center gap-3 px-4 hover:bg-cyan/[.06] phone:flex-wrap phone:gap-y-0 phone:py-1.5"
                 >
                   <strong className="shrink-0 text-base font-semibold">{row.title}</strong>
-                  <span className="min-w-0 truncate text-sm text-muted" title={row.detail}>
+                  {/* A phone has no room beside the title: the detail is the second line. */}
+                  <span
+                    className="min-w-0 truncate text-sm text-muted phone:order-last phone:basis-full phone:whitespace-normal"
+                    title={row.detail}
+                  >
                     {row.detail}
                   </span>
                   <small className="ml-auto shrink-0 text-xs text-muted">{row.updated}</small>
                 </a>
+                {onExport && (
+                  <Button
+                    tone="quiet"
+                    size="icon"
+                    icon="export"
+                    aria-label={`Export ${row.title}`}
+                    title="Export"
+                    onClick={() => onExport(row.id)}
+                  />
+                )}
                 <Button
                   tone="quiet"
-                  size="sm"
+                  size="icon"
+                  icon="trash"
                   aria-label={`Delete ${row.title}`}
+                  title="Delete"
                   onClick={() => setDeleting({ row })}
-                >
-                  Delete
-                </Button>
+                />
               </div>
             ))}
             {old > 0 && (
@@ -147,16 +188,32 @@ export function StartScreen({
                 </span>
                 <Button
                   tone="quiet"
-                  size="sm"
+                  size="icon"
+                  icon="trash"
                   aria-label="Delete the saved games of an older version"
+                  title="Delete"
                   onClick={() => setDeleting({ old })}
-                >
-                  Delete
-                </Button>
+                />
               </div>
             )}
           </div>
         </section>
+      )}
+      {onImport && (
+        <input
+          ref={file}
+          type="file"
+          accept="application/json,.json"
+          aria-label="Saved game file"
+          hidden
+          onChange={(event) => {
+            const chosen = event.target.files?.[0];
+            event.target.value = "";
+            if (chosen) {
+              onImport(chosen);
+            }
+          }}
+        />
       )}
       <Dialog
         open={deleting !== null}

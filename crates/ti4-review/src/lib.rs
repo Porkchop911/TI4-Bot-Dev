@@ -2024,14 +2024,19 @@ fn load_separate_models(
     let mut first: Option<(Value, Vocabulary)> = None;
     for (faction, bundle) in bundles {
         let loaded = ti4_mlp::bundle::read(bundle).map_err(|error| {
-            ReviewError::Invalid(format!("MLP checkpoint bundle {}: {error}", bundle.display()))
+            ReviewError::Invalid(format!(
+                "MLP checkpoint bundle {}: {error}",
+                bundle.display()
+            ))
         })?;
         let bytes = read_bounded(&bundle.join("manifest.json"))?;
         let manifest: Value = serde_json::from_slice(&bytes)
             .map_err(|error| ReviewError::Invalid(format!("MLP manifest JSON: {error}")))?;
         match &first {
             None => first = Some((manifest, loaded.vocabulary)),
-            Some((reference, _)) if reference.get("slots_sha256") != manifest.get("slots_sha256") => {
+            Some((reference, _))
+                if reference.get("slots_sha256") != manifest.get("slots_sha256") =>
+            {
                 return Err(ReviewError::Invalid(format!(
                     "separate models: {faction} was trained on different slots"
                 )));
@@ -2051,7 +2056,10 @@ fn load_separate_models(
         .map(|(faction, bundle)| {
             format!(
                 "{faction} · own model, {}",
-                bundle.file_name().and_then(|name| name.to_str()).unwrap_or("?")
+                bundle
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("?")
             )
         })
         .collect();

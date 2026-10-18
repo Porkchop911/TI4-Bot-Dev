@@ -35,11 +35,14 @@ export interface LocalGame {
 /** The part of `Storage` that is used, so a test can pass a map. */
 export type SaveStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-/** The slot of single player: one game, whatever its table is. */
+/** The slot of the games of single player: every game of a table has it, each under its own id. */
 export const SINGLE_SLOT = "single";
 
-/** The address of single player: the setup of a table, or the game that was started from it. */
+/** The address of the setup of a new table of single player. */
 export const SINGLE_ADDRESS = "?single";
+
+/** The address of a game of single player: its id. */
+export const singleAddress = (id: string) => `?single=${encodeURIComponent(id)}`;
 
 /** The slot of a game of an address of this app (`SavedGameRecord.slot`). */
 export const slotOf = (game: LocalGame): string =>
@@ -51,7 +54,8 @@ export const slotOf = (game: LocalGame): string =>
 
 /**
  * The address of a game: what `localGame` in `dev/LocalApp.tsx` reads. The game of a table has
- * the address of its save: a setup does not fit an address.
+ * the address of its id (`singleAddress`): a setup does not fit an address. Its address here is
+ * the setup of a new table.
  */
 export const gameAddress = (game: LocalGame): string =>
   game.table !== undefined
@@ -67,7 +71,7 @@ export const idAddress = (id: string) => `?save=${encodeURIComponent(id)}`;
 export function savedAddress(saved: Pick<SavedGameSummary, "id" | "slot">): string {
   const slot = saved.slot ?? "";
   if (slot === SINGLE_SLOT) {
-    return SINGLE_ADDRESS;
+    return singleAddress(saved.id);
   }
   const local = /^local\.(\d+)\.(\d+)\.(\d+)$/.exec(slot);
   if (local) {
@@ -92,8 +96,8 @@ export function gameOfSave(save: HostSave): LocalGame {
 }
 
 /** What localStorage keeps next to a saved game: the parts that the page reads or writes at once. */
-export type SidePart = "cards" | "wait" | "left";
-const SIDE_PARTS: SidePart[] = ["cards", "wait", "left"];
+export type SidePart = "cards" | "wait" | "left" | "crash";
+const SIDE_PARTS: SidePart[] = ["cards", "wait", "left", "crash"];
 
 export const sideKey = (id: string, part: SidePart) => `ti4.save.${id}.${part}`;
 
@@ -200,5 +204,43 @@ export function dropOldSaves(storage: Pick<Storage, "length" | "key" | "removeIt
   }
   for (const key of old) {
     storage.removeItem(key);
+  }
+}
+
+/**
+ * The last error of a game in this browser: a render that failed, an error of the page or of the
+ * engine. It is kept next to the game so that its export carries it, also when the page died.
+ */
+export interface GameCrash {
+  /** When it happened (`Date.now()`). */
+  at: number;
+  /** Where it came from: "render", "page", "engine". */
+  source: string;
+  message: string;
+  stack?: string;
+  /** The components that were rendered, for an error of a render. */
+  componentStack?: string;
+  /** How many decisions the game had saved then. */
+  decisions?: number;
+}
+
+export function storeCrash(storage: SaveStorage, id: string, crash: GameCrash) {
+  try {
+    storage.setItem(sideKey(id, "crash"), JSON.stringify(crash));
+  } catch {
+    // Full: the error is still on the screen.
+  }
+}
+
+export function readCrash(storage: Pick<Storage, "getItem">, id: string): GameCrash | null {
+  try {
+    const crash: Partial<GameCrash> | null = JSON.parse(
+      storage.getItem(sideKey(id, "crash")) ?? "null",
+    );
+    return crash && typeof crash.message === "string" && typeof crash.at === "number"
+      ? (crash as GameCrash)
+      : null;
+  } catch {
+    return null;
   }
 }

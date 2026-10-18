@@ -1,6 +1,7 @@
 import type { ReactNode, SelectHTMLAttributes } from "react";
 import { cx } from "./cx";
 import { Icon, type IconName } from "./Icon";
+import { Press, useReadOnly } from "./readOnly";
 
 export interface CounterProps {
   value: number;
@@ -15,6 +16,14 @@ export interface CounterProps {
 }
 
 export function Counter({ value, min = 0, max, label, shown = value, onChange }: CounterProps) {
+  // Read-only, a counter is its count.
+  if (useReadOnly()) {
+    return (
+      <output className="min-w-7 text-center tabular-nums" aria-label={`${label} quantity`}>
+        {shown}
+      </output>
+    );
+  }
   const button =
     "size-7 text-lg text-muted enabled:hover:bg-raised enabled:hover:text-text disabled:opacity-30 touch:size-10";
   return (
@@ -67,9 +76,8 @@ export function Segmented<T extends string>({
       className={cx("inline-flex overflow-hidden rounded-md border border-line", className)}
     >
       {options.map((option) => (
-        <button
+        <Press
           key={option.id}
-          type="button"
           aria-pressed={option.id === value}
           aria-label={option.icon && option.label}
           title={option.icon && option.label}
@@ -77,7 +85,7 @@ export function Segmented<T extends string>({
           className="px-[9px] py-[5px] text-xs whitespace-nowrap text-muted aria-pressed:bg-raised aria-pressed:text-accent touch:px-3 touch:py-2.5"
         >
           {option.icon ? <Icon name={option.icon} /> : option.label}
-        </button>
+        </Press>
       ))}
     </div>
   );

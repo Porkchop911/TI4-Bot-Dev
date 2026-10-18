@@ -1,12 +1,13 @@
 import type { MovementView, OriginView } from "../../../model";
 import { plural, unitName } from "../../../model";
-import { Card, CardHeading, Gauge, Gauges, Icon, cx } from "../../../ui";
+import { Card, CardHeading, Gauge, Gauges, Icon, cx, useReadOnly } from "../../../ui";
 import { SpaceOdds } from "../../combat/SpaceOdds";
 import { useLink } from "../../link";
 
 /** The fleet in the active system, before and after the staged movement, with its two limits. */
 export function Arrival({ view }: { view: MovementView }) {
   const { linked, props } = useLink([`sys:${view.target.system}`]);
+  const readOnly = useReadOnly();
   return (
     <Card className={cx(linked && "bg-cyan/[.06]")} {...props}>
       <CardHeading title={`Arrives in ${view.target.label}`}>
@@ -20,9 +21,12 @@ export function Arrival({ view }: { view: MovementView }) {
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
           {view.arrival.length ? (
             view.arrival.map((row) => (
-              <span key={row.unit} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span
+                key={`${row.unit}-${row.name ?? ""}`}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
                 <Icon name={row.unit} className="size-4 text-icon" />
-                {unitName(row.unit, row.after)}
+                {row.name ?? unitName(row.unit, row.after)}
                 <strong className="font-mid tabular-nums">
                   {row.now === row.after ? row.after : `${row.now} → ${row.after}`}
                 </strong>
@@ -30,7 +34,9 @@ export function Arrival({ view }: { view: MovementView }) {
             ))
           ) : (
             <span className="text-muted">
-              Nothing moves. You may activate a system without moving.
+              {readOnly
+                ? "Nothing moved."
+                : "Nothing moves. You may activate a system without moving."}
             </span>
           )}
         </div>

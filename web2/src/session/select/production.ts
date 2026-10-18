@@ -10,7 +10,7 @@ import type {
   TileView,
   UnitType,
 } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import {
   GOODS,
   type ProductionDraft,
@@ -21,20 +21,18 @@ import {
   sizes,
   totals,
 } from "../productionDraft";
-import type { BuildFact, ProductionFacts, SessionUpdate } from "../wire";
-import { systemLabel } from "./movement";
-import { isShip, unitType } from "./names";
+import type { BuildFact, Catalog, FleetStanding, ProductionFacts, SessionUpdate } from "../wire";
+import { systemLabel, tilesOf } from "./movement";
+import { COMMODITY, facesOf, planetPays } from "./payment";
+import { isShip, unitLabel, unitType } from "./names";
 
 export type Stage = "build" | "pay";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as infantry. */
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "infantry";
 
-const tilesOf = (update: SessionUpdate) =>
-  new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
-
 /** The name of a planet, wherever it is on the map. */
-const planetNames = (update: SessionUpdate) =>
+export const planetNames = (update: SessionUpdate) =>
   new Map(
     (update.view.board.map_tiles ?? []).flatMap((tile) =>
       (tile.planets ?? []).map((planet) => [planet.id, planet.label] as const),
@@ -47,7 +45,11 @@ const UNAVAILABLE_WORD: Record<NonNullable<BuildFact["unavailable"]>, string> = 
   supply: "None left",
   blockade: "Blockaded",
   no_place: "No place",
-  not_offered: "Not here",
+  only_another: "Other unit only",
+  too_costly: "Too costly",
+  banned: "Barred",
+  barred: "Barred here",
+  not_offered: "Not offered",
 };
 
 const placeName = (names: Map<string, string>, place: string) =>
@@ -59,6 +61,13 @@ export function selectBuild(
   facts: ProductionFacts,
   draft: ProductionDraft,
   stage: Stage,
+  /** The printed names of the units. */
+  printed: Catalog | null = null,
+  /**
+   * The fleet supply and the capacity after the staged build, as the engine reads them. Null
+   * before the engine answered: the gauges show the system before the build.
+   */
+  standing: FleetStanding | null = null,
 ): BuildSheetView {
   const tiles = tilesOf(update);
   const names = planetNames(update);
@@ -78,7 +87,7 @@ export function selectBuild(
   );
   const row = (fact: BuildFact, index: number): BuildUnitView => {
     const unit = typeOf(fact.unit);
-    const name = unitName(unit, 1);
+    const name = unitLabel(fact.unit, printed);
     const reason = blocked(facts, draft, index);
     return {
       id: `build-unit:${index}`,
@@ -130,7 +139,7 @@ export function selectBuild(
       builds: facts.units
         .flatMap((unit, index) => {
           const count = madeAt(index, place);
-          return count ? [`${count} ${unitName(typeOf(unit.unit), count)}`] : [];
+          return count ? [`${count} ${unitLabel(unit.unit, printed, count)}`] : [];
         })
         .join(", "),
     })),
@@ -141,20 +150,35 @@ export function selectBuild(
     gauges: [
       { label: "Production capacity", used: total.units, total: total.capacity },
       { label: "Resources", used: total.cost, total: total.available },
-      { label: "Fleet supply after", used: total.fleet, total: facts.fleet_supply.limit },
-      { label: "Fighters and cargo in space", used: total.cargo, total: total.transport },
+      {
+        label: "Fleet supply after",
+        used: standing?.fleet_charged ?? facts.fleet_supply.charged,
+        total: facts.fleet_supply.limit,
+      },
+      {
+        label: "Fighters and cargo in space",
+        used: standing?.consumed ?? facts.transport.used,
+        total: standing?.transport ?? facts.transport.limit,
+      },
     ],
     stage,
   };
 }
 
-/** What pays now: "Jord 4 + Lisis 2 + 1 trade good". */
+/** What pays now: "Jord 4 + Lisis 2 + 1 trade good", "Mecatol Rex 6 influence". */
 function paySummary(update: SessionUpdate, facts: ProductionFacts, draft: ProductionDraft) {
   const names = planetNames(update);
-  const worth = new Map(facts.planets.map((planet) => [planet.planet, planet.worth]));
+  const paying = new Map(facts.planets.map((planet) => [planet.planet, planet]));
   return [
-    ...draft.planets.map((planet) => `${names.get(planet) ?? planet} ${worth.get(planet) ?? 0}`),
+    ...draft.planets.map((planet) =>
+      planetPays(
+        names.get(planet) ?? planet,
+        paying.get(planet)?.worth ?? 0,
+        paying.get(planet)?.face,
+      ),
+    ),
     ...(draft.goods ? [plural(draft.goods, "trade good")] : []),
+    ...(draft.commodities ? [plural(draft.commodities, "commodity", "commodities")] : []),
   ].join(" + ");
 }
 
@@ -190,12 +214,15 @@ export function selectPayment(
           rest: rest !== null && rest !== draft.goods && rest <= facts.trade_goods ? rest : null,
         }
       : null,
+    commodities: facts.commodities
+      ? { id: COMMODITY, value: draft.commodities ?? 0, max: facts.commodities }
+      : null,
     actions: [
       action("Auto-pay", { type: "payment", action: "auto" }, cost <= 0),
       action(
         "Clear payment",
         { type: "payment", action: "reset" },
-        draft.planets.length === 0 && draft.goods === 0,
+        draft.planets.length === 0 && draft.goods === 0 && !draft.commodities,
       ),
     ],
   };
@@ -207,16 +234,12 @@ export const selectProduction = (
   facts: ProductionFacts,
   draft: ProductionDraft,
   stage: Stage,
+  printed: Catalog | null = null,
+  standing: FleetStanding | null = null,
 ): ProductionView => ({
   kind: "production",
-  sheet: selectBuild(update, facts, draft, stage),
-  skipped: null,
-  title: "",
-  subtitle: "",
-  rows: [],
-  gauges: [],
+  sheet: selectBuild(update, facts, draft, stage, printed, standing),
   payment: selectPayment(update, facts, draft, stage === "pay"),
-  done: null,
 });
 
 /**
@@ -250,6 +273,7 @@ export function productionTask(
     verb: "Exhaust",
     unit: "resources",
     payment: selectPayment(update, facts, draft, true),
+    ...facesOf(facts.planets),
   };
 }
 

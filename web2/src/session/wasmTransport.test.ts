@@ -462,7 +462,13 @@ it.skipIf(!built)(
       },
       { kind: "done_moving" },
     ]))!;
-    expect(bad.stop).toMatchObject({ kind: "refused", step: 2 });
+    // The refusal names the entry and what it names, not only its place.
+    expect(bad.stop).toMatchObject({
+      kind: "refused",
+      step: 2,
+      code: "not_offered",
+      entry: { kind: "move", origin: "01", unit: "dreadnought" },
+    });
     expect(bad.consumed).toBe(2);
 
     // Nothing of this is in the game.
@@ -703,9 +709,10 @@ it.skipIf(!built)(
     expect((await run(draft)).stop).toEqual({ kind: "open" });
     // Played unpaid, it is refused at its payment.
     const unpaid = (await ask([...scriptOf(entryOf(draft)), ...productionSteps(facts, build)]))!;
-    expect(unpaid.stop).toMatchObject({ kind: "refused" });
-    expect(problemOf({ ...entryOf(draft), unpaid: false }, unpaid)).toMatch(
-      /^A part of the production no longer fits/,
+    // The refusal names the purchase that the payment does not cover.
+    expect(unpaid.stop).toMatchObject({ kind: "refused", code: "unpaid" });
+    expect(problemOf({ ...entryOf(draft), unpaid: false }, unpaid)).toBe(
+      "The payment no longer covers the production: change the payment.",
     );
 
     // Lisis pays: the action is over, and the draft is the whole of it.
@@ -1014,8 +1021,8 @@ it.skipIf(!built)(
         { label: "Home system", value: "Jord 4/2" },
         { label: "Commodities", value: "4" },
         { label: "Starting technologies", value: "Antimass Deflectors, Neural Motivator" },
-        { label: "Starting fleet", value: "2 Carriers · Destroyer · 3 Fighters" },
-        { label: "On Jord", value: "5 Infantry · Space dock" },
+        { label: "Starting fleet", value: "2 Advanced Carrier I · Destroyer I · 3 Fighter I" },
+        { label: "On Jord", value: "5 Spec Ops I · Space Dock I" },
       ],
       abilities: [{ name: "Orbital Drop", window: "ACTION:" }, { name: "Versatile" }],
       technologies: [{ name: "Spec Ops II" }, { name: "Advanced Carrier II" }],
@@ -1210,10 +1217,12 @@ async function toWindowOf(game: Awaited<ReturnType<typeof play>>, key: string): 
       return event;
     }
     const { options } = event.update.pending_choice!.choice;
+    // With no pass the first option: the late game of the scenario then reaches the window of
+    // T'ro before it ends.
     const pass =
       options.find((option) => option.kind === "decline") ??
       options.find((option) => option.id === "pass") ??
-      options[options.length - 1];
+      options[0];
     game.transport.submitChoice(game.nonce(event), pass.id);
   }
   throw new Error(`no window offered ${key}`);
@@ -1758,4 +1767,29 @@ it.skipIf(!built)(
     bare.close();
   },
   120_000,
+);
+
+it.skipIf(!built)(
+  "tells the public events of a local game with each update, and an undo takes them back",
+  async () => {
+    const game = await play();
+    const first = await game.next();
+    const picks = (event: Update) =>
+      (event.events ?? []).filter((entry) => entry.fact?.kind === "strategy_picked");
+    expect(picks(first)).toEqual([]);
+    const option = first.update.pending_choice!.choice.options[0].id;
+    game.transport.submitChoice(game.nonce(first), option);
+    let after = await game.next();
+    while (!picks(after).some((entry) => entry.actor === "a")) {
+      after = await game.next();
+    }
+    expect(after.events!.every((entry) => entry.visibility.visibility === "public")).toBe(true);
+    expect(new Set(after.events!.map((entry) => entry.id)).size).toBe(after.events!.length);
+    game.transport.undo();
+    let back = await game.next();
+    while (back.update.pending_choice?.choice.context?.subtype !== subtype(first)) {
+      back = await game.next();
+    }
+    expect(picks(back).some((entry) => entry.actor === "a")).toBe(false);
+  },
 );

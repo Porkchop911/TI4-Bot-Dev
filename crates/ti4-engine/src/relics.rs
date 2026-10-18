@@ -346,21 +346,29 @@ fn codex(
                 .map_or(0, |seat| seat.action_cards.len()),
         )
         .unwrap_or(0);
-        let options: Vec<crate::choice::ChoiceOption> = state
+        let worded: Vec<(String, crate::phrases::Worded)> = state
             .discarded_action_cards
-            .clone()
-            .into_iter()
+            .iter()
             .map(|alias| {
-                crate::choice::ChoiceOption::labelled(
+                (
                     alias.to_string(),
-                    "action_card",
-                    format!("take {alias}"),
+                    crate::phrases::Phrase::of("take {card}").with(
+                        "card",
+                        alias,
+                        crate::phrases::Subject::action_card(alias),
+                    ),
                 )
-                .previewed(Preview::certain(vec![Delta::new(
-                    Quantity::ActionCardsHeld,
-                    held,
-                    held + 1,
-                )]))
+            })
+            .collect();
+        let options: Vec<crate::choice::ChoiceOption> = worded
+            .iter()
+            .map(|(card, worded)| {
+                crate::choice::ChoiceOption::labelled(card, "action_card", worded.label())
+                    .previewed(Preview::certain(vec![Delta::new(
+                        Quantity::ActionCardsHeld,
+                        held,
+                        held + 1,
+                    )]))
             })
             .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
             .collect();
@@ -372,6 +380,7 @@ fn codex(
             "The Codex: take which action card",
             options,
         )
+        .phrased_options(&worded)
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::Content("codex".to_owned()),
@@ -1180,12 +1189,12 @@ pub fn available_actions(
                     )
                     .is_empty())
                     && crate::production::available(
-                    state,
-                    content,
-                    sources,
-                    player,
-                    crate::production::Spend::Resources,
-                ) >= 6
+                        state,
+                        content,
+                        sources,
+                        player,
+                        crate::production::Spend::Resources,
+                    ) >= 6
             }
             // Something in range that the card is allowed to destroy. Without a board there is no
             // adjacency and therefore no target.
@@ -1297,6 +1306,12 @@ mod tests {
         let option = asked
             .option("sabotage")
             .expect("the discarded card was offered");
+        // The label names the card by id, and the question says which card it is.
+        let phrase = &crate::phrases::phrased(asked).options["sabotage"];
+        assert_eq!(
+            phrase.refs["card"],
+            crate::phrases::Subject::action_card(&ti4_model::id::ActionCardId::new("sabotage"))
+        );
         assert_eq!(
             option.preview,
             Some(Preview::certain(vec![Delta::new(
@@ -1370,10 +1385,7 @@ mod tests {
             "Gravity Drive needs a blue prerequisite the seat does not have: {offered:?}"
         );
         for id in &offered {
-            assert!(
-                open.contains(id),
-                "{id} is offered but is not researchable"
-            );
+            assert!(open.contains(id), "{id} is offered but is not researchable");
         }
     }
 

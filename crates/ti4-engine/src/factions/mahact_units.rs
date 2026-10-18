@@ -190,9 +190,9 @@ fn legionnaire(owner_name: &str, seat: &PlayerId, unit: &'static str) -> Ability
                 )
                 .contextualized(decision(context.state, &owner, unit, "legionnaire_payment"))
                 // Display only: the owner's commodities now and at the limit.
-                .detailed(
+                .hinted(
                     "commodities",
-                    crate::strategy_cards::commodity_standing(
+                    &crate::strategy_cards::commodity_standing(
                         context.state,
                         context.content,
                         &owner,

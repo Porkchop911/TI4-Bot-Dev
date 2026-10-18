@@ -1119,7 +1119,10 @@ mod tests {
         let without = returns(&episode, &reward);
         reward.r1_expansion_weight = 0.5;
         let with = returns(&episode, &reward);
-        assert!((with[0] - without[0] - 2.5).abs() < 1e-9, "round one carries 0.5 x 5");
+        assert!(
+            (with[0] - without[0] - 2.5).abs() < 1e-9,
+            "round one carries 0.5 x 5"
+        );
         assert!((with[1] - without[1] - 2.5).abs() < 1e-9);
         assert!((with[2] - without[2]).abs() < 1e-9, "round two does not");
     }

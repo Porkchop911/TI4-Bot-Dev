@@ -2072,7 +2072,10 @@ fn main() {
                 .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
             models.push((copy, adam));
         }
-        println!("  models      separate: one per faction ({})", FACTIONS.join(", "));
+        println!(
+            "  models      separate: one per faction ({})",
+            FACTIONS.join(", ")
+        );
     }
 
     // F-M10-034-D6. Loss telemetry is not evidence that an update happened: a broken optimiser
@@ -2131,7 +2134,12 @@ fn main() {
         let mut infer_model = None;
         let (cpu_inference, mut gpu_service) = match &rollout_backend {
             RolloutBackend::Cpu => (
-                Some(models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu)),
+                Some(
+                    models[0]
+                        .0
+                        .inference_copy()
+                        .to_device(ti4_tensor::Device::Cpu),
+                ),
                 None,
             ),
             RolloutBackend::Infer(_) => {
@@ -2809,7 +2817,10 @@ fn main() {
             if !demonstrations.is_empty() {
                 let (reference_kl, greedy_flip) = reference_drift(
                     &replay_actor,
-                    &models[0].0.inference_copy().to_device(ti4_tensor::Device::Cpu),
+                    &models[0]
+                        .0
+                        .inference_copy()
+                        .to_device(ti4_tensor::Device::Cpu),
                     &demonstrations,
                 )
                 .unwrap_or_else(|error| refuse(&format!("measuring reference drift: {error}")));

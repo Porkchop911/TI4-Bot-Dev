@@ -1,11 +1,14 @@
 // A strategic action: one list of seats, the primary and then the secondaries in the order in
 // which they are asked. The row of the viewer opens into its choice, or into the private draft
-// of its secondary. The choice itself is still a list (`selectAction`); the editors of the
-// cards come later.
+// of its secondary. The choice is that of every decision (`selectAction`): the editor of its
+// shape (`editors.ts`), else the list of the game.
+import { promptWords } from "./notes";
 import type { ActionButtonView, BlockView, FlowActionView, SeatRowView } from "../../model";
 import type { Catalog, ExplorationCatalog, SecondaryFacts, SessionUpdate } from "../wire";
-import { type LocalState, openChoice, selectAction } from "./action";
+import { type LocalState, openChoice, openEditor, selectAction } from "./action";
+import { secondaryCost } from "./follow";
 import { seatLabel, sentence } from "./names";
+import { strategyCardHelp } from "./printed";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -28,6 +31,42 @@ export function showsStrategy(update: SessionUpdate, local: LocalState): boolean
     !!local.follow?.editing ||
     (seat !== null && seat === decidingSeat(action))
   );
+}
+
+/**
+ * The seats of the action: the seats that did something or decide, and the viewer, as rows; the
+ * other seats that wait, in their order, as one line. They inform: the Log has them. While the
+ * viewer decides (`sheet`), the row of the viewer with its editor is a block of its own, the
+ * decision of the step sheet; the list of the Log has that row too, with nothing open.
+ */
+function waitingInShort(
+  primary: SeatRowView,
+  followers: SeatRowView[],
+  sheet: boolean,
+): BlockView[] {
+  const waits = (row: SeatRowView) => row.status.sign === "·" && !row.you;
+  const waiting = followers.filter(waits);
+  const mine = sheet ? [primary, ...followers].find((row) => row.open) : undefined;
+  return [
+    ...(mine ? [{ kind: "seats" as const, role: "decide" as const, rows: [mine] }] : []),
+    {
+      kind: "seats",
+      role: "inform",
+      rows: [primary, ...followers.filter((row) => !waits(row))].map((row) =>
+        row === mine ? { ...row, open: undefined } : row,
+      ),
+    },
+    ...(waiting.length
+      ? [
+          {
+            kind: "note" as const,
+            tone: "quiet" as const,
+            role: "inform" as const,
+            text: `Then: ${waiting.map((row) => row.name).join(", ")}`,
+          },
+        ]
+      : []),
+  ];
 }
 
 const button = (
@@ -62,22 +101,32 @@ export function selectStrategy(
   const live = !!choice && !follow?.editing;
   // The card is the heading, so the question is said in the row. The question of a secondary
   // says what it costs (pattern 3).
-  const tokens = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
-  const left = typeof tokens?.tokens_left === "number" ? tokens.tokens_left : null;
-  const asked: BlockView[] = choice
-    ? [
-        {
-          kind: "note",
-          tone: "quiet",
-          strong:
-            tokens?.costs_token === true && left !== null
-              ? `Strategy pool ${left} → ${left - 1}`
-              : undefined,
-          text: sentence(choice.prompt),
-        },
-        ...inner.blocks,
-      ]
-    : [];
+  const secondary = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
+  // An editor is one screen of several questions: its blocks say what it asks and costs.
+  const several = openEditor(update, local) !== null;
+  // An ability that asks in the middle of the action is the band on top of it (`interrupt`): the
+  // row of the seat has nothing open.
+  const band = !!inner.interrupt;
+  const asked: BlockView[] = band
+    ? []
+    : choice
+      ? [
+          ...(several
+            ? []
+            : [
+                {
+                  kind: "note" as const,
+                  tone: "quiet" as const,
+                  strong:
+                    secondary?.costs_token === true
+                      ? (secondaryCost(secondary) ?? undefined)
+                      : undefined,
+                  text: promptWords(choice, update, printed).text,
+                },
+              ]),
+          ...inner.blocks,
+        ]
+      : [];
   const summary = (follow?.answers ?? []).map(sentence).join(" · ");
   const editor = (): BlockView[] =>
     choice
@@ -102,7 +151,7 @@ export function selectStrategy(
           sign: "▶",
           label: action.primary === seat && live ? "Your decision" : "Deciding",
         },
-    open: !action.open && action.primary === seat && live ? asked : undefined,
+    open: !action.open && action.primary === seat && live && !band ? asked : undefined,
   };
   const followers = action.followers.map((follower, index): SeatRowView => {
     const you = follower.seat === seat;
@@ -125,7 +174,7 @@ export function selectStrategy(
       return {
         ...row,
         status: { tone: "live", sign: "▶", label: "Your decision" },
-        open: asked,
+        ...(band ? {} : { open: asked }),
       };
     }
     if (you && follow?.ready) {
@@ -210,10 +259,12 @@ export function selectStrategy(
             ],
           };
   const done = action.open && deciding === null;
+  // The printed text of the card is behind hover: the card of this set, as the catalogue prints it.
+  const help = strategyCardHelp(action.card, printed);
   return {
     ...inner,
-    title: "Strategic action",
-    subtitle: `${action.name} · ${name(action.primary)}`,
+    help,
+    context: `Strategic action · ${name(action.primary)}`,
     badge: live ? inner.badge : null,
     heading: action.name,
     pill: live
@@ -222,9 +273,10 @@ export function selectStrategy(
         ? { tone: "draft", label: follow.ready ? "Draft ready" : "Private draft" }
         : done
           ? { tone: "done", label: "Resolved" }
-          : { tone: "quiet", label: `Waiting for ${name(deciding ?? action.primary)}` },
+          : null,
     contentKey: `strategy:${action.primary}:${action.card}`,
-    blocks: [{ kind: "seats", rows: [primary, ...followers] }],
+    // The step sheet is over the board while the game asks the viewer (`ShellView.asked`).
+    blocks: waitingInShort(primary, followers, !!update.pending_choice),
     footer,
   };
 }

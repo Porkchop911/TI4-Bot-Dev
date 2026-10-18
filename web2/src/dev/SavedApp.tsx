@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { type LocalGame, gameOfSave } from "../session/savedGame";
-import { saveStore } from "../session/saves";
+import { keptNickname } from "../session/onlineKeys";
+import { saveStore, takeLeft } from "../session/saves";
 import type { HostSave } from "../session/wasmTransport";
+import { GameCrash } from "./GameCrash";
 import { LocalApp, Notice } from "./LocalApp";
+import { DEFAULT_NICKNAME } from "./onlineStart";
 
 /** The way out of a saved game: the start screen, which lists the saved games. */
 const START = { label: "Start", href: "/" };
@@ -16,7 +19,11 @@ export function SavedApp({ id }: { id: string }) {
   useEffect(() => {
     let stale = false;
     saveStore()
-      .then((store) => store.load(id))
+      .then(async (store) => {
+        // A page that was left before the store had its last save kept it in localStorage.
+        await takeLeft(store, localStorage, keptNickname(localStorage) ?? DEFAULT_NICKNAME);
+        return store.load(id);
+      })
       .then(
         (record) => stale || setGame(record ? gameOfSave(record.save as HostSave) : null),
         () => stale || setGame(null),
@@ -39,5 +46,9 @@ export function SavedApp({ id }: { id: string }) {
       </Notice>
     );
   }
-  return <LocalApp game={game} id={id} other={START} />;
+  return (
+    <GameCrash locate={() => Promise.resolve(id)}>
+      <LocalApp game={game} id={id} other={START} />
+    </GameCrash>
+  );
 }

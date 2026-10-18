@@ -8,7 +8,6 @@ export type StepStatus =
   | "done"
   | "decision"
   | "needs-review"
-  | "boundary"
   | "battle"
   | "draft";
 
@@ -16,6 +15,8 @@ export interface StepTab {
   name: string;
   status: StepStatus;
   caption: string;
+  /** Not a control: a resolved step whose result is shown elsewhere (the Log). */
+  locked?: boolean;
 }
 
 export interface StepTabsProps {
@@ -46,7 +47,7 @@ export function StepTabs({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [selected]);
   const reached = tabs
-    .map((tab, index) => (tab.status === "future" ? -1 : index))
+    .map((tab, index) => (tab.status === "future" || tab.locked ? -1 : index))
     .filter((index) => index >= 0);
 
   function onKeyDown(event: KeyboardEvent) {
@@ -98,8 +99,8 @@ export function StepTabs({
               aria-selected={selected === index}
               aria-current={isCurrent ? "step" : undefined}
               tabIndex={selected === index ? 0 : -1}
-              disabled={tab.status === "future"}
-              title={`${tab.name}${tab.caption ? " · " + tab.caption : ""}`}
+              disabled={tab.status === "future" || tab.locked}
+              title={`${tab.name}${tab.caption ? " · " + tab.caption : ""}${tab.locked ? " · in the Log" : ""}`}
               data-state={tab.status}
               onClick={() => onSelect(index)}
               // On a phone the row of steps scrolls sideways: a step keeps its name.
@@ -113,6 +114,9 @@ export function StepTabs({
               >
                 {tab.status === "future" ? (
                   <Icon name="lock" className="size-3" />
+                ) : review ? (
+                  // A sign, not only the colour: a phone does not show the caption.
+                  "!"
                 ) : tab.status === "skipped" ? (
                   <Icon name="minus" className="size-3" />
                 ) : tab.status === "done" ? (

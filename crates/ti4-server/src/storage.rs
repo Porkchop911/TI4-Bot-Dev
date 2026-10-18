@@ -619,10 +619,9 @@ impl FileGameStore {
                 let start = id
                     .strip_prefix("action_")
                     .and_then(|value| value.parse::<usize>().ok());
-                if !matches!(
-                    event.event,
-                    ti4_host::protocol::server::GameEventKind::DecisionResolved
-                ) || !start.is_some_and(|start| {
+                // A decision, a roll, a fact of the state or a change of the board of an action:
+                // the action began at a decision of the history that opened it.
+                if !start.is_some_and(|start| {
                     start > 0
                         && start <= event.decision_count.unwrap_or(0)
                         && history
@@ -1559,6 +1558,9 @@ fn state_checksum(state: &GameState) -> Result<String, StorageError> {
     state.action_turn = 0;
     // The relic gain log is display only and newer than older snapshots.
     state.relic_log.clear();
+    // The fights of the turn (`GameState::fight_log`, added 2026-10-17) are presentation only,
+    // and a snapshot of an older release taken during a fight has none.
+    state.fight_log = ti4_model::state::FightLog::default();
     for record in &mut state.exploration_log {
         record.gains.clear();
         record.placed.clear();

@@ -206,7 +206,7 @@ export class Host {
     this.exports.ti4_host_set_time(Date.now(), performance.now());
   }
 
-  /** Stateless questions: `describe`, `map_preview`, `catalog`, `space_odds`, `ground_odds`. */
+  /** Stateless questions: `describe`, `map_preview`, `catalog`, `space_odds`, `ground_odds`, `fleet_standing`. */
   query<T = unknown>(request: object): T {
     return this.result(this.exports.ti4_host_query(this.write(request))) as unknown as T;
   }

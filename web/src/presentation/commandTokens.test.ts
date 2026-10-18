@@ -549,7 +549,7 @@ describe("Armada fleet supply bonus", () => {
   it("reads the engine's bonus, zero when absent", () => {
     const base = redistribute();
     expect(describeCommandTokens(base, false)!.fleetSupplyBonus).toBe(0);
-    const letnev = { ...base, details: { ...base.details, fleet_supply_bonus: 2 } };
+    const letnev = { ...base, details: { ...base.details, pools: { ...(base.details?.pools as object), fleet_supply_bonus: 2 } } };
     expect(describeCommandTokens(letnev, false)!.fleetSupplyBonus).toBe(2);
   });
 

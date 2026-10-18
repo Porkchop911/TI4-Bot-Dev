@@ -1491,9 +1491,9 @@ fn dispatch_leader(
                 context.state.round,
             ))
             // Display only: the seat's own commodities, which the "gain 2" branch adds to.
-            .detailed(
+            .hinted(
                 "commodities",
-                crate::strategy_cards::commodity_standing(context.state, context.content, player),
+                &crate::strategy_cards::commodity_standing(context.state, context.content, player),
             );
             let Ok(answer) = context.ask_seeing(&choice) else {
                 return false;
@@ -2969,8 +2969,7 @@ mod tests {
         // until Z'eu was delivered (2026-10-12); across every faction one is still left (the
         // Keleres' Orlando hero, 2026-10-12), so the whole roster stands in now.
         assert!(
-            !unimplemented(ContentStore::embedded(), POK, &["naalu"])
-                .contains(&LeaderId::new(ZEU)),
+            !unimplemented(ContentStore::embedded(), POK, &["naalu"]).contains(&LeaderId::new(ZEU)),
             "Z'eu is delivered by the game"
         );
         let all: Vec<&str> =

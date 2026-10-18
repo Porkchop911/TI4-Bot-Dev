@@ -1,6 +1,7 @@
 // The movement step from the facts of the engine and the staged movement: what can leave each
 // system, what the ships load, what arrives, and the marks of all this on the board.
 import type {
+  BattleTableView,
   CargoSourceView,
   MoveShipView,
   MovementView,
@@ -10,9 +11,10 @@ import type {
   ShipUnitView,
   SpaceOddsView,
   TileView,
+  TrailView,
   UnitType,
 } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import {
   type MovementDraft,
   boostHolder,
@@ -25,15 +27,40 @@ import {
   sourceId,
 } from "../movementDraft";
 import { type KeptOdds, oddsRequest } from "../movementOdds";
-import type { BoardTileView, CargoPool, MovementFacts, SessionUpdate, ShipFact } from "../wire";
-import { UNIT_ORDER, isShip, unitType } from "./names";
+import type {
+  BoardTileView,
+  CannonFact,
+  Catalog,
+  CargoPool,
+  MovementFacts,
+  PublicRoll,
+  SessionUpdate,
+  ShipFact,
+  Unloadable,
+  UnloadableCargo,
+} from "../wire";
+import { type ShipsOf, cannonPreview, cannonTable, removedUnits, riftRows } from "./movementRolls";
+import { combatOdds } from "./odds";
+import { WORMHOLES, byUnitOrder, forceOf, isShip, unitKey, unitLabel, unitType } from "./names";
 
 const RIFT_RULE = "Each ship that leaves a gravity rift rolls: destroyed on 1–3, with its cargo";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as a cruiser. */
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "cruiser";
-const nameOf = (unit: string, damaged = false, count = 1) =>
-  unitName(typeOf(unit), count) + (damaged ? " (damaged)" : "");
+/** The printed name of a unit: "Carrier II", "Infantry I (damaged)". */
+const nameOf = (plan: Pick<Plan, "printed">, unit: string, damaged = false, count = 1) =>
+  unitLabel(unit, plan.printed, count) + (damaged ? " (damaged)" : "");
+
+/** Units by their printed unit (`unitKey`): one of their ids, and how many. */
+type Counted = Map<string, { id: string; count: number }>;
+function countUnits(units: Iterable<[id: string, count: number]>, printed: Catalog | null) {
+  const counted: Counted = new Map();
+  for (const [id, count] of units) {
+    const key = unitKey(id, printed);
+    counted.set(key, { id, count: (counted.get(key)?.count ?? 0) + count });
+  }
+  return counted;
+}
 
 /** What the selectors of the movement share: the names of the map, the facts, the draft. */
 interface Plan {
@@ -43,6 +70,8 @@ interface Plan {
   viewer: string;
   /** The systems that the player marked as done. */
   handled: string[];
+  /** The printed names of the units. */
+  printed: Catalog | null;
 }
 
 function planOf(
@@ -50,25 +79,32 @@ function planOf(
   facts: MovementFacts,
   draft: MovementDraft,
   handled: string[] = [],
+  printed: Catalog | null = null,
 ): Plan {
   return {
     facts,
     draft,
     handled,
-    tiles: new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile])),
+    printed,
+    tiles: tilesOf(update),
     viewer: update.viewer.role === "player" ? update.viewer.seat : "",
   };
 }
 
+/** The systems of the board by id. */
+export const tilesOf = (update: SessionUpdate): Map<string, BoardTileView> =>
+  new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+
 export const systemLabel = (tiles: Map<string, BoardTileView>, id: string) =>
   `${tiles.get(id)?.label ?? "System"} · #${id}`;
 
-/** "via Tar’Mann · #23": the systems between the start and the active system. */
+/** "via Tar’Mann · #23 · β wormhole": the systems between the start and the active system. */
 function viaText(plan: Plan, ship: ShipFact) {
   const move = ship.move!;
   const inner = move.path.slice(1, -1);
   return [
     inner.length ? `via ${inner.map((id) => systemLabel(plan.tiles, id)).join(", ")}` : "Direct",
+    ...(move.wormholes ?? []).map((kind) => `${WORMHOLES[kind] ?? kind} wormhole`),
     ...(move.ionian ? ["Ionian Fuel Refinery"] : []),
   ].join(" · ");
 }
@@ -90,12 +126,42 @@ function reasonOf(plan: Plan, ship: ShipFact): string | null {
   const boost = ship.move.gravity_drive && (!plan.facts.gravity_drive || taken?.boost !== "ionian");
   const name = boost ? "Gravity Drive" : "the Ionian Fuel Refinery";
   return taken
-    ? `Needs ${name} · the ${nameOf(taken.holder.unit).toLowerCase()} from ${systemLabel(plan.tiles, taken.holder.origin)} has it`
+    ? `Needs ${name} · the ${nameOf(plan, taken.holder.unit)} from ${systemLabel(plan.tiles, taken.holder.origin)} has it`
     : `Needs ${name} · already used`;
 }
 
+/** Why no ship loads units that use capacity. */
+const UNLOADABLE: Record<Unloadable, string> = {
+  command_token: "Your command token is here · no pickup",
+  unladen_route: "The ships here pass other players' ships · they carry nothing",
+  no_capacity: "No ship with capacity starts or passes here",
+};
+
+/** "2 Infantry · Planet Jord": units that no ship loads, and where they are. */
+const unloadableText = (plan: Plan, cargo: UnloadableCargo) =>
+  `${cargo.count} ${nameOf(plan, cargo.unit, cargo.damaged, cargo.count)} · ${placeOf(plan, cargo)}`;
+
+/**
+ * "Stay: 2 Infantry (Planet Jord), 1 Mech (Planet Jord) · No ship with capacity starts or passes
+ * here": the units of a system that no ship loads, by reason. Null when there are none.
+ */
+function stayText(plan: Plan, system: string): string | null {
+  const reasons = new Map<Unloadable, string[]>();
+  for (const cargo of plan.facts.unloadable ?? []) {
+    if (cargo.system === system) {
+      const units = `${cargo.count} ${nameOf(plan, cargo.unit, cargo.damaged, cargo.count)} (${placeOf(plan, cargo)})`;
+      reasons.set(cargo.reason, [...(reasons.get(cargo.reason) ?? []), units]);
+    }
+  }
+  return (
+    [...reasons]
+      .map(([reason, units]) => `Stay: ${units.join(", ")} · ${UNLOADABLE[reason]}`)
+      .join(" · ") || null
+  );
+}
+
 /** Where the units of a pool are in their system: "Planet Jord", "Space area". */
-function placeOf(plan: Plan, pool: CargoPool) {
+function placeOf(plan: Plan, pool: Pick<CargoPool, "system" | "source">) {
   const planet = plan.tiles
     .get(pool.system)
     ?.planets?.find((item) => item.id === pool.source)?.label;
@@ -117,7 +183,7 @@ function holdOf(plan: Plan, ship: ShipFact): ShipHoldView | null {
       return Array.from({ length: count }, () => ({
         key: loadKey(id, Number(pool)),
         unit: typeOf(from.unit),
-        name: nameOf(from.unit, from.damaged),
+        name: nameOf(plan, from.unit, from.damaged),
         value: count - 1,
         site: from.system === ship.origin ? null : systemLabel(plan.tiles, from.system),
         place: placeOf(plan, from),
@@ -149,6 +215,8 @@ function boostedText(ship: ShipFact): string | null {
 
 /** The ships of one system that are the same kind: one heading, one token for each. */
 const kindKey = (ship: ShipFact) => `${ship.origin}:${ship.unit}${ship.damaged ? ":damaged" : ""}`;
+/** The unit id of a row of ships, from its key. */
+const unitOfRow = (row: MoveShipView) => row.key.split(":")[1];
 const routeId = (ship: ShipFact) => ship.move!.path.join(">");
 
 function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipView[] {
@@ -158,7 +226,7 @@ function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipVi
   }
   return [...kinds.entries()].map(([key, same]): MoveShipView => {
     const first = same[0];
-    const name = nameOf(first.unit, first.damaged);
+    const name = nameOf(plan, first.unit, first.damaged);
     // One move value for every ship of the kind is said once, in the heading.
     const shared = same.every((ship) => moveText(ship) === moveText(first)) ? moveText(first) : "";
     const units = same.map((ship, index): ShipUnitView => {
@@ -170,6 +238,7 @@ function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipVi
         moves,
         canMove: !reason && !!ship.move,
         reason,
+        // A ship is staged only when it can move (`canMove`), so a staged ship is never invalid.
         invalid: false,
         move: (moves && boostedText(ship)) || (shared ? null : moveText(ship)),
         route: ship.move ? viaText(plan, ship) : "",
@@ -177,7 +246,8 @@ function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipVi
         // The game uses Gravity Drive only for a ship that cannot arrive without it.
         boost: moves && ship.move?.gravity_drive ? { on: true, locked: true, reason: null } : null,
         hold: holdOf(plan, ship),
-        link: [],
+        // The row of a ship lights its own path: with Gravity Drive it is not that of its kind.
+        link: ship.move ? [`rt:${routeId(ship)}`, `sys:${ship.origin}`] : [`sys:${ship.origin}`],
       };
     });
     const moving = units.filter((unit) => unit.moves);
@@ -211,7 +281,7 @@ function cargoOf(plan: Plan, origin: string, ships: ShipFact[]): CargoSourceView
       return {
         id: sourceId(index),
         unit: typeOf(pool.unit),
-        name: nameOf(pool.unit, pool.damaged),
+        name: nameOf(plan, pool.unit, pool.damaged),
         place: placeOf(plan, pool),
         site:
           pool.system === origin
@@ -231,7 +301,7 @@ function originOf(plan: Plan, origin: string, onlyMoving = false): OriginView {
   const stays = shipRows(
     plan,
     ships.filter((ship) => !moving.includes(ship)),
-  ).map((row) => `${row.total} ${unitName(row.unit, row.total)}${row.damaged ? " (damaged)" : ""}`);
+  ).map((row) => `${row.total} ${nameOf(plan, unitOfRow(row), row.damaged, row.total)}`);
   const first = ships.find((ship) => ship.move);
   return {
     system: origin,
@@ -245,8 +315,8 @@ function originOf(plan: Plan, origin: string, onlyMoving = false): OriginView {
     loaded,
     capacity: moving.reduce((sum, ship) => sum + ship.capacity, 0),
     stays: stays.join(" · ") || "Nothing",
-    // Units that are left with no ship to carry them: the update does not say this yet.
-    warning: null,
+    // Units that no ship can load stay; the engine says which and why.
+    warning: stayText(plan, origin),
     handled: moving.length > 0 || plan.handled.includes(origin),
   };
 }
@@ -257,53 +327,37 @@ const originsOf = (facts: MovementFacts) => [
 ];
 
 /** What arrives in the active system: every staged ship and what it carries, by unit. */
-function arriving(plan: Plan): Map<UnitType, number> {
-  const counts = new Map<UnitType, number>();
-  const add = (unit: string, count: number) =>
-    counts.set(typeOf(unit), (counts.get(typeOf(unit)) ?? 0) + count);
-  for (const ship of plan.facts.ships) {
-    const hold = plan.draft[shipId(ship)];
-    if (hold) {
-      add(ship.unit, 1);
-      for (const [pool, count] of Object.entries(hold)) {
-        add(plan.facts.cargo[Number(pool)].unit, count);
-      }
-    }
-  }
-  return counts;
+function arriving(plan: Plan): Counted {
+  return countUnits(
+    plan.facts.ships.flatMap((ship): [string, number][] => {
+      const hold = plan.draft[shipId(ship)];
+      return hold
+        ? [
+            [ship.unit, 1],
+            ...Object.entries(hold).map(([pool, count]): [string, number] => [
+              plan.facts.cargo[Number(pool)].unit,
+              count,
+            ]),
+          ]
+        : [];
+    }),
+    plan.printed,
+  );
 }
 
 /**
- * Whole percentages of `rates` (fractions that sum to 1) that sum to 100: the rates that rounding
- * down cuts most get the points that are left.
+ * The units of a seat before and after the staged movement, by the printed unit, in display
+ * order: `now` are those there, `more` what arrives.
  */
-export function percentages(rates: number[]): number[] {
-  const exact = rates.map((rate) => Math.max(0, rate) * 100);
-  const whole = exact.map(Math.floor);
-  const order = exact
-    .map((value, index) => ({ index, cut: value - whole[index] }))
-    .sort((a, b) => b.cut - a.cut || a.index - b.index);
-  let left = 100 - whole.reduce((sum, value) => sum + value, 0);
-  for (const { index } of order) {
-    if (left <= 0) {
-      break;
-    }
-    whole[index] += 1;
-    left -= 1;
-  }
-  return whole;
-}
-
-/** Counts by unit id, as counts by kind of ship. */
-function byKind(counts: Record<string, number> | undefined): Map<UnitType, number> {
-  const kinds = new Map<UnitType, number>();
-  for (const [unit, count] of Object.entries(counts ?? {})) {
-    const kind = unitType(unit);
-    if (kind && isShip(kind) && count > 0) {
-      kinds.set(kind, (kinds.get(kind) ?? 0) + count);
-    }
-  }
-  return kinds;
+function fleetRows(now: Counted, more: Counted, printed: Catalog | null) {
+  const ids = new Map([...now, ...more].map(([key, { id }]) => [key, id]));
+  return [...ids]
+    .sort(([, a], [, b]) => byUnitOrder(a, b))
+    .map(([key, id]) => {
+      const there = now.get(key)?.count ?? 0;
+      const after = there + (more.get(key)?.count ?? 0);
+      return { id, unit: typeOf(id), name: unitLabel(id, printed, after), now: there, after };
+    });
 }
 
 /**
@@ -322,57 +376,18 @@ function oddsOf(plan: Plan, kept: KeptOdds | null): SpaceOddsView | null {
     return null;
   }
   const response = kept?.response ?? null;
-  const [win, draw, loss] = response
-    ? percentages([
-        response.attacker_win_rate,
-        response.mutual_destruction_rate + response.unresolved_rate,
-        response.defender_win_rate,
-      ])
-    : [null, null, null];
-  const side = (
-    seat: string,
-    fielded: Record<string, number> | undefined,
-    expected: Record<string, number> | undefined,
-  ) => {
-    const fights = byKind(fielded);
-    const survives = new Map<UnitType, number>();
-    for (const [unit, count] of Object.entries(expected ?? {})) {
-      const kind = unitType(unit);
-      if (kind) {
-        survives.set(kind, (survives.get(kind) ?? 0) + count);
-      }
-    }
-    return {
-      seat,
-      ships: UNIT_ORDER.filter((unit) => fights.has(unit)).map((unit) => ({
-        unit,
-        expected: response ? (survives.get(unit) ?? 0).toFixed(1) : null,
-        fielded: fights.get(unit) ?? 0,
-      })),
-    };
-  };
   // The ships that fight are those of this movement; the survivors are of the answer.
   const { attacker, defender } = asked.request;
-  return {
+  return combatOdds({
+    attacker: plan.viewer,
     defender: battle.defender,
-    win,
-    draw,
-    loss,
-    rollouts: response?.simulations ?? 0,
+    response,
+    unresolved: "draw",
     pending,
-    sides: [
-      side(
-        plan.viewer,
-        pending ? attacker.units : response?.attacker_fielded,
-        response?.attacker_expected_survivors,
-      ),
-      side(
-        battle.defender,
-        pending ? defender.units : response?.defender_fielded,
-        response?.defender_expected_survivors,
-      ),
-    ],
-  };
+    fielded: { attacker: attacker.units, defender: defender.units },
+    keep: isShip,
+    printed: plan.printed,
+  });
 }
 
 const stagedShips = (plan: Plan) => plan.facts.ships.filter((ship) => shipId(ship) in plan.draft);
@@ -387,53 +402,151 @@ export function selectMovement(
   handled: string[] = [],
   /** The last answer of the engine for the odds of a space combat. */
   odds: KeptOdds | null = null,
+  /** The public rolls of the action so far: a movement that another decision stopped has some. */
+  rolls: readonly PublicRoll[] = [],
+  printed: Catalog | null = null,
 ): MovementView {
-  const plan = planOf(update, facts, draft, handled);
+  const plan = planOf(update, facts, draft, handled, printed);
   const origins = originsOf(facts);
   const stuck = facts.ships.filter((ship) => ship.blocked && !origins.includes(ship.origin));
+  // Units that no ship loads in a system that no ship leaves: an origin says it in its card.
+  const left = (facts.unloadable ?? []).filter((cargo) => !origins.includes(cargo.system));
   const there = (update.view.board.systems[facts.active]?.units ?? []).filter(
     (unit) => unit.owner === plan.viewer && unit.planet === null,
   );
-  const more = arriving(plan);
-  const now = (unit: UnitType) => there.filter((item) => typeOf(item.unit_type) === unit).length;
+  const fleet = fleetRows(
+    countUnits(
+      there.map((unit) => [unit.unit_type, 1]),
+      printed,
+    ),
+    arriving(plan),
+    printed,
+  );
   const moving = stagedShips(plan);
   const loaded = moving.reduce((sum, ship) => sum + holdLoad(draft, shipId(ship)), 0);
   const room = moving.reduce((sum, ship) => sum + ship.capacity, 0);
   const used = supplyUsed(plan);
   return {
     kind: "movement",
-    editing: true,
     target: { system: facts.active, label: systemLabel(plan.tiles, facts.active) },
     origins: origins.map((origin) => originOf(plan, origin)),
-    unreachable: stuck.length
-      ? {
-          target: facts.active,
-          rows: shipRows(plan, stuck).map((row) => ({
-            unit: row.unit,
-            name: row.total > 1 ? `${row.total} ${unitName(row.unit, row.total)}` : row.name,
-            text: `${systemLabel(plan.tiles, row.key.split(":")[0])} · ${row.reason}`,
-            system: row.key.split(":")[0],
-          })),
-        }
-      : null,
-    arrival: UNIT_ORDER.filter((unit) => more.has(unit)).map((unit) => ({
-      unit,
-      now: now(unit),
-      after: now(unit) + (more.get(unit) ?? 0),
-    })),
+    unreachable:
+      stuck.length || left.length
+        ? {
+            target: facts.active,
+            rows: [
+              ...shipRows(plan, stuck).map((row) => ({
+                unit: row.unit,
+                name:
+                  row.total > 1
+                    ? `${row.total} ${nameOf(plan, unitOfRow(row), row.damaged, row.total)}`
+                    : row.name,
+                text: `${systemLabel(plan.tiles, row.key.split(":")[0])} · ${row.reason}`,
+                system: row.key.split(":")[0],
+              })),
+              ...left.map((cargo) => ({
+                unit: typeOf(cargo.unit),
+                name: unloadableText(plan, cargo),
+                text: `${systemLabel(plan.tiles, cargo.system)} · ${UNLOADABLE[cargo.reason]}`,
+                system: cargo.system,
+              })),
+            ],
+          }
+        : null,
+    arrival: fleet
+      .filter((row) => row.after > row.now)
+      .map(({ unit, name, now, after }) => ({ unit, name, now, after })),
     gauges: [
       { label: "Fleet supply", used, total: facts.fleet_supply.limit },
       ...(room ? [{ label: "Transport capacity", used: loaded, total: room }] : []),
     ],
     excessShips: Math.max(0, used - facts.fleet_supply.limit),
     riftRolls: moving.reduce((sum, ship) => sum + (ship.move?.rifts.length ?? 0), 0),
-    // The results of a movement need the event history, which the update does not have yet.
-    rift: null,
-    removed: [],
-    cannon: null,
-    cannonSkipped: false,
+    rift: riftRows(rolls, (id) => systemLabel(plan.tiles, id), printed),
+    removed: removedUnits(rolls, printed),
+    // The guns before the roll, unless a space combat follows: its odds count them. The ships of
+    // the viewer that the guns fire at are those that are there after the movement.
+    cannon: cannonOf(
+      update,
+      facts.active,
+      plan.viewer,
+      rolls,
+      printed,
+      facts.battle ? [] : (facts.cannon ?? []),
+      (seat) =>
+        seat === plan.viewer
+          ? fleet
+              .filter((row) => isShip(row.unit) && row.after > 0)
+              .map((row) => ({ unit: row.unit, name: row.name, count: row.after }))
+          : null,
+    ),
     odds: oddsOf(plan, odds),
   };
+}
+
+/** The ships of each seat in the space area of `active` now, by kind. */
+function shipsThere(update: SessionUpdate, active: string, printed: Catalog | null): ShipsOf {
+  return (seat) =>
+    forceOf(
+      (update.view.board.systems[active]?.units ?? []).filter(
+        (unit) => unit.owner === seat && unit.planet === null,
+      ),
+      printed,
+    )
+      .filter((item) => isShip(item.unit))
+      .map((item) => ({ unit: item.unit, name: item.name, count: item.count }));
+}
+
+/**
+ * The space cannon offense of the movement: what it rolled, else the guns that will roll (the
+ * facts, before the movement is sent). `ships` overrides the ships of a seat in the system.
+ */
+function cannonOf(
+  update: SessionUpdate,
+  active: string,
+  viewer: string,
+  rolls: readonly PublicRoll[],
+  printed: Catalog | null,
+  guns: readonly CannonFact[],
+  ships: (seat: string) => ReturnType<ShipsOf> | null = () => null,
+): BattleTableView | null {
+  const there = shipsThere(update, active, printed);
+  const fired = (seat: string) => ships(seat) ?? there(seat);
+  return (
+    cannonTable(rolls, viewer, viewer, fired, printed) ??
+    cannonPreview(guns, viewer, viewer, fired, printed)
+  );
+}
+
+/**
+ * The parts of the movement step, for its heading: the move, a gravity rift when a ship rolls for
+ * one, and the space cannon offense. `guns` are the guns of the facts while the movement is open;
+ * without them (after the movement) only a roll says that the offense was there. It is skipped
+ * only when the facts have no gun.
+ */
+export function movementTrail(
+  rolls: readonly PublicRoll[],
+  open: boolean,
+  riftRolls: number,
+  guns: readonly CannonFact[] | null,
+): TrailView {
+  const rifts = riftRows(rolls, (id) => id) !== null;
+  const fired = cannonTable(rolls, "", "") !== null;
+  return [
+    { label: "Move ships", status: open ? "active" : "complete" },
+    ...(riftRolls > 0
+      ? [{ label: "Gravity rift", status: "todo" as const }]
+      : rifts
+        ? [{ label: "Gravity rift", status: "complete" as const }]
+        : []),
+    ...(fired
+      ? [{ label: "Space cannon offense", status: "complete" as const }]
+      : guns?.length
+        ? [{ label: "Space cannon offense", status: "todo" as const }]
+        : guns
+          ? [{ label: "Space cannon offense", status: "skipped" as const, reason: "no guns" }]
+          : []),
+  ];
 }
 
 /** The fleet of one system with its controls, for the board. Null when nothing can leave it. */
@@ -443,9 +556,10 @@ export const selectOrigin = (
   draft: MovementDraft,
   system: string | null,
   handled: string[] = [],
+  printed: Catalog | null = null,
 ): OriginView | null =>
   system !== null && originsOf(facts).includes(system)
-    ? originOf(planOf(update, facts, draft, handled), system)
+    ? originOf(planOf(update, facts, draft, handled, printed), system)
     : null;
 
 /** What is committed to the active system: the ships that move, by the system that they leave. */
@@ -454,8 +568,9 @@ export function selectArrival(
   facts: MovementFacts,
   draft: MovementDraft,
   odds: KeptOdds | null = null,
+  printed: Catalog | null = null,
 ) {
-  const plan = planOf(update, facts, draft);
+  const plan = planOf(update, facts, draft, [], printed);
   const origins = originsOf(facts)
     .map((origin) => originOf(plan, origin, true))
     .filter((origin) => origin.ships.length);
@@ -480,8 +595,9 @@ export function selectMovementBoard(
   draft: MovementDraft,
   inspected: string | null,
   handled: string[] = [],
+  printed: Catalog | null = null,
 ) {
-  const plan = planOf(update, facts, draft, handled);
+  const plan = planOf(update, facts, draft, handled, printed);
   const groups = new Map<string, ShipFact[]>();
   for (const ship of facts.ships) {
     if (ship.origin === inspected && ship.move) {
@@ -512,6 +628,16 @@ export function selectMovementBoard(
       notes[ship.origin] = { sign: "stay", text: `Your ships stay · ${BLOCKED[ship.blocked]}` };
     }
   }
+  for (const cargo of facts.unloadable ?? []) {
+    if (!origins.includes(cargo.system)) {
+      const text = `${unloadableText(plan, cargo)} cannot be loaded · ${UNLOADABLE[cargo.reason]}`;
+      const note = notes[cargo.system];
+      notes[cargo.system] =
+        note?.sign === "cargo"
+          ? { ...note, text: `${note.text}\n${text}` }
+          : (note ?? { sign: "cargo", text });
+    }
+  }
   /** For each system: the ships and the ground forces that the staged movement takes from it. */
   const leaving: Record<
     string,
@@ -531,9 +657,9 @@ export function selectMovementBoard(
       system.picked += from.system === ship.origin ? 0 : count;
     }
   }
-  const arrives = [...arriving(plan)]
-    .filter(([unit]) => isShip(unit))
-    .reduce((sum, [, count]) => sum + count, 0);
+  const arrives = [...arriving(plan).values()]
+    .filter(({ id }) => isShip(typeOf(id)))
+    .reduce((sum, { count }) => sum + count, 0);
   return {
     routes,
     notes,

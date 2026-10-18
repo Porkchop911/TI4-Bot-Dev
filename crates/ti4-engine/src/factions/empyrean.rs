@@ -53,6 +53,7 @@ use super::hooks_movement::{MoveSite, MovementHooks};
 use super::{FactionModule, Hooks};
 use crate::choice::{Choice, ChoiceOption};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::phrases::{Phrase, Subject, Worded};
 use crate::timing::{Ability, Relation, TimingContext};
 
 /// The faction alias; also the faction name in promissory note ids.
@@ -402,21 +403,29 @@ fn voidwatch(owner_name: &str, seat: &PlayerId) -> Ability {
                 return Ok(());
             };
             let notes = hand(context.state, context.content, &player);
-            let options: Vec<ChoiceOption> = notes
+            let worded: Vec<(String, Worded)> = notes
                 .iter()
                 .map(|note| {
-                    ChoiceOption::labelled(
+                    (
                         format!("note|{note}"),
-                        "promissory",
-                        format!("give {note} to the Empyrean"),
+                        Phrase::of("give {note} to the Empyrean").with(
+                            "note",
+                            note,
+                            Subject::note(context.content, note),
+                        ),
                     )
                 })
+                .collect();
+            let options: Vec<ChoiceOption> = worded
+                .iter()
+                .map(|(id, worded)| ChoiceOption::labelled(id, "promissory", worded.label()))
                 .collect();
             let choice = Choice::new(
                 player.clone(),
                 "Voidwatch: which promissory note to give".to_owned(),
                 options,
             )
+            .phrased_options(&worded)
             .contextualized(decision(context.state, &player, "vw", "voidwatch_note"));
             let answer = context
                 .ask_seeing(&choice)
@@ -1376,6 +1385,32 @@ mod tests {
         finished(&mut state, &mut table, home.as_str(), "1");
         assert_eq!(state.promissory_notes.get(&pick), Some(&a()), "given");
         assert_eq!(hand(&state, content(), &b()).len() + 1, hand_before.len());
+    }
+
+    /// Each note of the question says which note it is (`details.phrases`), by its record.
+    #[test]
+    fn voidwatch_names_each_note_of_its_question() {
+        let mut state = game();
+        grant_tech(&mut state, &a(), "vw");
+        let home = state.player(&a()).unwrap().home_system.clone().unwrap();
+        let notes = hand(&state, content(), &b());
+        assert!(notes.len() > 1, "a question");
+        let (mut table, seen) = crate::phrases::capturing(&[]);
+        finished(&mut state, &mut table, home.as_str(), "1");
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Voidwatch"))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        for note in &notes {
+            let phrase = &hints.options[&format!("note|{note}")];
+            assert_eq!(phrase.text, "give {note} to the Empyrean");
+            assert_eq!(
+                phrase.refs["note"],
+                crate::phrases::Subject::note(content(), note)
+            );
+        }
     }
 
     #[test]

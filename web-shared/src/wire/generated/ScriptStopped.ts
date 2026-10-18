@@ -1,5 +1,6 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
 import type { DraftStep } from "./DraftStep.ts";
+import type { EntryRefusal } from "./EntryRefusal.ts";
 
 /**
  * Where a script that was sent to the live game stopped before its end.
@@ -18,4 +19,9 @@ remaining: Array<DraftStep>,
  * True when the game asked something else first, or went on without the rest; false when
  * it refused an entry and nothing was sent.
  */
-interrupted: boolean, reason: string, };
+interrupted: boolean, reason: string, 
+/**
+ * The entry that the game refused, and why. `None` when it refused none: the game asked
+ * something else first.
+ */
+refusal?: EntryRefusal, };

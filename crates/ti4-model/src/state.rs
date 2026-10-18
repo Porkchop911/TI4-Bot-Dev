@@ -1023,6 +1023,69 @@ pub struct CombatRollRecord {
     pub hit: bool,
 }
 
+/// One round of a space combat as it resolved: the ships at its start, the barrage of the first
+/// round, the dice of both sides and the hits they produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceRoundRecord {
+    pub system: SystemId,
+    pub attacker: PlayerId,
+    pub defender: PlayerId,
+    pub battle_seq: u32,
+    pub round: u32,
+    pub round_start: Vec<Unit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_start: Vec<Unit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_dice: Vec<CombatRollRecord>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub barrage_hits: BTreeMap<PlayerId, u32>,
+    pub dice: Vec<CombatRollRecord>,
+    pub hits: BTreeMap<PlayerId, u32>,
+}
+
+/// A step of an invasion as it resolved (a bombardment, the space cannon of a planet, a round of
+/// ground combat), with the system and the invasion it was of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroundStepRecord {
+    pub system: SystemId,
+    pub invasion_seq: u64,
+    pub invader: PlayerId,
+    pub step: InvasionStep,
+}
+
+/// The fights of the turn as they resolved, round by round. A round can begin and end in one step
+/// of the engine, and a combat can end in it, so the board of a step does not show every round:
+/// this record does, until the turn ends. Public presentation; nothing decides from it.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FightLog {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub space: Vec<SpaceRoundRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ground: Vec<GroundStepRecord>,
+}
+
+impl FightLog {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.space.is_empty() && self.ground.is_empty()
+    }
+
+    /// Records a space combat round; a round rolled again (a return to its Roll Dice step)
+    /// replaces its first record.
+    pub fn space_round(&mut self, record: SpaceRoundRecord) {
+        if let Some(last) = self.space.last_mut()
+            && last.system == record.system
+            && last.battle_seq == record.battle_seq
+            && last.round == record.round
+        {
+            *last = record;
+        } else {
+            self.space.push(record);
+        }
+    }
+}
+
 /// Public, in-flight space combat evidence. `round_start` includes damage already present
 /// before this round; comparing it to the board reveals new damage and destroyed ships.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1155,7 +1218,7 @@ pub struct StartingTechPick {
 /// The rules version of a new game. Raise it when an engine decision changes in a way that an
 /// older game log would not replay under (and gate the change on
 /// [`GameState::rules_version`]); see `docs/RULES_VERSION.md`.
-pub const RULES_VERSION: u32 = 16;
+pub const RULES_VERSION: u32 = 22;
 
 /// The first rules version with the Infiltrate fix: offered only to the gaining player and only
 /// when a rival PDS or space dock can be replaced; the previous holder's structures are
@@ -1242,6 +1305,50 @@ pub const RULES_TECH_EFFECTS: u32 = 15;
 /// Ral Nel commander's unlock, an optional Letnev commander trade good and the Shard of the
 /// Throne VP when the Naaz purge a relic fragment.
 pub const RULES_FACTION_EFFECTS: u32 = 16;
+
+/// The first rules version where the status phase's gain (81.5) is placed by the one
+/// redistribution that follows it: each seat is asked once, over what it holds plus what it gains.
+/// Before, each gained token asked its pool on its own (`gain_command_token`), and the
+/// redistribution came after over the tokens already placed.
+pub const RULES_STATUS_GAIN: u32 = 17;
+
+/// The first rules version where a seat that passes twice in a row closes a timing window (one
+/// that a game drives with its state), and a reaction slot opened and backed out of with no card
+/// played is a pass. Before, every resolution cleared the passes, so a slot that resolved nothing
+/// reopened the window for the seats that had passed.
+pub const RULES_TIMING_DOUBLE_PASS: u32 = 18;
+
+/// The first rules version where an invasion explores a planet nobody controls before control is
+/// established (35.1), and only while the invader still has a ground force there. Before, the
+/// planet was explored after control was gained.
+pub const RULES_EXPLORE_BEFORE_CONTROL: u32 = 19;
+
+/// The first rules version where Saar's Floating Factory, placed by Construction or a Rider, goes
+/// to the space area of the system. Before, Construction placed the generic space dock on the
+/// planet, and a Rider put the Floating Factory on the planet.
+pub const RULES_FLOATING_FACTORY_SPACE: u32 = 20;
+
+/// The first rules version where the Thunder's Edge Mecatol Rex (`mrte`) is not landable while the
+/// custodians token is on it, as the base Mecatol Rex (`mr`). Before, only `mr` was held back.
+pub const RULES_TE_MECATOL_LANDING: u32 = 21;
+
+/// The first rules version where the Technology strategy card's paid research is paid inside the
+/// research's own payment window (one planet or trade good at a time), the planets whose
+/// specialties stand in for the technology's prerequisites are kept out of the payment, and a
+/// technology is offered only when it can be paid without them. Before, the payment was the
+/// ordinary `pay_resources` question after the pick, over every ready planet.
+pub const RULES_TECH_PAYMENT_KEEPS_SPECIALTIES: u32 = 22;
+
+/// The first rules version where a status-phase redistribution (81.5) that the engine refuses is
+/// an error of the step. Before, the refusal was passed over and the gain put into the tactic
+/// pool.
+pub const RULES_STATUS_REDISTRIBUTION_REFUSED: u32 = 22;
+
+/// The first rules version where Reverse Engineer is offered after a discard only when the
+/// discarded card has a component action, another player discarded it, and it is still in the
+/// discard pile. Before, it was offered after every discard of another player's action card, and
+/// the qualifier was checked only when the card resolved.
+pub const RULES_REVERSE_ENGINEER_QUALIFIER: u32 = 22;
 
 /// The whole game, as a value.
 ///
@@ -1609,6 +1716,10 @@ pub struct GameState {
     /// Public presentation facts for the current space battle; reset at each battle/round.
     #[serde(default, skip_serializing_if = "CombatPresentation::is_empty")]
     pub combat_presentation: CombatPresentation,
+    /// The fights of the turn, round by round ([`FightLog`]); cleared when the turn ends.
+    /// In-flight bookkeeping — not compared.
+    #[serde(default, skip_serializing_if = "FightLog::is_empty")]
+    pub fight_log: FightLog,
     /// The action card a `ACTION_CARD_DISCARDED` window is reacting to: the player who
     /// discarded it and the card's alias. The frame records it in the discard announcement
     /// itself, which is the one place that knows both, because the effect — Reverse Engineer
@@ -1973,6 +2084,7 @@ impl GameState {
             combat_round_hits: BTreeMap::new(),
             combat_round_dice: Vec::new(),
             combat_presentation: CombatPresentation::default(),
+            fight_log: FightLog::default(),
             last_action_discarded: None,
             pending_reflective_hits: None,
             last_strategy_choice: None,

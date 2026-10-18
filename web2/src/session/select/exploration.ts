@@ -176,3 +176,76 @@ export function selectExploration(
     };
   });
 }
+
+/** An exploration of the events, as Live showed its card, and what came of it. */
+export interface ExploredView {
+  /** The printed name of the card. */
+  name: string;
+  /** "Cultural exploration · Primor", as the card of an exploration that asks says it. */
+  type: string;
+  /** The printed text. */
+  text: string;
+  /** What came of it, in game values: "Attached Demilitarized Zone", "Gained 1 trade good". */
+  effect: string;
+}
+
+/**
+ * The exploration of a fact `explored` of the events: the card as printed, and what came of it,
+ * from the record of the engine (`ExplorationFacts.drawn`, every card drawn, public). A card
+ * leaves its deck when it is drawn, so its id finds its record.
+ */
+export function exploredCard(
+  update: SessionUpdate,
+  catalog: ExplorationCatalog | null,
+  fact: { seat: string; card: string; deck: string; planet?: string; system?: string },
+): ExploredView {
+  const card = catalog?.cards.find((item) => item.id === fact.card);
+  const record = update.exploration?.drawn.findLast(
+    (item) => item.card === fact.card && item.player === fact.seat,
+  );
+  const tiles = update.view.board.map_tiles ?? [];
+  const planetName = (id: string) =>
+    tiles.flatMap((tile) => tile.planets ?? []).find((item) => item.id === id)?.label ??
+    humanizeId(id);
+  const systemName = (id: string) => {
+    const label = tiles.find((tile) => tile.system_id === id)?.label;
+    return label ? `${label} · #${id}` : `#${id}`;
+  };
+  const place = fact.planet
+    ? planetName(fact.planet)
+    : fact.system
+      ? systemName(fact.system)
+      : null;
+  const parts: string[] = [];
+  const attached = record?.outcome.startsWith("attached:") ? record.outcome.slice(9) : "";
+  if (attached) {
+    parts.push(`attached ${attachment(attached, catalog).name}`);
+  }
+  for (const tag of record?.placed ?? []) {
+    const [kind, first, second] = tag.split(":");
+    if (kind === "wormhole") {
+      parts.push(`placed a ${first.toLowerCase()} wormhole in ${systemName(second)}`);
+    } else if (kind === "ion_storm") {
+      parts.push(`placed the ion storm in ${systemName(first)}`);
+    } else if (kind === "planet") {
+      parts.push(`placed ${planetName(first)} in ${systemName(second)}`);
+    }
+  }
+  // The words of the engine; the rules of a card in the play area are its printed text.
+  const result = (record?.result ?? "")
+    .replace(/\s*\(ACTION:[^)]*\)/, "")
+    .replace(/\ba (?=[aeiou])/g, "an ");
+  if (result) {
+    parts.push(result);
+  }
+  // A card that the seat resolved with nothing to show for it (a sacrifice it declined).
+  const effect = parts.join(", ") || (record?.outcome === "resolved" ? "no effect" : "");
+  return {
+    name: card?.name ?? humanizeId(fact.card),
+    type: [`${humanizeId(fact.deck.toLowerCase())} exploration`, ...(place ? [place] : [])].join(
+      " · ",
+    ),
+    text: card?.text ?? "",
+    effect: effect ? effect[0].toUpperCase() + effect.slice(1) : "",
+  };
+}

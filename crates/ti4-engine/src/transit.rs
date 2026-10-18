@@ -7,6 +7,7 @@
 //! The 41.2 destruction roll lives here rather than with the legality rules because it is a
 //! consequence of moving, not a question about whether the move may be made.
 
+use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
@@ -91,17 +92,7 @@ fn loadable_by(
             .is_some_and(UnitType::consumes_capacity)
     };
     let system = state.system_state(origin);
-
-    // 95.5: "Fighters and ground forces cannot be picked up from a system that contains one of
-    // their faction's command tokens other than the active system."
-    //
-    // Ordinarily unreachable, because 58.4c stops a ship leaving such a system at all -- but the
-    // Dominus Orb suspends exactly that, and a ship freed to leave must still not take the
-    // garrison with it.
-    if !ignore_tokens
-        && state.active_system.as_ref() != Some(origin)
-        && system.command_tokens.contains(player)
-    {
+    if token_bars(state, player, origin, ignore_tokens) {
         return Vec::new();
     }
 
@@ -132,6 +123,215 @@ fn loadable_by(
                 }),
         );
     }
+    found
+}
+
+/// 95.5: "Fighters and ground forces cannot be picked up from a system that contains one of
+/// their faction's command tokens other than the active system."
+///
+/// Ordinarily unreachable for the origin, because 58.4c stops a ship leaving such a system at
+/// all -- but the Dominus Orb suspends exactly that, and a ship freed to leave must still not
+/// take the garrison with it. A system that a ship passes is barred the same way.
+fn token_bars(
+    state: &GameState,
+    player: &PlayerId,
+    system: &SystemId,
+    ignore_tokens: bool,
+) -> bool {
+    !ignore_tokens
+        && state.active_system.as_ref() != Some(system)
+        && state.system_state(system).command_tokens.contains(player)
+}
+
+/// Why no ship of a movement loads a unit that uses capacity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum Unloadable {
+    /// The system has a command token of the seat: nothing is picked up there (95.5).
+    CommandToken,
+    /// The ships that start in the system or pass it move past other players' ships on the
+    /// say-so of Myru Vos, and so transport nothing.
+    UnladenRoute,
+    /// No ship with capacity that moves starts in the system or passes it.
+    NoCapacity,
+}
+
+/// What one ship's hold is offered, and the units of its route that it is not, with why.
+struct Pickups {
+    /// The hold's candidates, in the order of its options.
+    offered: Vec<Cargo>,
+    refused: Vec<(Cargo, Unloadable)>,
+}
+
+/// The pickups of one ship that moves along `path` from `origin` (95.1): the units of the
+/// origin and of each system of the path, the active system too. [`CargoWindow::for_ship`]
+/// offers [`Pickups::offered`], and [`unloadable`] reports [`Pickups::refused`]: one set of
+/// checks for both.
+fn pickups(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    origin: &SystemId,
+    ship: &Unit,
+    path: &[String],
+) -> Pickups {
+    let capacity = capacity_of(content, sources, ship);
+    // 95.1: "During a tactical action, it can pick up and transport units from the active
+    // system, the system it started its movement in, and each system it moves through." The
+    // path carries the systems between the two, and 95.5 is applied per system, so a system
+    // holding this player's command token contributes nothing.
+    let ignore_tokens = crate::factions::hooks_movement::ignores_command_tokens(
+        state,
+        content,
+        sources,
+        player,
+        ship.type_id.as_str(),
+    );
+    let mut offered = Vec::new();
+    let mut refused = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for step in std::iter::once(origin.to_string()).chain(path.iter().cloned()) {
+        if !seen.insert(step.clone()) {
+            continue; // a route may revisit a system; its units are offered once
+        }
+        let system = SystemId::new(step);
+        let found = loadable_by(state, content, sources, player, &system, true);
+        if token_bars(state, player, &system, ignore_tokens) {
+            refused.extend(
+                found
+                    .into_iter()
+                    .map(|cargo| (cargo, Unloadable::CommandToken)),
+            );
+        } else {
+            offered.extend(found);
+        }
+    }
+    // Myru Vos: a ship moving through other players' ships on that agent's say-so carries
+    // nothing ("if they are not transporting units").
+    if crate::factions::firmament::unladen_route_forbids_cargo(
+        state, content, sources, player, ship, path,
+    ) {
+        refused.extend(
+            offered
+                .drain(..)
+                .map(|cargo| (cargo, Unloadable::UnladenRoute)),
+        );
+    }
+    // A ship with no capacity (a destroyer) carries nothing that needs a slot, but its hold
+    // stays open to cargo that never uses one (Ral Nel Miniaturization: structures).
+    if capacity <= 0 {
+        let types = catalogue(content, sources);
+        let (slotted, unslotted): (Vec<Cargo>, Vec<Cargo>) =
+            offered.into_iter().partition(|cargo| {
+                types
+                    .get(cargo.unit.type_id.as_str())
+                    .is_some_and(UnitType::consumes_capacity)
+            });
+        offered = unslotted;
+        refused.extend(
+            slotted
+                .into_iter()
+                .map(|cargo| (cargo, Unloadable::NoCapacity)),
+        );
+    }
+    Pickups { offered, refused }
+}
+
+/// One ship of a movement and the path that it moves along, as [`CargoWindow::for_ship`] takes
+/// them: the path is the one of the move that the game offers it.
+#[derive(Debug, Clone, Copy)]
+pub struct Route<'a> {
+    pub origin: &'a SystemId,
+    pub ship: &'a Unit,
+    pub path: &'a [String],
+}
+
+/// Units of one kind in one place that use capacity, that no ship of a movement loads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnloadedCargo {
+    pub system: SystemId,
+    pub source: CargoSource,
+    pub unit: Unit,
+    pub count: usize,
+    pub reason: Unloadable,
+}
+
+/// The units of `player` that use capacity, in each system that a ship of `routes` starts in or
+/// passes, outside `active`, that the hold of no ship is offered, with why: grouped by system,
+/// place, type, damage and galvanization, in the order of the systems and of [`loadable`].
+///
+/// A unit that moves as a ship of `routes` itself (a fighter with a move of its own) is not
+/// cargo. The reason is the one of a ship that passes the system, in the order of
+/// [`Unloadable`]: a command token before Myru Vos before no capacity.
+#[must_use]
+pub fn unloadable(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    active: &SystemId,
+    routes: &[Route<'_>],
+) -> Vec<UnloadedCargo> {
+    let types = catalogue(content, sources);
+    let mut found: Vec<UnloadedCargo> = Vec::new();
+    let mut offered: Vec<Cargo> = Vec::new();
+    let mut refused: Vec<(Cargo, Unloadable)> = Vec::new();
+    for route in routes {
+        let pickups = pickups(
+            state,
+            content,
+            sources,
+            player,
+            route.origin,
+            route.ship,
+            route.path,
+        );
+        offered.extend(pickups.offered);
+        refused.extend(pickups.refused);
+    }
+    let same =
+        |a: &Cargo, b: &Cargo| a.system == b.system && a.source == b.source && a.unit == b.unit;
+    for (cargo, reason) in refused {
+        let uses_capacity = types
+            .get(cargo.unit.type_id.as_str())
+            .is_some_and(UnitType::consumes_capacity);
+        if !uses_capacity
+            || cargo.system == *active
+            || offered.iter().any(|known| same(known, &cargo))
+        {
+            continue;
+        }
+        match found.iter_mut().find(|known| {
+            known.system == cargo.system && known.source == cargo.source && known.unit == cargo.unit
+        }) {
+            Some(known) => known.reason = known.reason.min(reason),
+            None => {
+                // Every unit of the kind in that place, less the ones that move as ships.
+                let all = loadable_by(state, content, sources, player, &cargo.system, true)
+                    .iter()
+                    .filter(|other| same(other, &cargo))
+                    .count();
+                let sailing = routes
+                    .iter()
+                    .filter(|route| {
+                        *route.origin == cargo.system
+                            && cargo.source == CargoSource::Space
+                            && *route.ship == cargo.unit
+                    })
+                    .count();
+                found.push(UnloadedCargo {
+                    count: all.saturating_sub(sailing),
+                    system: cargo.system,
+                    source: cargo.source,
+                    unit: cargo.unit,
+                    reason,
+                });
+            }
+        }
+    }
+    found.retain(|cargo| cargo.count > 0);
     found
 }
 
@@ -220,50 +420,8 @@ impl CargoWindow {
         path: &[String],
     ) -> Self {
         let capacity = capacity_of(content, sources, ship);
-        // 95.1: "During a tactical action, it can pick up and transport units from the active
-        // system, the system it started its movement in, and each system it moves through." The
-        // path carries the systems between the two, and 95.5 is applied per system inside
-        // `loadable`, so a system holding this player's command token contributes nothing.
-        let ignore_tokens = crate::factions::hooks_movement::ignores_command_tokens(
-            state,
-            content,
-            sources,
-            player,
-            ship.type_id.as_str(),
-        );
-        let mut candidates = loadable_by(state, content, sources, player, origin, ignore_tokens);
-        let mut seen: std::collections::BTreeSet<String> =
-            std::iter::once(origin.to_string()).collect();
-        for step in path {
-            if !seen.insert(step.clone()) {
-                continue; // a route may revisit a system; its units are offered once
-            }
-            candidates.extend(loadable_by(
-                state,
-                content,
-                sources,
-                player,
-                &SystemId::new(step.clone()),
-                ignore_tokens,
-            ));
-        }
-        // Myru Vos: a ship moving through other players' ships on that agent's say-so carries
-        // nothing ("if they are not transporting units").
-        if crate::factions::firmament::unladen_route_forbids_cargo(
-            state, content, sources, player, ship, path,
-        ) {
-            candidates.clear();
-        }
+        let candidates = pickups(state, content, sources, player, origin, ship, path).offered;
         let types = catalogue(content, sources);
-        // A ship with no capacity (a destroyer) carries nothing that needs a slot, but its hold
-        // stays open to cargo that never uses one (Ral Nel Miniaturization: structures).
-        if capacity <= 0 {
-            candidates.retain(|cargo| {
-                !types
-                    .get(cargo.unit.type_id.as_str())
-                    .is_some_and(UnitType::consumes_capacity)
-            });
-        }
         let ground = candidates
             .iter()
             .map(|cargo| {
@@ -1155,6 +1313,261 @@ mod tests {
             "except in the active system, where the token is yours from activating it"
         );
     }
+
+    /// Three plain systems: a ship starts in the first, passes the second, and the third is
+    /// active.
+    fn route_state() -> (GameState, SystemId, SystemId, SystemId) {
+        let (mut state, origin, midpoint) = state_with_two_systems();
+        let active = SystemId::new(plain_systems(3)[2].clone());
+        state.active_system = Some(active.clone());
+        (state, origin, midpoint, active)
+    }
+
+    fn unloaded(
+        state: &GameState,
+        active: &SystemId,
+        routes: &[(SystemId, Unit, Vec<String>)],
+    ) -> Vec<UnloadedCargo> {
+        let routes: Vec<Route<'_>> = routes
+            .iter()
+            .map(|(origin, ship, path)| Route { origin, ship, path })
+            .collect();
+        unloadable(
+            state,
+            ContentStore::embedded(),
+            POK,
+            &player(),
+            active,
+            &routes,
+        )
+    }
+
+    /// 95.5: the infantry of a system with the seat's command token stay, and the engine says
+    /// that the token is why; the infantry of the origin are loaded.
+    #[test]
+    fn a_command_token_is_why_a_passed_system_loads_nothing() {
+        let (mut state, origin, midpoint, active) = route_state();
+        let carrier = unit("carrier");
+        state.system_mut(&origin).units.push(carrier.clone());
+        state.system_mut(&origin).units.push(unit("infantry"));
+        for _ in 0..2 {
+            state.system_mut(&midpoint).units.push(unit("infantry"));
+        }
+        state.system_mut(&midpoint).place_token(player());
+        let path = vec![origin.to_string(), midpoint.to_string(), active.to_string()];
+
+        let found = unloaded(&state, &active, &[(origin, carrier, path)]);
+
+        assert_eq!(
+            found,
+            vec![UnloadedCargo {
+                system: midpoint,
+                source: CargoSource::Space,
+                unit: unit("infantry"),
+                count: 2,
+                reason: Unloadable::CommandToken,
+            }]
+        );
+    }
+
+    /// A ship with no capacity loads nothing that uses a slot: the fighters of its origin and the
+    /// infantry of a planet that it passes stay, for want of capacity. A fighter that moves as a
+    /// ship of its own is not cargo, and the units of the active system are not counted.
+    #[test]
+    fn a_ship_with_no_capacity_is_why_a_system_loads_nothing() {
+        let (mut state, origin, midpoint, active) = route_state();
+        let destroyer = unit("destroyer");
+        let fighter = unit("fighter");
+        state.system_mut(&origin).units.push(destroyer.clone());
+        for _ in 0..3 {
+            state.system_mut(&origin).units.push(fighter.clone());
+        }
+        let planet = PlanetId::new("somewhere");
+        state
+            .system_mut(&midpoint)
+            .planet_units
+            .insert(planet.clone(), vec![unit("infantry")]);
+        state.system_mut(&active).units.push(unit("infantry"));
+        let path = vec![origin.to_string(), midpoint.to_string(), active.to_string()];
+
+        let found = unloaded(
+            &state,
+            &active,
+            &[
+                (origin.clone(), destroyer, path.clone()),
+                (origin.clone(), fighter.clone(), path),
+            ],
+        );
+
+        assert_eq!(
+            found,
+            vec![
+                UnloadedCargo {
+                    system: origin,
+                    source: CargoSource::Space,
+                    unit: fighter,
+                    count: 2,
+                    reason: Unloadable::NoCapacity,
+                },
+                UnloadedCargo {
+                    system: midpoint,
+                    source: CargoSource::Planet(planet),
+                    unit: unit("infantry"),
+                    count: 1,
+                    reason: Unloadable::NoCapacity,
+                },
+            ]
+        );
+    }
+
+    /// A unit that one ship is offered is not unloadable, even when another ship cannot load it.
+    #[test]
+    fn a_unit_that_one_ship_loads_is_not_unloadable() {
+        let (mut state, origin, _, active) = route_state();
+        let carrier = unit("carrier");
+        let destroyer = unit("destroyer");
+        state.system_mut(&origin).units.push(carrier.clone());
+        state.system_mut(&origin).units.push(destroyer.clone());
+        state.system_mut(&origin).units.push(unit("infantry"));
+        let path = vec![origin.to_string(), active.to_string()];
+
+        let found = unloaded(
+            &state,
+            &active,
+            &[
+                (origin.clone(), destroyer, path.clone()),
+                (origin, carrier, path),
+            ],
+        );
+
+        assert_eq!(found, Vec::new());
+    }
+
+    /// The report and the load offers are one set of checks: a unit that uses capacity, in a
+    /// system that a route starts in or passes outside the active system, is either in the hold
+    /// of a ship (`CargoWindow::for_ship`), a ship of a route, or unloadable, and never two of
+    /// them.
+    #[test]
+    fn what_no_ship_loads_is_what_no_hold_is_offered() {
+        let (mut state, origin, midpoint, active) = route_state();
+        let carrier = unit("carrier");
+        let destroyer = unit("destroyer");
+        let fighter = unit("fighter");
+        let planet = PlanetId::new("somewhere");
+        {
+            let start = state.system_mut(&origin);
+            start
+                .units
+                .extend([carrier.clone(), destroyer.clone(), fighter.clone()]);
+            start
+                .units
+                .extend([unit("infantry"), unit("fighter").sustained()]);
+            start
+                .planet_units
+                .insert(planet.clone(), vec![unit("infantry"), unit("mech")]);
+        }
+        {
+            let passed = state.system_mut(&midpoint);
+            passed.units.extend([unit("infantry"), unit("fighter")]);
+            passed.planet_units.insert(planet, vec![unit("infantry")]);
+        }
+        let types = catalogue(ContentStore::embedded(), POK);
+        for token in [false, true] {
+            if token {
+                state.system_mut(&midpoint).place_token(player());
+            }
+            let short = vec![origin.to_string(), active.to_string()];
+            let long = vec![origin.to_string(), midpoint.to_string(), active.to_string()];
+            let routes = vec![
+                (origin.clone(), carrier.clone(), short),
+                (origin.clone(), destroyer.clone(), long.clone()),
+                (origin.clone(), fighter.clone(), long),
+            ];
+            let found = unloaded(&state, &active, &routes);
+            let held: Vec<Cargo> = routes
+                .iter()
+                .flat_map(|(origin, ship, path)| {
+                    CargoWindow::for_ship(
+                        &state,
+                        ContentStore::embedded(),
+                        POK,
+                        &player(),
+                        origin,
+                        ship,
+                        path,
+                    )
+                    .candidates
+                })
+                .collect();
+            for system in [&origin, &midpoint] {
+                let everything = loadable_by(
+                    &state,
+                    ContentStore::embedded(),
+                    POK,
+                    &player(),
+                    system,
+                    true,
+                );
+                let mut kinds: Vec<(CargoSource, Unit)> = Vec::new();
+                for cargo in everything.iter().filter(|cargo| {
+                    types
+                        .get(cargo.unit.type_id.as_str())
+                        .is_some_and(UnitType::consumes_capacity)
+                }) {
+                    let kind = (cargo.source.clone(), cargo.unit.clone());
+                    if !kinds.contains(&kind) {
+                        kinds.push(kind);
+                    }
+                }
+                for (source, kind) in kinds {
+                    let same = |cargo: &Cargo| {
+                        cargo.system == *system && cargo.source == source && cargo.unit == kind
+                    };
+                    let total = everything.iter().filter(|cargo| same(cargo)).count();
+                    let offered = held.iter().any(same);
+                    let sailing = routes
+                        .iter()
+                        .filter(|(start, ship, _)| {
+                            start == system && source == CargoSource::Space && *ship == kind
+                        })
+                        .count();
+                    let reported: usize = found
+                        .iter()
+                        .filter(|cargo| {
+                            cargo.system == *system && cargo.source == source && cargo.unit == kind
+                        })
+                        .map(|cargo| cargo.count)
+                        .sum();
+                    if offered {
+                        assert_eq!(reported, 0, "{kind:?} in {system} is offered and reported");
+                    } else {
+                        assert_eq!(
+                            reported,
+                            total - sailing,
+                            "{kind:?} in {system}: not offered, so every one that does not sail \
+                             is reported"
+                        );
+                    }
+                }
+            }
+            let at_midpoint: Vec<Unloadable> = found
+                .iter()
+                .filter(|cargo| cargo.system == midpoint)
+                .map(|cargo| cargo.reason)
+                .collect();
+            let expected = if token {
+                Unloadable::CommandToken
+            } else {
+                Unloadable::NoCapacity
+            };
+            assert!(!at_midpoint.is_empty(), "the passed system keeps its units");
+            assert!(
+                at_midpoint.iter().all(|reason| *reason == expected),
+                "{at_midpoint:?}"
+            );
+        }
+    }
+
     use ti4_content::galaxy::Galaxy;
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;

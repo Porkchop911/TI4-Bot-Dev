@@ -4,15 +4,25 @@
 //! The status phase's gain is not asked token by token: the redistribution that follows it
 //! decides where every token ends up, so [`TokenGain`] only counts what each seat gains and
 //! [`TokenRedistribution::with_gain`] asks once over the larger sheet. Leadership's gain, which no
-//! redistribution follows, asks a pool for each token in `strategy_cards::gain_tokens`.
+//! redistribution follows, asks a pool for each token in `strategy_cards::gain_tokens`. A game
+//! from before `RULES_STATUS_GAIN` asks the status phase's gain token by token too
+//! ([`TokenGain::pending_choice`]), and its redistribution comes after over what is placed.
 
+use ti4_content::ContentStore;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, TokenPool};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 
 /// The choice kind for placing a gained command token.
 pub const POOL_KIND: &str = "pool";
+
+/// The option id of a gained command token that goes into the tactic pool.
+pub const TACTIC_POOL: &str = "tactic_tokens";
+/// The option id of a gained command token that goes into the fleet pool.
+pub const FLEET_POOL: &str = "fleet_tokens";
+/// The option id of a gained command token that goes into the strategy pool.
+pub const STRATEGIC_POOL: &str = "strategic_tokens";
 
 /// Tokens each player gains at status step 81.5, before any modifier.
 ///
@@ -21,10 +31,31 @@ pub const POOL_KIND: &str = "pool";
 /// they modify the count handed to [`TokenGain::for_status`], not this constant.
 pub const STATUS_TOKENS: u32 = 2;
 
+/// A pool could not be selected from the state that was presented.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TokenGainError {
+    #[error("the token-gain window is complete")]
+    Complete,
+    #[error("player {0} is no longer seated")]
+    PlayerMissing(PlayerId),
+    #[error("option id {0:?} does not name a command-token pool")]
+    UnknownPool(String),
+    #[error(transparent)]
+    IllegalChoice(#[from] IllegalChoice),
+}
+
+/// The pools a gained token may enter, in the oracle's option order.
+const POOLS: [(&str, TokenPool, &str); 3] = [
+    ("tactic_tokens", TokenPool::Tactic, "tactic pool"),
+    ("fleet_tokens", TokenPool::Fleet, "fleet pool"),
+    ("strategic_tokens", TokenPool::Strategic, "strategy pool"),
+];
+
 /// What each seat gains at status step 81.5, in initiative order.
 ///
-/// The gained tokens are placed by the redistribution that follows (see
-/// [`TokenRedistribution::with_gain`]), so this holds counts, not a decision.
+/// From `RULES_STATUS_GAIN` the gained tokens are placed by the redistribution that follows (see
+/// [`TokenRedistribution::with_gain`]), so this holds counts, not a decision. An older game places
+/// them one at a time, each into a chosen pool ([`Self::pending_choice`], [`Self::resolve`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenGain {
     /// One entry per token owed, in resolution order.
@@ -50,11 +81,7 @@ impl TokenGain {
     /// Panics if a faction's printed status-phase token gain does not fit in an `i32`, which no
     /// corpus value can do.
     #[must_use]
-    pub fn for_status(
-        state: &GameState,
-        content: &ti4_content::ContentStore,
-        players: &[PlayerId],
-    ) -> Self {
+    pub fn for_status(state: &GameState, content: &ContentStore, players: &[PlayerId]) -> Self {
         let mut pending = Vec::new();
         for player in players {
             let count = crate::faction_abilities::status_tokens(
@@ -76,6 +103,65 @@ impl TokenGain {
     pub fn remaining_for(&self, player: &PlayerId) -> usize {
         self.pending.iter().filter(|next| *next == player).count()
     }
+
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// How many tokens the next player still has to place, this one included (before
+    /// `RULES_STATUS_GAIN`).
+    #[must_use]
+    pub fn remaining_for_next_player(&self) -> usize {
+        self.pending
+            .first()
+            .map_or(0, |next| self.remaining_for(next))
+    }
+
+    /// The choice for the next token, or `None` once every token is placed (before
+    /// `RULES_STATUS_GAIN`).
+    #[must_use]
+    pub fn pending_choice(&self) -> Option<Choice> {
+        let player = self.pending.first()?;
+        Some(Choice::new(
+            player.clone(),
+            "gain a command token into which pool",
+            POOLS
+                .iter()
+                .map(|(id, _, label)| ChoiceOption::labelled(*id, POOL_KIND, *label))
+                .collect(),
+        ))
+    }
+
+    /// Place the next token into the chosen pool (before `RULES_STATUS_GAIN`).
+    ///
+    /// # Errors
+    /// [`TokenGainError::Complete`] when no token remains, [`TokenGainError::IllegalChoice`]
+    /// when the answer was not offered, [`TokenGainError::UnknownPool`] when it does not name a
+    /// pool, and [`TokenGainError::PlayerMissing`] when the player has left the table.
+    pub fn resolve(
+        &mut self,
+        state: &mut GameState,
+        answer: ChoiceOption,
+    ) -> Result<TokenPool, TokenGainError> {
+        let choice = self.pending_choice().ok_or(TokenGainError::Complete)?;
+        let option = validate(&choice, answer)?;
+        let Some(pool) = POOLS
+            .iter()
+            .find(|(id, _, _)| *id == option.id)
+            .map(|(_, pool, _)| *pool)
+        else {
+            return Err(TokenGainError::UnknownPool(option.id));
+        };
+        if state.player(&choice.player).is_none() {
+            return Err(TokenGainError::PlayerMissing(choice.player));
+        }
+        // 20.4a: a player with no token in reinforcements cannot gain one. The offer still
+        // happens -- it is the same decision either way -- and the gain is what comes up empty.
+        state.gain_token(&choice.player, pool, 1);
+        self.pending.remove(0);
+        Ok(pool)
+    }
 }
 
 /// Display-only facts for a command-token decision (see [`Choice::details`]): the pools as they
@@ -89,30 +175,22 @@ impl TokenGain {
 pub fn with_pool_details(
     choice: Choice,
     state: &GameState,
+    content: &ContentStore,
     mode: &str,
     tokens_to_place: Option<usize>,
 ) -> Choice {
-    let (tactic, fleet, strategic) = state.player(&choice.player).map_or((0, 0, 0), |seat| {
-        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
-    });
+    let pools = CommandPools::of(state, content, &choice.player);
+    let CommandPools {
+        tactic,
+        fleet,
+        strategic,
+        ..
+    } = pools;
     let reinforcements = state.tokens_in_reinforcements(&choice.player);
     let choice = choice
         .detailed("kind", "command_tokens")
         .detailed("mode", mode)
-        .detailed(
-            "pools",
-            serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
-        );
-    // Letnev's Armada (`faction_abilities::fleet_supply`): two more non-fighter ships per system
-    // than the fleet pool allows. Display only; the panel shows it next to the fleet pool.
-    let choice = if state
-        .player(&choice.player)
-        .is_some_and(|seat| seat.faction.as_str() == "letnev")
-    {
-        choice.detailed("fleet_supply_bonus", 2)
-    } else {
-        choice
-    };
+        .hinted("pools", &pools);
     match (mode, tokens_to_place) {
         ("gain" | "buy", Some(count)) => choice
             .detailed("reinforcements", reinforcements)
@@ -131,6 +209,111 @@ pub fn with_pool_details(
             .detailed("reinforcements", reinforcements)
             .detailed("total", tactic + fleet + strategic),
         _ => choice.detailed("reinforcements", reinforcements),
+    }
+}
+
+/// The three pools of a command sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommandPools {
+    pub tactic: i32,
+    pub fleet: i32,
+    pub strategic: i32,
+    /// The non-fighter ships per system that the seat may keep beyond its fleet pool
+    /// ([`crate::faction_abilities::armada_bonus`]: Letnev's Armada, 2). Left out when 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<i32>"))]
+    pub fleet_supply_bonus: i32,
+}
+
+const fn is_zero(count: &i32) -> bool {
+    *count == 0
+}
+
+impl CommandPools {
+    /// The pools of `player` as they stand now; all 0 for a player who is not seated.
+    #[must_use]
+    pub fn of(state: &GameState, content: &ContentStore, player: &PlayerId) -> Self {
+        state.player(player).map_or(
+            Self {
+                tactic: 0,
+                fleet: 0,
+                strategic: 0,
+                fleet_supply_bonus: 0,
+            },
+            |seat| Self {
+                tactic: seat.tactic_tokens,
+                fleet: seat.fleet_tokens,
+                strategic: seat.strategic_tokens,
+                fleet_supply_bonus: crate::faction_abilities::armada_bonus(state, content, player),
+            },
+        )
+    }
+}
+
+/// The option id of a gained command token that goes into each pool ([`TACTIC_POOL`],
+/// [`FLEET_POOL`], [`STRATEGIC_POOL`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PoolOptions {
+    pub tactic: String,
+    pub fleet: String,
+    pub strategic: String,
+}
+
+/// The look-ahead of a gain and the redistribution after it (`details.redistribution` of
+/// Warfare's recall): what a client needs to plan both as one screen (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RedistributionHints {
+    /// The pools as they stand now, before the gain.
+    pub pools: CommandPools,
+    pub gained: i32,
+    /// The tokens that the redistribution arranges: the pools of now and the gained ones.
+    pub total: i32,
+    /// The option of the gain into each pool.
+    pub gain: PoolOptions,
+    /// The id of every arrangement that the redistribution will offer (`tactic|fleet|strategic`).
+    pub arrangements: Vec<String>,
+}
+
+/// Display only: the gain of `gained` command tokens and the redistribution that follows it
+/// (Warfare's recall); see [`RedistributionHints`].
+#[must_use]
+pub fn redistribution_after_gain(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    gained: i32,
+) -> RedistributionHints {
+    let pools = CommandPools::of(state, content, player);
+    let total = pools.tactic + pools.fleet + pools.strategic + gained;
+    RedistributionHints {
+        pools,
+        gained,
+        total,
+        gain: PoolOptions {
+            tactic: TACTIC_POOL.to_owned(),
+            fleet: FLEET_POOL.to_owned(),
+            strategic: STRATEGIC_POOL.to_owned(),
+        },
+        arrangements: distribution_options(total, fleet_floor(state, player))
+            .into_iter()
+            .map(|option| option.id)
+            .collect(),
+    }
+}
+
+/// The least fleet pool that a redistribution of `player` offers: see
+/// [`TokenRedistribution::fleet_floor`].
+fn fleet_floor(state: &GameState, player: &PlayerId) -> i32 {
+    let letnev = state
+        .player(player)
+        .is_some_and(|seat| seat.faction.as_str() == "letnev");
+    if letnev && state.rules_version >= ti4_model::state::RULES_LETNEV_FLEET_POOL {
+        0
+    } else {
+        2
     }
 }
 
@@ -257,14 +440,7 @@ impl TokenRedistribution {
     /// limit is the pool plus two), so the rules-allowed minimum of none is offered from
     /// `RULES_LETNEV_FLEET_POOL` on.
     fn fleet_floor(&self, state: &GameState) -> i32 {
-        let letnev = state
-            .player(&self.player)
-            .is_some_and(|seat| seat.faction.as_str() == "letnev");
-        if letnev && state.rules_version >= ti4_model::state::RULES_LETNEV_FLEET_POOL {
-            0
-        } else {
-            2
-        }
+        fleet_floor(state, &self.player)
     }
 
     /// The one choice this window ever asks, built fresh from `state`. `None` once resolved, or
@@ -452,7 +628,7 @@ pub fn remove_creuss_token(state: &mut GameState, kind: &str) -> Option<SystemId
 #[must_use]
 pub fn wormhole_generator_destinations(
     state: &GameState,
-    content: &ti4_content::ContentStore,
+    content: &ContentStore,
     sources: ti4_model::content_types::SourceSet,
     galaxy: &ti4_content::galaxy::Galaxy,
     player: &PlayerId,
@@ -488,9 +664,7 @@ pub fn wormhole_generator_destinations(
 
 #[cfg(test)]
 mod tests {
-    use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
-    use ti4_model::state::TokenPool;
 
     use super::*;
     use crate::setup::start_game;
@@ -515,7 +689,7 @@ mod tests {
             "gain a command token into which pool",
             vec![ChoiceOption::new("tactic_tokens", POOL_KIND)],
         );
-        let choice = with_pool_details(ask, &state, "gain", Some(2));
+        let choice = with_pool_details(ask, &state, ContentStore::embedded(), "gain", Some(2));
         assert_eq!(choice.details["kind"], "command_tokens");
         assert_eq!(choice.details["mode"], "gain");
         assert_eq!(choice.details["tokens_to_place"], 2);
@@ -542,6 +716,7 @@ mod tests {
         let choice = with_pool_details(
             window.pending_choice(&state).unwrap(),
             &state,
+            ContentStore::embedded(),
             "redistribute",
             None,
         );
@@ -683,28 +858,33 @@ mod tests {
     }
 
     #[test]
-    fn only_letnev_reports_the_armada_fleet_supply_bonus() {
+    fn only_letnev_reports_the_armada_fleet_supply_bonus_in_the_pools() {
         let (mut state, players) = game();
         state.player_mut(&players[0]).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&players[1]).unwrap().faction = ti4_model::id::FactionId::new("sol");
         let choice = |player: &PlayerId| {
             let window = TokenRedistribution::new(player.clone());
             with_pool_details(
                 window.pending_choice(&state).unwrap(),
                 &state,
+                ContentStore::embedded(),
                 "redistribute",
                 None,
             )
         };
+        let letnev = choice(&players[0]);
+        let pools = letnev.hint::<CommandPools>("pools").expect("the pools");
+        assert_eq!(pools.fleet_supply_bonus, 2);
+        assert_eq!(letnev.details["pools"]["fleet_supply_bonus"], 2);
+        assert!(letnev.details.get("fleet_supply_bonus").is_none());
+        let other = choice(&players[1]);
         assert_eq!(
-            choice(&players[0]).details.get("fleet_supply_bonus"),
-            Some(&serde_json::json!(2))
+            other
+                .hint::<CommandPools>("pools")
+                .map(|pools| pools.fleet_supply_bonus),
+            Some(0)
         );
-        assert!(
-            choice(&players[1])
-                .details
-                .get("fleet_supply_bonus")
-                .is_none()
-        );
+        assert!(other.details["pools"].get("fleet_supply_bonus").is_none());
     }
 
     #[test]

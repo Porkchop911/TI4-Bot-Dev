@@ -67,6 +67,7 @@ pub mod observation;
 pub mod opening;
 pub mod payment;
 pub mod phase;
+pub mod phrases;
 pub mod planets;
 pub mod preview;
 pub mod production;
@@ -119,7 +120,7 @@ pub use combat::{
     space_cannon_offense,
 };
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
-pub use dice::{Dice, Roll};
+pub use dice::{Dice, Roll, RollSubject};
 pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};
 pub use fingerprint::{CanonicalHash, CanonicalHashVersion, decision_hash, event_hash};
 pub use game::{Game, GameError, RunError, StepResult};

@@ -15,7 +15,7 @@ import { TechBenefitsTooltipSection } from "./TechBenefitsOverlay.tsx";
 import { UnitStatLine } from "../UnitInfo.tsx";
 import { getUnitDisplayName } from "../UnitIcon.tsx";
 import { describeAnomaly } from "../../presentation/anomalyRules.ts";
-import type { PlanetBoost } from "../../presentation/planetValues.ts";
+import type { PlanetBoost } from "@ti4/shared/planets/values.ts";
 import { PlanetValuePair } from "../PlanetValueIcons.tsx";
 
 export interface HoveredTileInfo {

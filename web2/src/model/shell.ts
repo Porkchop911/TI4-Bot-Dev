@@ -2,8 +2,9 @@ import type { ActionView } from "./action";
 import type { BoardView, ExplorationDeck } from "./board";
 import type { OfferView, Rich, SeatId, SeatView } from "./core";
 import type { Intent } from "./intents";
+import type { LogView } from "./log";
 
-export type Workspace = "live" | "draft" | "history";
+export type Workspace = "live" | "draft";
 
 export interface ToolbarView {
   round: number;
@@ -15,7 +16,6 @@ export interface ToolbarView {
   workspace: Workspace;
   /** False when the viewer may not draft, with the reason. */
   draftLocked: string | null;
-  past: { label: string } | null;
   /** Controls of the private draft. Null outside the draft. */
   draft: { canUndo: boolean; canRedo: boolean; canApply: boolean; applyHint: string } | null;
 }
@@ -79,9 +79,21 @@ export interface PlayerPickView {
   chosen: SeatId[];
 }
 
+export type PlayerSort = "initiative" | "vp";
+
 export interface PlayerTableView {
   pick: PlayerPickView | null;
+  /** In the order of the phase: by initiative in the action phase, by victory points otherwise. */
   rows: PlayerRowView[];
+  /** The order of the rows when the viewer has not chosen one. */
+  sort: PlayerSort;
+  /**
+   * The seats by initiative: the engine's order of the turns in the action phase, otherwise by the
+   * lowest strategy card that a seat holds. A seat with no card is not in it.
+   */
+  initiative: SeatId[];
+  /** The turn of the action phase, from 1; 0 outside the action phase. */
+  turn: number;
   freeCards: { number: number; name: string; tradeGoods: number }[];
 }
 
@@ -298,6 +310,39 @@ export interface ApplyView {
   note: string;
 }
 
+/**
+ * A turn or a phase of the Log, opened: what its action showed, read-only. The screen is in the
+ * history mode while it is open: the toolbar says which point of the game it shows, and nothing on
+ * the screen is a control of the live game.
+ */
+export interface InspectView {
+  /** The id of the turn (`LogTurnView.id`) or of the phase (`LogPhaseView.id`). */
+  turn: string;
+  action: ActionView;
+  /** Which point the screen shows, in the toolbar between "‹" and "›": "Round 1 · Turn 5 · Mahact", "Round 1 · Status phase". */
+  title: string;
+  /** What the board shows: "Round 1 · Turn 5 · after Movement", "Round 1 · end of the Status phase". */
+  stamp: string;
+  /** The rows of the Log before and after it that open. Null: none. */
+  previous: string | null;
+  next: string | null;
+  /**
+   * Watch: the turn that is played now, read-only, over the live board. The screen stays in the
+   * present: no history mode, and the viewer's decision keeps its controls.
+   */
+  watch: boolean;
+}
+
+/**
+ * What another seat does now, on a line over the board: "Hacan · Tactical · Vefut II · #20 ·
+ * Space combat, round 2". A tap on it opens Watch.
+ */
+export interface LiveLineView {
+  /** The turn or the phase that is played now (`LogTurnView.id`, `LogPhaseView.id`). */
+  turn: string;
+  text: string;
+}
+
 export interface ShellView {
   seats: Record<SeatId, SeatView>;
   /** Colours the frame: a private draft, the live game, or a complete action. */
@@ -307,14 +352,42 @@ export interface ShellView {
   board: BoardView;
   action: ActionView;
   reference: ReferenceView;
+  /** What the seats did since the last turn of the viewer, from the public events of the game. */
+  log: LogView;
+  /**
+   * A turn of the Log that the viewer opened: its action read-only, in the place of the step
+   * sheet, and the board as it was at its open step (`board` is that board then). Null: none.
+   */
+  inspect?: InspectView | null;
+  /** What another seat does now: the line over the board. Null: nobody else acts. */
+  live?: LiveLineView | null;
   /** What "Apply to Live" will commit. Null when there is nothing to apply. */
   apply: ApplyView | null;
-  /** A list row to scroll into view, after the player chose its counterpart on the board. */
-  reveal: string | null;
   toast: { id: number; text: string } | null;
-  announcement: string;
   /** The viewer has a decision open: a question of the game, or a draft. */
   asked: boolean;
+  /**
+   * The game is asked what follows from a draft of the viewer and has not answered yet: the
+   * screen has nothing to decide, and the next step of the viewer is not known.
+   */
+  settling?: boolean;
+  /**
+   * The viewer's answer to the open question is sent, and the game has not answered it yet: the
+   * question on the screen is no longer open, and the next step of the viewer is not known.
+   */
+  answered?: boolean;
+  /**
+   * Changes each time the game answers the viewer: a new question of the viewer (also after an
+   * undo), the game's answer to the draft, an answer that was refused or lost. Absent: the game
+   * does not tell.
+   */
+  reply?: number;
+  /**
+   * Changes with each new question of the viewer: a new open choice of the game (also after an
+   * undo or a plan). An answer to a draft, a refused answer and what is staged do not change it.
+   * Absent: the game does not tell.
+   */
+  question?: number;
 }
 
 /**
@@ -332,7 +405,7 @@ export interface Capabilities {
   save: boolean;
 }
 
-/** The only thing the game shell needs. The mock implements it now; a websocket session will later. */
+/** The only thing the game shell needs: `useLiveSession` makes it, over any transport. */
 export interface GameSession {
   view: ShellView;
   dispatch: (intent: Intent) => void;

@@ -1,4 +1,5 @@
 // The board: one tile for each system on the map, and the inspector of one system.
+import { planetValuesNow, techSpecialtiesNow } from "@ti4/shared/planets/values.ts";
 import type {
   Anomaly,
   BoardTaskView,
@@ -14,7 +15,9 @@ import type { KeptOdds } from "../movementOdds";
 import type { ProductionDraft } from "../productionDraft";
 import type {
   BoardTileView,
+  Catalog,
   ExplorationCatalog,
+  FleetStanding,
   InvasionFacts,
   MovementFacts,
   PlacedUnitView,
@@ -23,7 +26,7 @@ import type {
   SystemView,
 } from "../wire";
 import { planetTraits, printedTraits } from "./exploration";
-import { landingTask, selectLanding, withLandings } from "./invasion";
+import { type GroundOddsKept, landingTask, selectLanding, withLandings } from "./invasion";
 import { selectArrival, selectMovementBoard, selectOrigin, withMovement } from "./movement";
 import {
   type Stage,
@@ -89,16 +92,20 @@ function tileView(
     planets: (tile.planets ?? []).slice(0, 3).map((planet) => {
       const units = onPlanet(system, planet.id);
       const types = units.map((unit) => unitType(unit.unit_type));
+      const now = system?.planets[planet.id];
       return {
         id: planet.id,
         name: planet.label,
-        resources: planet.resources,
-        influence: planet.influence,
-        owner: system?.planets[planet.id]?.controlled_by ?? null,
-        tech: TECH_COLORS[planet.tech_specialties?.[0] ?? ""] ?? null,
+        ...planetValuesNow(planet, now),
+        owner: now?.controlled_by ?? null,
+        // The specialty now: an attachment can give a planet one.
+        tech:
+          TECH_COLORS[techSpecialtiesNow(planet.tech_specialties, now)[0]?.toUpperCase() ?? ""] ??
+          null,
         groundForces: types.filter((type) => type && isGroundForce(type)).length,
         planetaryShield: types.includes("pds"),
         traits: traits(planet),
+        exhausted: !!system?.planets[planet.id]?.exhausted,
       };
     }),
     control: fleets.length > 1 ? "contested" : (fleets[0]?.seat ?? null),
@@ -113,23 +120,26 @@ function inspector(
   system: SystemView | undefined,
   viewer: string | null,
   traits: Traits,
+  printed: Catalog | null = null,
 ): InspectorView {
   const ships = shipsIn(system);
   const space: InspectorRowView[] = seatsOf(ships).map((seat) => ({
     seat,
-    force: force(ships.filter((unit) => unit.owner === seat)),
+    force: force(
+      ships.filter((unit) => unit.owner === seat),
+      printed,
+    ),
   }));
   const planets = (tile.planets ?? []).map((planet): InspectorRowView => {
     const units = onPlanet(system, planet.id);
     return {
       planet: {
         name: planet.label,
-        resources: planet.resources,
-        influence: planet.influence,
+        ...planetValuesNow(planet, system?.planets[planet.id]),
         owner: system?.planets[planet.id]?.controlled_by ?? null,
         traits: traits(planet),
       },
-      force: force(units),
+      force: force(units, printed),
       notes: system?.planets[planet.id]?.exhausted ? [{ text: "Exhausted", tone: "muted" }] : [],
     };
   });
@@ -207,7 +217,13 @@ export function selectBoard(
     odds?: KeptOdds | null;
   } | null = null,
   /** The open landings: the planets of the active system are the choice, and it opens them. */
-  landing: { facts: InvasionFacts; draft: LandingDraft; chosen: number | null } | null = null,
+  landing: {
+    facts: InvasionFacts;
+    draft: LandingDraft;
+    chosen: number | null;
+    /** The last answers of the engine for the odds of the ground combats. */
+    odds?: GroundOddsKept;
+  } | null = null,
   /** The printed names and texts of the attachments. */
   catalog: ExplorationCatalog | null = null,
   /** The open production: the active system opens the build, then the planets pay. */
@@ -215,7 +231,13 @@ export function selectBoard(
     facts: ProductionFacts;
     draft: ProductionDraft;
     stage: Stage;
+    /** The fleet supply and the capacity after the build, as the engine read them. */
+    standing?: FleetStanding | null;
   } | null = null,
+  /** The viewer can start a tactical action now: a system in the inspector can be activated. */
+  activates = false,
+  /** The printed names of the units. Without it a unit is named by its base unit. */
+  printed: Catalog | null = null,
 ): BoardView {
   const traits = planetTraits(update, catalog);
   const viewer = viewerSeat(update);
@@ -233,27 +255,56 @@ export function selectBoard(
       movement.draft,
       open?.system_id ?? null,
       movement.handled,
+      printed,
     );
   // A sheet of a task at a system has what is in it, as the inspector has.
   const details = (tile: BoardTileView) => {
-    const { facts, notes, rows } = inspector(tile, board.systems[tile.system_id], viewer, traits);
+    const { facts, notes, rows } = inspector(
+      tile,
+      board.systems[tile.system_id],
+      viewer,
+      traits,
+      printed,
+    );
     return { facts, notes, rows };
   };
   const fleet =
     movement &&
-    selectOrigin(update, movement.facts, movement.draft, open?.system_id ?? null, movement.handled);
+    selectOrigin(
+      update,
+      movement.facts,
+      movement.draft,
+      open?.system_id ?? null,
+      movement.handled,
+      printed,
+    );
   const origin = fleet && open ? { ...fleet, details: details(open) } : fleet;
   const tiles = map.map((tile) => tileView(tile, board.systems[tile.system_id], viewer, traits));
   // The landings with their controls take the place of the inspector of the active system.
   const sheet =
     landing && open?.system_id === landing.facts.active
-      ? selectLanding(update, landing.facts, landing.draft, landing.chosen, catalog)
+      ? selectLanding(
+          update,
+          landing.facts,
+          landing.draft,
+          landing.chosen,
+          catalog,
+          landing.odds ?? {},
+          printed,
+        )
       : null;
   // The build with its controls takes the place of the inspector too, while it is chosen.
   const build =
     production && production.stage === "build" && open?.system_id === production.facts.system
       ? {
-          ...selectBuild(update, production.facts, production.draft, "build"),
+          ...selectBuild(
+            update,
+            production.facts,
+            production.draft,
+            "build",
+            printed,
+            production.standing ?? null,
+          ),
           details: details(open),
         }
       : null;
@@ -295,7 +346,13 @@ export function selectBoard(
     inspector:
       open && !origin && !sheet && !build
         ? {
-            ...inspector(open, board.systems[open.system_id], viewer, traits),
+            ...inspector(open, board.systems[open.system_id], viewer, traits, printed),
+            // The command token of the viewer is here: the inspector says it, with no button.
+            activate: !activates
+              ? null
+              : viewer !== null && board.systems[open.system_id]?.command_tokens.includes(viewer)
+                ? "token"
+                : "allowed",
             ...(movement && open.system_id === movement.facts.active
               ? {
                   arriving: selectArrival(
@@ -303,6 +360,7 @@ export function selectBoard(
                     movement.facts,
                     movement.draft,
                     movement.odds ?? null,
+                    printed,
                   ),
                 }
               : {}),
@@ -319,9 +377,13 @@ export function selectBoard(
           ? production.stage === "build"
             ? [production.facts.system]
             : paymentSystems(update, production.facts)
-          : task
-            ? (task.highlight ?? Object.keys(task.values))
-            : [],
+          : task?.target === "planet"
+            ? map
+                .filter((tile) => (tile.planets ?? []).some((planet) => planet.id in task.values))
+                .map((tile) => tile.system_id)
+            : task
+              ? (task.highlight ?? Object.keys(task.values))
+              : [],
     // The board is framed again for each movement: its systems are the task. The landings are
     // in the active system, which the movement had in view: the board stays as it is.
     fitKey: movement

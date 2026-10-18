@@ -63,4 +63,14 @@ hit?: HitDetail,
  * recomputed from the state and the event, adds no information a replay needs, and is only
  * ever sent to the seat that is asked (the pending choice reaches no one else).
  */
-previews?: Array<EffectPreview>, };
+previews?: Array<EffectPreview>, 
+/**
+ * What the action card that this window reacts to will do when it resolves, for display
+ * only: the card already played (the trigger of the window), not one that the window offers,
+ * so its `option` is empty. `None` when the window answers no played card, or the engine has
+ * no preview of that card.
+ *
+ * Like [`DecisionContext::previews`], deliberately not part of [`DecisionContext::canonical`]
+ * or the replay fingerprint, stripped from recorded decisions, additive and optional.
+ */
+pending_effect?: EffectPreview, };

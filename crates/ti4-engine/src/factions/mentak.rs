@@ -23,6 +23,7 @@ use super::{CombatUnit, FactionModule, Hooks};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice};
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::event::Event;
+use crate::phrases::{Phrase, Subject, Worded};
 use crate::production::Spend;
 use crate::timing::{Ability, Relation, TimingContext, TimingError};
 use ti4_model::id::UnitTypeId;
@@ -104,7 +105,39 @@ fn ask_among(
     subtype: &str,
     options: Vec<ChoiceOption>,
 ) -> Result<ChoiceOption, IllegalChoice> {
-    let choice = Choice::new(player.clone(), prompt, options).contextualized(DecisionContext::new(
+    let choice = Choice::new(player.clone(), prompt, options);
+    ask_choice(context, player, choice, ability, subtype)
+}
+
+/// [`ask_among`] for a question whose labels name seats or notes by id: `prompt` and `worded`
+/// say what they name (`details.phrases`).
+fn ask_phrased(
+    context: &mut TimingContext<'_>,
+    player: &PlayerId,
+    prompt: &Worded,
+    ability: &str,
+    subtype: &str,
+    kind: &str,
+    worded: &[(String, Worded)],
+) -> Result<ChoiceOption, IllegalChoice> {
+    let choice = Choice::new(
+        player.clone(),
+        prompt.label(),
+        crate::phrases::options(kind, worded),
+    )
+    .phrased_prompt(prompt)
+    .phrased_options(worded);
+    ask_choice(context, player, choice, ability, subtype)
+}
+
+fn ask_choice(
+    context: &mut TimingContext<'_>,
+    player: &PlayerId,
+    choice: Choice,
+    ability: &str,
+    subtype: &str,
+) -> Result<ChoiceOption, IllegalChoice> {
+    let choice = choice.contextualized(DecisionContext::new(
         player.clone(),
         DecisionSource::FactionAbility(ability.to_owned()),
         subtype,
@@ -511,35 +544,37 @@ fn pillage_effect(
 ) -> Result<(), TimingError> {
     let before_log = context.table.log.clone();
     let targets = pillage_targets(event, context.state, context.galaxy, owner);
-    let mut options = Vec::new();
+    let mut worded = Vec::new();
     for target in &targets {
-        options.push(ChoiceOption::labelled(
+        let from =
+            |template: &str| Phrase::of(template).with("target", target, Subject::seat(target));
+        worded.push((
             format!("trade_good|{target}"),
-            "pillage",
-            format!("take 1 trade good from {target}"),
+            from("take 1 trade good from {target}"),
         ));
         if context
             .state
             .player(target)
             .is_some_and(|seat| seat.commodities > 0)
         {
-            options.push(ChoiceOption::labelled(
+            worded.push((
                 format!("commodity|{target}"),
-                "pillage",
-                format!("take 1 commodity from {target}"),
+                from("take 1 commodity from {target}"),
             ));
         }
     }
+    let mut options = crate::phrases::options("pillage", &worded);
     let chosen = match options.len() {
         0 => return Ok(()),
         1 => options.remove(0),
-        _ => ask_among(
+        _ => ask_phrased(
             context,
             owner,
-            "Pillage: take 1 trade good or commodity".to_owned(),
+            &Phrase::of("Pillage: take 1 trade good or commodity"),
             "pillage",
             "pillage_take",
-            options,
+            "pillage",
+            &worded,
         )
         .map_err(illegal)?,
     };
@@ -1092,47 +1127,64 @@ fn commander(owner_name: &str, seat: &PlayerId) -> Ability {
         Relation::After,
         Arc::new(move |event, _resolver, context| {
             let targets = commander_targets(event, context.state, &owner);
-            let target = match targets.len() {
-                0 => return Ok(()),
-                1 => targets[0].clone(),
-                _ => {
-                    let options = targets
-                        .iter()
-                        .map(|who| {
-                            ChoiceOption::labelled(
-                                who.to_string(),
-                                "commander",
-                                format!("force {who} to give you a promissory note"),
-                            )
-                        })
-                        .collect();
-                    let answer = ask_among(
-                        context,
-                        &owner,
-                        "S'ula Mentarion: choose an opponent".to_owned(),
-                        COMMANDER,
-                        "commander_opponent",
-                        options,
-                    )
-                    .map_err(illegal)?;
-                    PlayerId::new(answer.id)
-                }
-            };
+            let target =
+                match targets.len() {
+                    0 => return Ok(()),
+                    1 => targets[0].clone(),
+                    _ => {
+                        let worded: Vec<(String, Worded)> =
+                            targets
+                                .iter()
+                                .map(|who| {
+                                    (
+                                        who.to_string(),
+                                        Phrase::of("force {who} to give you a promissory note")
+                                            .with("who", who, Subject::seat(who)),
+                                    )
+                                })
+                                .collect();
+                        let answer = ask_phrased(
+                            context,
+                            &owner,
+                            &Phrase::of("S'ula Mentarion: choose an opponent"),
+                            COMMANDER,
+                            "commander_opponent",
+                            "commander",
+                            &worded,
+                        )
+                        .map_err(illegal)?;
+                        PlayerId::new(answer.id)
+                    }
+                };
             if !targets.contains(&target) {
                 return Ok(());
             }
             let hand = notes_in_hand(context.state, &target, &owner);
-            let options = hand
+            let worded: Vec<(String, Worded)> = hand
                 .iter()
-                .map(|note| ChoiceOption::labelled(note.clone(), "give_note", note.clone()))
+                .map(|note| {
+                    (
+                        note.clone(),
+                        Phrase::of("{note}").with(
+                            "note",
+                            note,
+                            Subject::note(context.content, note),
+                        ),
+                    )
+                })
                 .collect();
-            let answer = ask_among(
+            let answer = ask_phrased(
                 context,
                 &target,
-                format!("Give {owner} 1 promissory note from your hand"),
+                &Phrase::of("Give {owner} 1 promissory note from your hand").with(
+                    "owner",
+                    &owner,
+                    Subject::seat(&owner),
+                ),
                 COMMANDER,
                 "commander_give_note",
-                options,
+                "give_note",
+                &worded,
             )
             .map_err(illegal)?;
             if hand.contains(&answer.id) {
@@ -1339,10 +1391,18 @@ mod tests {
         event_type: &str,
         payload: &[(&str, serde_json::Value)],
     ) -> Result<(), String> {
+        emit_on(state, &mut scripted(answers), event_type, payload)
+    }
+
+    fn emit_on(
+        state: &mut GameState,
+        table: &mut crate::choice::Table,
+        event_type: &str,
+        payload: &[(&str, serde_json::Value)],
+    ) -> Result<(), String> {
         let mut resolver = armed_resolver(state);
-        let mut table = scripted(answers);
         let galaxy = crate::fixtures::plain_hub().galaxy;
-        with_context(state, DEFAULT, Some(&galaxy), &mut table, |ctx| {
+        with_context(state, DEFAULT, Some(&galaxy), table, |ctx| {
             let payload = payload
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), value.clone()))
@@ -2279,6 +2339,53 @@ mod tests {
         )
         .unwrap();
         assert_eq!(state.promissory_notes.get(&note), Some(&a()));
+    }
+
+    /// The opponent's question names each note and the seat that takes it (`details.phrases`).
+    #[test]
+    fn the_commanders_question_names_the_notes_and_the_taker() {
+        let (mut state, system) = arena();
+        let content = ContentStore::embedded();
+        crate::promissory::deal(&mut state, content, DEFAULT);
+        set_status(&mut state, &a(), COMMANDER, LeaderStatus::Unlocked);
+        let (mut table, seen) = crate::phrases::capturing(&[COMMANDER_WINDOW]);
+        emit_on(&mut state, &mut table, "SPACE_COMBAT_WON", &won(&system)).unwrap();
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Give "))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        let prompt = hints.prompt.expect("the prompt names the taker");
+        assert_eq!(prompt.refs["owner"], crate::phrases::Subject::seat(&a()));
+        let note = crate::promissory::note_id("ps", "sol");
+        assert_eq!(hints.options[&note].text, "{note}");
+        assert_eq!(
+            hints.options[&note].refs["note"],
+            crate::phrases::Subject::note(content, &note)
+        );
+    }
+
+    /// Each option of Pillage names the seat that it takes from.
+    #[test]
+    fn pillage_names_the_seat_of_each_option() {
+        let (mut state, _) = neighbours();
+        state.player_mut(&b()).unwrap().trade_goods = 3;
+        state.player_mut(&b()).unwrap().commodities = 2;
+        let (mut table, seen) = crate::phrases::capturing(&[PILLAGE_GAIN]);
+        emit_on(&mut state, &mut table, "TRADE_GOODS_GAINED", &gained("b")).unwrap();
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Pillage:"))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        for id in ["trade_good|b", "commodity|b"] {
+            assert_eq!(
+                hints.options[id].refs["target"],
+                crate::phrases::Subject::seat(&b())
+            );
+        }
     }
 
     #[test]

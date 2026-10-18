@@ -11,10 +11,8 @@ const row = (key: string, option: string): MenuRowView => ({
 
 const view = (interrupt: boolean): FlowActionView => ({
   kind: "flow",
-  title: "",
-  subtitle: "",
+  context: null,
   badge: null,
-  past: null,
   tabs: [],
   selected: 0,
   current: null,
@@ -26,10 +24,11 @@ const view = (interrupt: boolean): FlowActionView => ({
   blocks: [{ kind: "menu", rows: [row("1", "below"), row("2", "below")] }],
   interrupt: interrupt
     ? {
-        eyebrow: "Reaction",
+        label: "Reaction",
+        source: null,
+        question: null,
         link: [],
         blocks: [{ kind: "menu", rows: [row("1", "window")] }],
-        actions: [],
       }
     : null,
   closing: [],

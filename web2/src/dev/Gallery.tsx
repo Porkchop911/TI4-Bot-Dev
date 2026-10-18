@@ -3,10 +3,8 @@ import {
   Badge,
   Button,
   Card,
-  CardBody,
   CardHeading,
   CardText,
-  Hint,
   ChipTabs,
   Counter,
   Die,
@@ -19,9 +17,7 @@ import {
   Kbd,
   ListRow,
   Menu,
-  Offer,
   Pill,
-  Quantity,
   Segmented,
   Select,
   StepTabs,
@@ -72,7 +68,6 @@ export function Gallery() {
                   Primary
                 </Button>
                 <Button tone="quiet">Quiet</Button>
-                <Button tone="demo">Simulate (demo)</Button>
                 <Button tone="primary" disabled>
                   Disabled
                 </Button>
@@ -161,12 +156,6 @@ export function Gallery() {
                   controls={<Counter value={count} max={4} label="Carrier" onChange={setCount} />}
                 />
                 <ListRow
-                  icon="dreadnought"
-                  title="Dreadnought"
-                  subtitle="Placed in the space area"
-                  controls={<Quantity count={1} />}
-                />
-                <ListRow
                   icon="cruiser"
                   title="Cruiser"
                   subtitle="No longer at Jord"
@@ -194,7 +183,7 @@ export function Gallery() {
               <Card>
                 <CardHeading title="Empty card" />
                 <CardText>Nothing produced.</CardText>
-                <CardBody>
+                <div className="px-3.5 py-3">
                   <ChipTabs
                     label="Rolls"
                     options={[
@@ -205,7 +194,7 @@ export function Gallery() {
                     value={view}
                     onChange={setView}
                   />
-                </CardBody>
+                </div>
               </Card>
               <SummaryGrid>
                 <SummaryStat eyebrow="Active system" title="#27 Starpoint">
@@ -222,16 +211,6 @@ export function Gallery() {
               </InlineNote>
               <InlineNote tone="error">Cargo exceeds transport capacity by 1.</InlineNote>
               <InlineNote tone="quiet">No ground combat expected here.</InlineNote>
-              <Offer
-                eyebrow="Action card · Start of a combat round"
-                title="Morale Boost"
-                hint={
-                  <Hint label="About Morale Boost">
-                    Apply +1 to the result of each of your unit’s combat rolls during this round.
-                  </Hint>
-                }
-                actions={<Button>Play Morale Boost</Button>}
-              />
               <Gauges>
                 <Gauge label="Fleet supply" used={2} total={3} />
                 <Gauge label="Transport capacity" used={5} total={4} />

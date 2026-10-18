@@ -2258,10 +2258,9 @@ mod tests {
             .iter()
             .enumerate()
             .filter(|(_, (system, ..))| system == &origin)
-            .filter(|(_, (_, i, ..))| {
+            .rfind(|(_, (_, i, ..))| {
                 state.ships_of(&b(), &origin)[*i].type_id.as_str() == "carrier"
             })
-            .last()
             .map(|(n, _)| n)
             .expect("a carrier is slower");
         emit(

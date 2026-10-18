@@ -52,6 +52,7 @@ use super::hooks_movement::{MovementHooks, PassSite};
 use super::{FactionModule, Hooks};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::phrases::{Phrase, Subject};
 use crate::timing::{Ability, Relation, TimingContext, TimingError};
 
 /// The faction alias; also the faction name in promissory note ids (`spynet:yssaril`).
@@ -997,19 +998,27 @@ fn kyver_decisions(
     let mut decided = Vec::new();
     for (target, card) in shown {
         let name = crate::action_cards::name_of(context.content, &card);
+        let named = |template: &str| {
+            Phrase::of(template)
+                .with("target", &target, Subject::seat(&target))
+                .with("card", &name, Subject::action_card(&card))
+        };
+        let (prompt, take, discard) = (
+            named("Kyver: {target} showed {card}"),
+            named("take {card} from {target}"),
+            named("force {target} to discard 3 random action cards"),
+        );
         let choice = Choice::new(
             player.clone(),
-            format!("Kyver: {target} showed {name}"),
+            prompt.label(),
             vec![
-                ChoiceOption::labelled("take", "hero", format!("take {name} from {target}")),
-                ChoiceOption::labelled(
-                    "discard",
-                    "hero",
-                    format!("force {target} to discard 3 random action cards"),
-                ),
+                ChoiceOption::labelled("take", "hero", take.label()),
+                ChoiceOption::labelled("discard", "hero", discard.label()),
                 ChoiceOption::decline(),
             ],
         )
+        .phrased_prompt(&prompt)
+        .phrased_options(&[("take".to_owned(), take), ("discard".to_owned(), discard)])
         .contextualized(decision(
             context.state,
             player,
@@ -1664,6 +1673,36 @@ mod tests {
                 .keys()
                 .all(|k| k.starts_with("cards:staged:"))
         );
+    }
+
+    /// The question names the seat and the card that it showed (`details.phrases`).
+    #[test]
+    fn kyver_names_the_seat_and_the_card_shown() {
+        let mut state = three();
+        set_leader(&mut state, &a(), "yssarilhero", LeaderStatus::Unlocked);
+        deal(&mut state, "a", &[]);
+        deal(&mut state, "b", &["sabotage", "bribery"]);
+        deal(&mut state, "c", &[]);
+        let hero = LeaderId::new("yssarilhero");
+        let (mut table, seen) = crate::phrases::capturing(&["bribery", "take"]);
+        crate::fixtures::with_context(&mut state, DEFAULT, None, &mut table, |ctx| {
+            crate::leaders::use_leader(ctx, &a(), &hero)
+        });
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Kyver:"))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        let seat = crate::phrases::Subject::seat(&PlayerId::new("b"));
+        let card = crate::phrases::Subject::action_card(&ActionCardId::new("bribery"));
+        let prompt = hints.prompt.expect("the prompt names the seat");
+        assert_eq!(prompt.text, "Kyver: {target} showed {card}");
+        assert_eq!(prompt.refs["target"], seat);
+        assert_eq!(prompt.refs["card"], card);
+        assert_eq!(hints.options["take"].text, "take {card} from {target}");
+        assert_eq!(hints.options["take"].refs["card"], card);
+        assert_eq!(hints.options["discard"].refs["target"], seat);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 import React from "react";
 import "./PlanetValueIcons.css";
 import { usePlanetBoosts } from "../presentation/PlanetResourcesContext.tsx";
-import { boostLines, boostsFor, type PlanetBoost } from "../presentation/planetValues.ts";
+import { boostsFor, type PlanetBoost } from "@ti4/shared/planets/values.ts";
+import { boostLines } from "../presentation/planetBoostText.ts";
 
 /**
  * One icon for resources and one for influence, used everywhere a planet or economy value is

@@ -957,6 +957,27 @@ impl GroundSide {
         &self.names
     }
 
+    /// What a ground force of each name rolls in a combat round, per entry of
+    /// [`GroundSide::names`]: the printed `hits_on`, the dice, and the side's modifier to the
+    /// roll (Fragile, Unrelenting; Shield Paling spares the infantry). `None`: no unit of that
+    /// name is fielded.
+    #[must_use]
+    pub fn rolls(&self) -> Vec<Option<(i64, u32, i64)>> {
+        let mut rolls = vec![None; self.names.len()];
+        for troop in &self.troops {
+            rolls[usize::from(troop.name)] = Some((troop.hits_on, troop.dice, self.shift(troop)));
+        }
+        rolls
+    }
+
+    fn shift(&self, troop: &Trooper) -> i64 {
+        if troop.infantry && self.infantry_ignore_modifier && self.modifier < 0 {
+            0
+        } else {
+            self.modifier
+        }
+    }
+
     /// Ground forces per name.
     #[must_use]
     pub fn fielded(&self) -> Vec<usize> {
@@ -970,11 +991,7 @@ impl GroundSide {
     fn roll(&self, rng: &mut Rng) -> usize {
         let mut hits = 0;
         for troop in &self.troops {
-            let shift = if troop.infantry && self.infantry_ignore_modifier && self.modifier < 0 {
-                0
-            } else {
-                self.modifier
-            };
+            let shift = self.shift(troop);
             for _ in 0..troop.dice {
                 if rng.die() + shift >= troop.hits_on {
                     hits += 1;

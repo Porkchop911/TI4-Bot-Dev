@@ -107,6 +107,7 @@ opens_at! {
         ["0:tactical", "0:29", "0:done_moving", "0:destroy|0", "0:destroy|0"];
     parley_opens_at_the_invasion: "ongoing_invasion_parley" => "reaction_after_INVASION_BEGAN",
         ["0:tactical", "0:21", "0:done_moving", "0:destroy|0"];
+    invasion_draft_opens_at_the_action: "invasion_draft" => "action_menu", [];
     endgame_opens_at_the_action: "endgame" => "action_menu", [];
     status_score_opens_at_the_score: "score_objective_status" => "score_objective", [];
     imperial_score_opens_at_the_score: "score_objective_imperial" => "imperial_score_objective",
@@ -914,5 +915,129 @@ fn combat_rolls_are_published_once_as_public_events() {
             .iter()
             .any(|event| matches!(event.event, GameEventKind::DiceRolled)),
         "dice rolls are in the public feed"
+    );
+}
+
+/// What no decision says is a public fact of the state: the server compares the state after each
+/// step, so the end of a live combat (with its winner) reaches the event log once, and a spectator.
+#[test]
+fn the_end_of_a_live_combat_is_a_public_fact_of_the_state() {
+    use ti4_host::protocol::server::{GameEventKind, PublicFact};
+    let registry = Arc::new(GameRegistry::new());
+    let launched = launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
+    let seat = ti4_model::id::PlayerId::new(&launched.player_id);
+    let session = registry.get_game(&launched.game_id).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let ended = |events: &[ti4_host::protocol::server::GameEvent]| -> usize {
+        events
+            .iter()
+            .filter(|event| {
+                matches!(event.event, GameEventKind::StateChanged)
+                    && matches!(event.fact, Some(PublicFact::CombatEnded { .. }))
+            })
+            .count()
+    };
+    while ended(&session.event_log()) == 0 {
+        let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
+        if let Some(pending) = snapshot.pending_choice.as_ref() {
+            let option = pending
+                .choice
+                .options
+                .iter()
+                .find(|o| o.id == "decline" || o.id == "stay" || o.id == "fight")
+                .unwrap_or(&pending.choice.options[0]);
+            let _ = session.submit_choice(&seat, &pending.nonce, snapshot.game_version, &option.id);
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no end of the combat was published"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    let events = session.event_log();
+    assert_eq!(ended(&events), 1, "the combat ends once");
+    let end = events
+        .iter()
+        .find_map(|event| match &event.fact {
+            Some(PublicFact::CombatEnded {
+                attacker,
+                defender,
+                winner,
+                ..
+            }) if matches!(event.event, GameEventKind::StateChanged) => {
+                Some((attacker.clone(), defender.clone(), winner.clone()))
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_ne!(end.0, end.1);
+    assert!(
+        end.2
+            .as_ref()
+            .is_none_or(|won| *won == end.0 || *won == end.1)
+    );
+    let seen = session.get_snapshot(&ViewerRole::Spectator);
+    assert_eq!(ended(&seen.events), 1, "a spectator sees it");
+}
+
+/// Each step of the server tells what it changed of the public board: from the board of now, the
+/// changes of the event log take it back to the first board of the game, and the spectator gets
+/// them too.
+#[test]
+fn the_changes_of_the_board_take_a_live_game_back_to_its_start() {
+    use ti4_host::protocol::board_delta::PublicBoard;
+    use ti4_host::protocol::server::{GameEventKind, PublicFact};
+    let registry = Arc::new(GameRegistry::new());
+    let launched = launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
+    let seat = ti4_model::id::PlayerId::new(&launched.player_id);
+    let session = registry.get_game(&launched.game_id).unwrap();
+    let start = PublicBoard::of(&session.restart_config().state);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let ended = |events: &[ti4_host::protocol::server::GameEvent]| {
+        events
+            .iter()
+            .any(|event| matches!(event.fact, Some(PublicFact::CombatEnded { .. })))
+    };
+    while !ended(&session.event_log()) {
+        let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
+        if let Some(pending) = snapshot.pending_choice.as_ref() {
+            let option = pending
+                .choice
+                .options
+                .iter()
+                .find(|o| o.id == "decline" || o.id == "stay" || o.id == "fight")
+                .unwrap_or(&pending.choice.options[0]);
+            let _ = session.submit_choice(&seat, &pending.nonce, snapshot.game_version, &option.id);
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the combat did not end"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    session.stop();
+    let events = session.event_log();
+    let changes: Vec<_> = events
+        .iter()
+        .filter(|event| matches!(event.event, GameEventKind::BoardChanged))
+        .map(|event| event.board.clone().expect("a change of the board"))
+        .collect();
+    assert!(
+        changes.iter().any(|change| change.space_rounds.is_some()),
+        "the rounds of the combat are told"
+    );
+    let mut board = PublicBoard::of(&session.current_state());
+    for change in changes.iter().rev() {
+        board.rewind(change);
+    }
+    assert_eq!(board, start, "back to the first board");
+    let seen = session.get_snapshot(&ViewerRole::Spectator);
+    assert_eq!(
+        seen.events
+            .iter()
+            .filter(|event| matches!(event.event, GameEventKind::BoardChanged))
+            .count(),
+        changes.len(),
+        "a spectator gets every change"
     );
 }

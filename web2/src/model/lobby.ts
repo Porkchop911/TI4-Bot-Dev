@@ -21,6 +21,9 @@ export type LobbyIntent =
   | { type: "joinTab" }
   /** Makes this tab a player that this browser has at the table. */
   | { type: "become"; player: string }
+  /** The bot that "+ Bot" and "Fill" put in a seat. A choice of this page, not of the table. */
+  | { type: "chooseBot"; kind: string }
+  /** Puts a bot of the kind in the first open seat; a table in the page adds a seat when none is open. */
   | { type: "addBot"; kind: string }
   | { type: "fillBots"; kind: string }
   | { type: "remove"; player: string }
@@ -63,6 +66,30 @@ export interface FactionSheetView {
   /** The faction technologies. */
   technologies: ComponentCardView[];
   leaders: ComponentCardView[];
+}
+
+/** "+ Bot" or "Fill". Null intent: it cannot be done now, and `title` says why. */
+export interface LobbyBotActionView {
+  label: string;
+  /** What it does, or why it cannot be done. */
+  title: string;
+  intent: LobbyIntent | null;
+}
+
+/**
+ * The row under the seats: one choice of the bot (the rule bot, a random seat, a model), and
+ * "+ Bot" and "Fill", which put it in a seat. With no seat to fill it is there, disabled.
+ */
+export interface LobbyBotsView {
+  /** The sign of the chosen kind, in the column of the signs of the seats. */
+  sign: LobbySignView;
+  /** The id of the chosen kind. */
+  chosen: string;
+  options: { id: string; label: string; intent: LobbyIntent }[];
+  /** The list can be changed: false when neither action can be done. */
+  enabled: boolean;
+  add: LobbyBotActionView;
+  fill: LobbyBotActionView;
 }
 
 /** One choice of the faction of a seat. The row is the control, and the choice applies at once. */
@@ -115,7 +142,7 @@ export interface LobbyRowView {
    * of a seat that the server plays. Null: the row is no control.
    */
   editor: LobbyFactionEditorView | null;
-  /** The controls of the row: the kinds of an open seat, "Join in a new tab", "Rejoin". */
+  /** The controls of the row: "Join in a new tab", "Rejoin". */
   buttons: LobbyButtonView[];
   /** Removes the seat. Shown as "×". */
   remove: LobbyButtonView | null;
@@ -172,8 +199,8 @@ export interface LobbyView {
   /** What the kinds of a seat that the server plays do. Behind "?". */
   help: HelpView[];
   rows: LobbyRowView[];
-  /** The button for the usual target, under the list. */
-  fill: LobbyButtonView | null;
+  /** The bot that "+ Bot" and "Fill" put in a seat, for the host before the start. */
+  bots: LobbyBotsView | null;
   /** "Shuffle seats", for the host before the start: the rows are the seats of the game. */
   shuffle: LobbyButtonView | null;
   footer: LobbyFooterView;

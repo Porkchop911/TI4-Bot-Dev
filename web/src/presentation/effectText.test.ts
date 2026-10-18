@@ -2,107 +2,77 @@ import { describe, expect, it } from "vitest";
 import { describeActiveEffect, describePreview, type EffectLabels } from "./effectText.ts";
 import type { ActiveEffectDto, EffectPreviewDto } from "../protocol/types.ts";
 
+// The engine words each effect (`reaction_preview.rs`, `view/effects.rs`, with their tests); this
+// page only says the subjects that a phrase names.
 const labels: EffectLabels = {
   seat: (id) => ({ p1: "You", p2: "Bob", p3: "Cleo" })[id] ?? id,
   viewerSeat: "p1",
 };
 
-const preview = (extra: Partial<EffectPreviewDto>): EffectPreviewDto => ({
+const preview = (phrase: EffectPreviewDto["phrase"]): EffectPreviewDto => ({
   option: "x",
-  card: "sabo1",
-  effect: "cancel_card",
-  ...extra,
+  card: "dh1",
+  effect: "destroy_unit",
+  phrase,
 });
 
 describe("describePreview", () => {
-  it("says which card Sabotage cancels and whose it is", () => {
-    expect(describePreview(preview({ seats: ["p2"], refs: ["fs1"] }), labels)).toBe(
-      "Cancels Bob's Flank Speed. The card stays spent and its effect does not happen.",
-    );
-  });
-
-  it("names the ship Direct Hit destroys, or says it is immune", () => {
+  it("says the seats, the units, the system and the cards of the engine's sentence", () => {
     const hit = preview({
-      effect: "destroy_unit",
-      card: "dh1",
-      seats: ["p2"],
-      system: "27",
-      units: [{ owner: "p2", unit_type: "dreadnought", count: 1 }],
+      text: "Destroys {0} {1} in {2}, the ship that just sustained damage.",
+      refs: {
+        0: { kind: "seat_possessive", player: "p2" },
+        1: { kind: "unit", unit_type: "dreadnought" },
+        2: { kind: "system", system: "27" },
+      },
     });
-    expect(describePreview(hit, labels)).toBe(
-      "Destroys Bob's dreadnought in System 27, the ship that just sustained damage.",
+    expect(describePreview(hit, labels)).toBe("Destroys Bob's dreadnought in System 27, the ship that just sustained damage.");
+    expect(describePreview(hit, { ...labels, system: (id) => `System ${id} (Lodor)` })).toContain("System 27 (Lodor)");
+  });
+
+  it("says you and your for the viewer", () => {
+    const text = describePreview(
+      preview({
+        text: "{0}: {1} {2}, {3} and {4}.",
+        refs: {
+          0: { kind: "seat", player: "p1" },
+          1: { kind: "seat_possessive", player: "p1" },
+          2: { kind: "units", unit_type: "cruiser", count: 2 },
+          3: { kind: "units", unit_type: "dreadnought", count: 1 },
+          4: { kind: "action_card", card: "fs1" },
+        },
+      }),
+      labels,
     );
-    expect(describePreview({ ...hit, fizzles: "immune" }, labels)).toContain("cannot be destroyed by Direct Hit");
+    expect(text).toBe("You: your 2 cruisers, 1 dreadnought and Flank Speed.");
   });
 
-  it("states how many of the incoming hits Shields Holding cancels", () => {
-    const shields = preview({ effect: "cancel_hits", amount: 2, of: 5, system: "27" });
-    expect(describePreview(shields, labels)).toBe(
-      "Cancels 2 of the 5 hits about to be assigned in System 27, leaving 3.",
-    );
-    expect(describePreview({ ...shields, of: 1 }, labels)).toContain("so none are assigned");
-    expect(describePreview({ ...shields, of: undefined }, labels)).toBe("Cancels up to 2 hits.");
-  });
-
-  it("counts what Deadly Plot exhausts and names the agenda", () => {
-    expect(
-      describePreview(
-        preview({ effect: "discard_agenda", card: "deadly_plot", amount: 4, refs: ["minister_of_peace"] }),
-        labels,
-      ),
-    ).toBe("Discards Minister of Peace with no effect and no replacement, then exhausts 4 ready planets of yours.");
-  });
-
-  it("says when playing it would change nothing", () => {
-    expect(
-      describePreview(preview({ effect: "repair_units", card: "emergency", fizzles: "nothing_there", system: "27" }), labels),
-    ).toContain("would change nothing");
-    expect(describePreview(preview({ effect: "replenish_commodities", amount: 0 }), labels)).toContain(
-      "already full",
-    );
-  });
-
-  it("ignores a kind it does not know", () => {
-    expect(describePreview(preview({ effect: "from_the_future" }), labels)).toBeNull();
+  it("shows nothing for a preview without words", () => {
+    expect(describePreview(preview({ text: "", refs: {} }), labels)).toBeNull();
   });
 });
 
 describe("describeActiveEffect", () => {
   const effect = (extra: Partial<ActiveEffectDto>): ActiveEffectDto => ({
     seat: "p2",
-    effect: "combat_roll_bonus",
-    until: "combat_round",
-    card: "mb1",
+    effect: "duress",
+    until: "next_action",
+    card: "extremeduress",
+    title: { text: "{0}", refs: { 0: { kind: "action_card", card: "mb1" } } },
+    summary: { text: "Marked by {0}: a non-strategic action costs cards", refs: { 0: { kind: "seat", player: "p3" } } },
+    expiry: "until their next action",
     ...extra,
   });
 
-  it("gives the card, a short line and the expiry", () => {
-    expect(describeActiveEffect(effect({ amount: 1 }), labels)).toEqual({
+  it("gives the card, the line with its names and the expiry", () => {
+    expect(describeActiveEffect(effect({}), labels)).toEqual({
       title: "Morale Boost",
-      summary: "+1 to all combat rolls",
-      expiry: "until the end of this combat round",
+      summary: "Marked by Cleo: a non-strategic action costs cards",
+      expiry: "until their next action",
     });
   });
 
-  it("names the pool of hit cancellations without a single card", () => {
-    const text = describeActiveEffect(
-      effect({ effect: "cancel_hits", card: undefined, amount: 1, until: "combat_round" }),
-      labels,
-    );
-    expect(text?.title).toBe("Shields Holding / Maneuvering Jets");
-    expect(text?.summary).toBe("Cancels the next 1 hit");
-  });
-
-  it("names who holds a duress mark", () => {
-    const text = describeActiveEffect(
-      effect({ effect: "duress", card: "extremeduress", other: "p3", until: "next_action" }),
-      labels,
-    );
-    expect(text?.summary).toContain("Marked by Cleo");
-    expect(text?.expiry).toBe("until their next action");
-  });
-
-  it("skips a kind it does not know", () => {
-    expect(describeActiveEffect(effect({ effect: "from_the_future" }), labels)).toBeNull();
+  it("skips an effect without words", () => {
+    expect(describeActiveEffect(effect({ summary: { text: "", refs: {} } }), labels)).toBeNull();
   });
 });

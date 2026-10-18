@@ -3,9 +3,29 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ActiveEffectsStrip } from "./ActiveEffectsStrip.tsx";
 import type { ActiveEffectDto } from "../protocol/types.ts";
 
+// As the engine words them (`ti4_host::view::effects`).
+const card = (alias: string) => ({ text: "{0}", refs: { 0: { kind: "action_card" as const, card: alias } } });
 const effects: ActiveEffectDto[] = [
-  { seat: "p2", effect: "move_bonus", until: "tactical_action", card: "fs1", amount: 1 },
-  { seat: "p1", effect: "combat_roll_bonus", until: "combat_round", card: "mb1", amount: 1 },
+  {
+    seat: "p2",
+    effect: "move_bonus",
+    until: "tactical_action",
+    card: "fs1",
+    amount: 1,
+    title: card("fs1"),
+    summary: { text: "+1 move for all ships", refs: {} },
+    expiry: "until the end of this tactical action",
+  },
+  {
+    seat: "p1",
+    effect: "combat_roll_bonus",
+    until: "combat_round",
+    card: "mb1",
+    amount: 1,
+    title: card("mb1"),
+    summary: { text: "+1 to all combat rolls", refs: {} },
+    expiry: "until the end of this combat round",
+  },
 ];
 
 afterEach(cleanup);
@@ -39,10 +59,19 @@ describe("ActiveEffectsStrip", () => {
     expect(rows[1].textContent).toContain("until the end of this tactical action");
   });
 
-  it("drops an effect of a kind it does not know", () => {
+  it("drops an effect that the engine sent no words for", () => {
     render(
       <ActiveEffectsStrip
-        effects={[{ seat: "p1", effect: "from_the_future", until: "agenda" }]}
+        effects={[
+          {
+            seat: "p1",
+            effect: "from_the_future",
+            until: "agenda",
+            title: { text: "", refs: {} },
+            summary: { text: "", refs: {} },
+            expiry: "",
+          },
+        ]}
         viewerSeat="p1"
       />,
     );

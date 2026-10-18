@@ -10,7 +10,8 @@ import {
 } from "./PlanetResourcesContext.tsx";
 import { deriveSelectedSystemDetails } from "./boardPresentation.ts";
 import { getPlanetDetails } from "./planetSelection.ts";
-import { applyBoosts, boostLines, boostSummary } from "./planetValues.ts";
+import { applyBoosts } from "@ti4/shared/planets/values.ts";
+import { boostLines, boostSummary } from "./planetBoostText.ts";
 
 const MINING = { source: "Mining World", resources: 2, influence: 0 };
 const DYSON = { source: "Dyson Sphere", resources: 2, influence: 1 };

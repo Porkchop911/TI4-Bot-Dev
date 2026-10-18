@@ -60,7 +60,9 @@ fn is_false(value: &bool) -> bool {
 pub enum DecisionSource {
     /// A core rule, by its LRR number where one applies (`"37.3"`, `"52.3"`).
     Rule(String),
-    /// A strategy card's primary or secondary.
+    /// A strategy card's primary or secondary. `card` is the printed name in the questions of a
+    /// card's own ability, and the card's id in a follower's secondary question
+    /// ([`crate::strategy::FOLLOW_SUBTYPE`]), which a log reads.
     StrategyCard { card: String, secondary: bool },
     /// An action card, by content alias.
     ActionCard(String),
@@ -191,17 +193,28 @@ pub struct DecisionContext {
     /// ever sent to the seat that is asked (the pending choice reaches no one else).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub previews: Vec<EffectPreview>,
+    /// What the action card that this window reacts to will do when it resolves, for display
+    /// only: the card already played (the trigger of the window), not one that the window offers,
+    /// so its `option` is empty. `None` when the window answers no played card, or the engine has
+    /// no preview of that card.
+    ///
+    /// Like [`DecisionContext::previews`], deliberately not part of [`DecisionContext::canonical`]
+    /// or the replay fingerprint, stripped from recorded decisions, additive and optional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_effect: Option<EffectPreview>,
 }
 
 /// What playing one reaction card would do in the window that offers it (display only).
 ///
-/// Structured facts, not prose: the client words them. Every field except `option`, `card` and
-/// `effect` is optional and omitted when empty, so a new effect kind never breaks a client (it
-/// ignores a kind it does not know).
+/// The engine words it in `phrase` (a [`crate::phrases::Phrase`]: the sentence, with the seats,
+/// places, units and cards it names as subjects), so a client keeps no rule for each kind. The
+/// facts stay beside it as data. Every fact except `option`, `card` and `effect` is optional and
+/// omitted when empty.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EffectPreview {
-    /// The id of the option of this decision the preview belongs to.
+    /// The id of the option of this decision the preview belongs to; empty in
+    /// [`DecisionContext::pending_effect`], which belongs to no option.
     pub option: String,
     /// The content alias of the card.
     pub card: String,
@@ -230,6 +243,13 @@ pub struct EffectPreview {
     /// Why playing it would change nothing right now (`immune`, `nothing_there`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fizzles: Option<String>,
+    /// What playing it would do, as one or two sentences: "Cancels {0} {1}. The card stays spent
+    /// and its effect does not happen." When it would change nothing, the sentence says why and
+    /// ends with "Playing it now would change nothing." The pending effect of a played card speaks
+    /// of the seat that played it ("Bob would gain …"), and when it would change nothing it ends
+    /// with "It would change nothing when it resolves."
+    #[serde(default)]
+    pub phrase: crate::phrases::Phrase,
 }
 
 /// What produced the hits a casualty decision assigns.
@@ -395,6 +415,7 @@ impl DecisionContext {
             trigger: None,
             hit: None,
             previews: Vec::new(),
+            pending_effect: None,
         }
     }
 
@@ -402,6 +423,13 @@ impl DecisionContext {
     #[must_use]
     pub fn with_previews(mut self, previews: Vec<EffectPreview>) -> Self {
         self.previews = previews;
+        self
+    }
+
+    /// Say what the played card that this reaction window answers will do (display only).
+    #[must_use]
+    pub fn with_pending_effect(mut self, pending: Option<EffectPreview>) -> Self {
+        self.pending_effect = pending;
         self
     }
 
@@ -426,6 +454,7 @@ impl DecisionContext {
             trigger: None,
             hit: None,
             previews: Vec::new(),
+            pending_effect: None,
             ..self.clone()
         }
     }
@@ -546,6 +575,7 @@ impl DecisionContext {
             ("trigger", Visibility::Public),
             ("hit", Visibility::Public),
             ("previews", Visibility::Public),
+            ("pending_effect", Visibility::Public),
         ])
     }
 }
@@ -593,6 +623,7 @@ mod tests {
             of: None,
             refs: vec!["fs1".to_owned()],
             fizzles: None,
+            phrase: crate::phrases::Phrase::default(),
         };
         let shown = plain.clone().with_previews(vec![preview]);
         assert_eq!(shown.canonical(), plain.canonical());
@@ -775,6 +806,6 @@ mod tests {
             .iter()
             .filter(|(_, v)| **v == Visibility::Public)
             .count();
-        assert_eq!(public, 13, "every other field describes a public question");
+        assert_eq!(public, 14, "every other field describes a public question");
     }
 }

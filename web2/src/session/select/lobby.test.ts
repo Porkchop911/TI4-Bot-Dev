@@ -121,7 +121,7 @@ const catalog = {
   },
 } as unknown as Catalog;
 
-it("the host sees the rows with their signs, the kinds of an open seat and the removal", () => {
+it("the host sees the rows with their signs, the bots under them and the removal", () => {
   const view = selectLobby(table("ada"), local({ mine: ["ada"] }), catalog);
   expect(view.title).toBe("Lobby · 6 players");
   expect(view.filled).toBe("3 of 6");
@@ -138,14 +138,15 @@ it("the host sees the rows with their signs, the kinds of an open seat and the r
   expect(view.rows[0].remove).toBeNull();
   expect(view.rows[1].remove?.intent).toEqual({ type: "remove", player: "bart" });
   expect(view.rows[2].remove?.label).toBe("Remove Rule bot 1");
-  // An open seat has one button for each kind that the server plays, the rule bot first.
+  // An open seat has no button of a kind: the row under the seats has the bot, the rule bot first.
   expect(view.rows[3].buttons.map((button) => [button.label, button.intent])).toEqual([
-    ["Rule bot", { type: "addBot", kind: "smart" }],
-    ["Random", { type: "addBot", kind: "random" }],
     ["Join in a new tab", { type: "joinTab" }],
   ]);
-  expect(view.rows[4].buttons.map((button) => button.label)).toEqual(["Rule bot", "Random"]);
-  expect(view.fill?.intent).toEqual({ type: "fillBots", kind: "smart" });
+  expect(view.rows[4].buttons).toEqual([]);
+  expect(view.bots?.options.map((option) => option.id)).toEqual(["smart", "random"]);
+  expect(view.bots?.enabled).toBe(true);
+  expect(view.bots?.add.intent).toEqual({ type: "addBot", kind: "smart" });
+  expect(view.bots?.fill.intent).toEqual({ type: "fillBots", kind: "smart" });
   // The rows are the seats of the game: the host puts them in another order.
   expect(view.shuffle).toMatchObject({ label: "Shuffle seats", intent: { type: "shuffleSeats" } });
   expect(view.help.map((item) => item.title)).toEqual(["Rule bot", "Random"]);
@@ -175,22 +176,25 @@ it("a full table starts: nobody says Ready", () => {
     main: { label: "Start game", disabled: false, intent: { type: "start" } },
     nickname: false,
   });
-  expect(view.fill).toBeNull();
+  // With no open seat the bots are there, disabled, and say why.
+  expect(view.bots?.enabled).toBe(false);
+  expect(view.bots?.add).toEqual({ label: "+ Bot", title: "No seat is open", intent: null });
+  expect(view.bots?.fill.intent).toBeNull();
   expect(view.rows[5].sign).toEqual({ kind: "random", word: "Random: played by the server" });
 });
 
 it("the names of the kinds of a seat are those of the server: none is offered before it said them", () => {
   const view = selectLobby(of(lobby(), "ada", null), local(), null);
   expect(view.rows[3].buttons.map((button) => button.label)).toEqual(["Join in a new tab"]);
-  expect(view.fill).toBeNull();
+  expect(view.bots).toBeNull();
   expect(view.help).toEqual([]);
   expect(view.rows[2].sign).toEqual({ kind: "rule", word: "Played by the server" });
   // A kind with no sign (a bare "mlp" is no kind) is not offered.
   const mlp = selectLobby(table("ada", { bot_kinds: ["random", "smart", "mlp"] }), local(), null);
-  expect(mlp.rows[4].buttons.map((button) => button.label)).toEqual(["Rule bot", "Random"]);
+  expect(mlp.bots?.options.map((option) => option.label)).toEqual(["Rule bot", "Random"]);
 });
 
-it("every model of the options is a kind of an open seat after the rule bot and Random, with its sign", () => {
+it("every model of the options is a bot of the list after the rule bot and Random, with its sign", () => {
   const models = ["Reviewer 473312", "Stage 2 r5", "Champion 9"].map((label, at) => ({
     id: `mlp:m${at}` as const,
     name: label,
@@ -207,19 +211,26 @@ it("every model of the options is a kind of an open seat after the rule bot and 
     ],
   });
   const view = selectLobby(of(state, "ada", options), local(), null);
-  expect(view.rows[5].buttons.map((button) => [button.label, button.intent])).toEqual([
-    ["Rule bot", { type: "addBot", kind: "smart" }],
-    ["Random", { type: "addBot", kind: "random" }],
-    ["Reviewer 473312", { type: "addBot", kind: "mlp:m0" }],
-    ["Stage 2 r5", { type: "addBot", kind: "mlp:m1" }],
-    ["Champion 9", { type: "addBot", kind: "mlp:m2" }],
+  // An open seat has no button of a kind: the row under the seats has the one list.
+  expect(view.rows[5].buttons).toEqual([]);
+  expect(view.bots?.options.map((option) => [option.label, option.intent])).toEqual([
+    ["Rule bot", { type: "chooseBot", kind: "smart" }],
+    ["Random", { type: "chooseBot", kind: "random" }],
+    ["Reviewer 473312", { type: "chooseBot", kind: "mlp:m0" }],
+    ["Stage 2 r5", { type: "chooseBot", kind: "mlp:m1" }],
+    ["Champion 9", { type: "chooseBot", kind: "mlp:m2" }],
   ]);
   expect(view.rows[3].sign).toEqual({
     kind: "model",
     word: "Reviewer 473312: played by the server",
   });
-  // "Fill with rule bots" stays the usual target.
-  expect(view.fill?.intent).toEqual({ type: "fillBots", kind: "smart" });
+  // The rule bot until the page chose another; the choice of the page is kept.
+  expect(view.bots?.fill.intent).toEqual({ type: "fillBots", kind: "smart" });
+  expect(view.bots?.add.intent).toEqual({ type: "addBot", kind: "smart" });
+  const chosen = selectLobby(of(state, "ada", options), local({ bot: "mlp:m1" }), null);
+  expect(chosen.bots?.chosen).toBe("mlp:m1");
+  expect(chosen.bots?.sign.kind).toBe("model");
+  expect(chosen.bots?.fill.intent).toEqual({ type: "fillBots", kind: "mlp:m1" });
 });
 
 it("the start of a table in the page waits for the file of a model, and the footer says how far it is", () => {
@@ -253,7 +264,7 @@ it("a player who is not the host has the same rows, no controls of the table and
     [],
     [],
   ]);
-  expect(view.fill).toBeNull();
+  expect(view.bots).toBeNull();
   expect(view.shuffle).toBeNull();
   expect(view.help).toHaveLength(2);
   expect(view.setup.every((row) => row.control === null)).toBe(true);
@@ -724,7 +735,7 @@ it("the table of a running game is the same screen with nothing open, and the ho
   for (const row of view.rows) {
     expect([row.editor, row.remove, row.rename, row.buttons]).toEqual([null, null, false, []]);
   }
-  expect(view.fill).toBeNull();
+  expect(view.bots).toBeNull();
   expect(view.shuffle).toBeNull();
   expect(view.footer).toEqual({ note: "", main: null, nickname: false });
   // Of the setup only the wait has a control.

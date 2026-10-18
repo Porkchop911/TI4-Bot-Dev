@@ -424,6 +424,7 @@ pub fn end_turn(
                     options,
                 ),
                 state,
+                content,
                 "restack",
                 None,
             )
@@ -1587,12 +1588,68 @@ fn exhaust_specialties_for_research(
     player: &PlayerId,
     alias: &TechnologyId,
 ) {
+    // Computed before AI Development Algorithm is exhausted: its waiver is part of the count.
+    let planets = specialty_planets(state, content, sources, player, alias);
+    if aida_spent_by_research(state, content, sources, player, alias)
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.exhausted_technologies
+            .insert(TechnologyId::new("aida"));
+    }
+    for planet in planets {
+        state.exhaust_planet(planet);
+    }
+}
+
+/// AI Development Algorithm is exhausted by a research of `alias` only when nothing else covers
+/// its prerequisites.
+fn aida_spent_by_research(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> bool {
+    !crate::laws::war_sun_prerequisites_waived(state, content, alias)
+        && !prerequisites(content, alias).is_empty()
+        && aida_waiver(state, content, player, alias) > 0
+        && !prerequisites_met_with(state, content, sources, player, alias, false)
+}
+
+/// The ready planets whose technology specialties a research of `alias` exhausts for its
+/// prerequisites, as [`research`] takes them: none when the research goes through Inheritance
+/// Systems or a faction waiver. A payment for that research must leave them ready.
+#[must_use]
+pub fn specialties_spent_by_research(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
+    if !can_research(state, content, sources, player, alias)
+        || !prerequisites_met(state, content, sources, player, alias)
+        || faction_waiver_required(state, content, sources, player, alias)
+    {
+        return Vec::new();
+    }
+    specialty_planets(state, content, sources, player, alias)
+}
+
+/// The specialty planets that [`exhaust_specialties_for_research`] exhausts.
+fn specialty_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
     if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
-        return;
+        return Vec::new();
     }
     let reqs = prerequisites(content, alias);
     if reqs.is_empty() {
-        return;
+        return Vec::new();
     }
     let held = owned_colours(state, content, player);
     let mut waivable = crate::faction_abilities::waived_prerequisites(
@@ -1606,15 +1663,10 @@ fn exhaust_specialties_for_research(
         waivable += crate::laws::research_team_waivers(state, player, colour);
     }
     waivable += crate::relics::prerequisite_waivers(state, player);
-    // AI Development Algorithm: spent only when nothing else covers the prerequisites.
-    if aida_waiver(state, content, player, alias) > 0
-        && !prerequisites_met_with(state, content, sources, player, alias, false)
-    {
+    // AI Development Algorithm: spent only when nothing else covers the prerequisites
+    // (exhausted by `exhaust_specialties_for_research`).
+    if aida_spent_by_research(state, content, sources, player, alias) {
         waivable += 1;
-        if let Some(seat) = state.player_mut(player) {
-            seat.exhausted_technologies
-                .insert(TechnologyId::new("aida"));
-        }
     }
 
     let mut to_exhaust = Vec::new();
@@ -1647,12 +1699,11 @@ fn exhaust_specialties_for_research(
             }
         }
     }
+    // Psychoarchaeology: specialties are used without exhausting their planets.
     if psychoarchaeology_frees_specialties(state, player) {
-        return;
+        return Vec::new();
     }
-    for planet in to_exhaust {
-        state.exhaust_planet(planet);
-    }
+    to_exhaust
 }
 
 /// Research `alias` by taking a selected module waiver and paying its selected legal cost.

@@ -29,7 +29,9 @@ pub enum Spend {
     Influence,
 }
 
-const fn spend_name(kind: Spend) -> &'static str {
+/// The name of a kind of value, as a payment option names its source (`"influence"`).
+#[must_use]
+pub const fn spend_name(kind: Spend) -> &'static str {
     match kind {
         Spend::Resources => "resources",
         Spend::Influence => "influence",
@@ -664,6 +666,29 @@ pub fn native_payment_planets(
         .collect()
 }
 
+/// The ready planets that can pay `kind`, each with its best face: the worth, and the kind of
+/// value that face spends (the other kind with Archon's Gift or Freelancers). The best face is
+/// offered whenever any face of the planet is, and the planet is exhausted either way, so it is
+/// the face a payment takes. Display only: what a client shows on the map and stages.
+pub fn best_payment_faces(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: Spend,
+) -> Vec<(PlanetId, i64, Spend)> {
+    spendable_planets(state, player)
+        .into_iter()
+        .filter_map(|planet| {
+            payment_faces(state, content, sources, player, &planet, kind)
+                .into_iter()
+                // The first of equal faces: the planet's own kind before the other.
+                .reduce(|best, face| if face.1 > best.1 { face } else { best })
+                .map(|(source, worth)| (planet, worth, source))
+        })
+        .collect()
+}
+
 /// Apply the chosen payment option; returns its value against the bill.
 ///
 /// `None` means the id was never offered (defensive — validated tables cannot produce it). As in
@@ -797,6 +822,40 @@ pub(crate) fn pay_seeing_with_credit(
 ) -> Result<bool, IllegalChoice> {
     pay_offering_agent(
         state, content, sources, table, player, cost, kind, credit, galaxy,
+    )
+}
+
+/// Spend inside a payment window that the caller already offered Xander Alexin Victori III
+/// (Keleres agent) for: a research offers it before its question. The player chooses what to
+/// exhaust, one planet or trade good at a time; a lone way left is taken without asking.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] if the decider selects an option that was not offered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "payment needs the rules position plus an optional learned-policy observation"
+)]
+pub(crate) fn pay_in_window(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    cost: i64,
+    kind: Spend,
+) -> Result<bool, IllegalChoice> {
+    let mut credit = 0;
+    pay_with_observation_credit(
+        state,
+        content,
+        sources,
+        table,
+        player,
+        cost,
+        kind,
+        &mut credit,
+        galaxy,
     )
 }
 
@@ -1851,16 +1910,50 @@ pub fn structure_allowed(
     planet: &PlanetId,
     base_type: &str,
 ) -> bool {
+    structure_refused(state, content, sources, player, planet, base_type).is_none()
+}
+
+/// Why another of this structure may not be built on that planet (79.2), or `None` when it may:
+/// the checks of [`structure_allowed`], in its order.
+#[must_use]
+pub fn structure_refused(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+    base_type: &str,
+) -> Option<crate::strategy_cards::StructureWithheld> {
+    use crate::strategy_cards::StructureWithheld;
     // Homeland Defense Act removes the PDS cap outright rather than raising it.
     if crate::laws::structure_cap_lifted(state, base_type) {
-        return true;
+        return None;
     }
     // Demilitarized Zone: nothing may be placed on the elected planet at all.
     if crate::laws::planet_is_demilitarized(state, planet) {
-        return false;
+        return Some(StructureWithheld::Demilitarized);
     }
     structure_limit(base_type)
-        .is_none_or(|cap| structures_on(state, content, sources, player, planet, base_type) < cap)
+        .is_some_and(|cap| structures_on(state, content, sources, player, planet, base_type) >= cap)
+        .then_some(StructureWithheld::Limit)
+}
+
+/// 68.10: ships of another player are in `system`, so `player` produces no ships there.
+#[must_use]
+pub fn blockaded(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> bool {
+    let types = catalogue(content, sources);
+    state.system_state(system).units.iter().any(|unit| {
+        unit.owner != *player
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ship)
+    })
 }
 
 /// Where a produced unit may go. [`SPACE`] denotes the space area.
@@ -1886,14 +1979,7 @@ pub fn placements(
         // The blockade was checked in the bot-facing "what could I build here" helper and nowhere
         // in the path that actually produces, so a blockaded dock built ships in play while the
         // helper said it could not.
-        let types = catalogue(content, sources);
-        let blockaded = state.system_state(system).units.iter().any(|unit| {
-            unit.owner != *player
-                && types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(ti4_content::units::UnitType::is_ship)
-        });
-        if blockaded {
+        if blockaded(state, content, sources, player, system) {
             return Vec::new();
         }
         return vec![SPACE.to_owned()]; // 68.2
@@ -2058,6 +2144,84 @@ enum Stage {
     Done,
 }
 
+/// The key of the details of a production question under which [`ProductionWindow::withheld`]
+/// is written ([`Choice::hinted`]).
+pub const WITHHELD_KEY: &str = "withheld";
+
+/// Why a production window does not offer a unit kind: the first of its checks that excluded
+/// it ([`ProductionWindow::withheld`]).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Withheld {
+    /// The seat does not have the technology that the unit needs (a war sun), and its faction
+    /// prints no unit of the kind.
+    Technology,
+    /// This use of PRODUCTION makes another unit only (Nekro's "a ship of the same type").
+    OnlyAnother,
+    /// This use of PRODUCTION makes units up to a printed cost that the unit is above (Muaat's
+    /// "a cost of 4 or less").
+    TooCostly,
+    /// An ability of the seat bars the unit from a production by an ability (Naaz's Maximum).
+    Banned,
+    /// A ship, and ships of another player are in the system (68.10).
+    Blockade,
+    /// The system has no place for the unit.
+    NoPlace,
+    /// An ability of the seat bars the producers in the system from making the unit, and the
+    /// others have no production left for it (Arborec's Mitosis).
+    Barred,
+    /// None is left in the reinforcements (31.4).
+    Supply,
+    /// The ready planets and the trade goods of the seat do not pay for it now.
+    Unaffordable,
+    /// This use of PRODUCTION has no production left for the unit.
+    Limit,
+}
+
+/// The key of the details of a production question under which [`CapacityHints`] is written
+/// ([`Choice::hinted`]).
+pub const CAPACITY_KEY: &str = "capacity";
+
+/// The capacity of the producing system today (LRR 16), display only (`details.capacity` of a
+/// production question).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CapacityHints {
+    /// The capacity of the seat's ships in the system ([`crate::fleet::Standing::transport`]).
+    pub transport: i64,
+    /// The capacity already taken there ([`crate::fleet::Standing::consumed`]).
+    pub consumed: i64,
+    /// The capacity cost of the seat's fighters in the system.
+    pub fighters: i64,
+    /// The space dock fighter support not yet used by fighters there, which excuses queued
+    /// fighters (never ground forces) before they take capacity.
+    pub unused_support: i64,
+}
+
+/// A unit kind that a production window does not offer, with why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WithheldUnit {
+    /// The unit the seat would produce: its upgrade or its faction's unit, or the printed
+    /// generic unit when it has none ([`Withheld::Technology`]).
+    pub unit: String,
+    pub reason: Withheld,
+}
+
+/// What [`ProductionWindow::screen`] found for a unit that is offered.
+struct Screened {
+    printed: i64,
+    pair: usize,
+    cost: i64,
+    discount_used: i64,
+    exchange: bool,
+    affordable: bool,
+    spots: Vec<String>,
+    made: usize,
+    placed: usize,
+}
+
 /// LRR 68: produce units in the active system, up to capacity, paying for each.
 ///
 /// A [`Window`], so the driver can step it one decision at a time.
@@ -2113,10 +2277,10 @@ pub struct ProductionWindow {
     /// only). `None` reads [`capacity`].
     fixed_limit: Option<i64>,
     /// Highest printed cost of one unit this use may produce (Muaat Umbat: "4 or less"). `None`
-    /// is no cap. Applied in [`Self::build_options`].
+    /// is no cap. Applied in [`Self::screen`].
     max_unit_cost: Option<i64>,
     /// The only unit type this use may produce (Nekro `nekroc4y`: "a ship of the same type").
-    /// `None` is any. Applied in [`Self::build_options`].
+    /// `None` is any. Applied in [`Self::screen`].
     only_unit: Option<String>,
     /// Whether the current placement batch has opened its pre-placement ground-force window.
     placement_timing_done: bool,
@@ -2608,123 +2772,217 @@ impl ProductionWindow {
     }
 
     /// Options for what to build now: affordable, placeable, one per unit type.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one linear filter-and-price pass per buildable unit"
-    )]
     fn build_options(
         &self,
         state: &GameState,
         content: &ContentStore,
         sources: SourceSet,
     ) -> Vec<ChoiceOption> {
+        self.offers(state, content, sources).0
+    }
+
+    /// Every unit kind of [`BUILDABLE`] that this window does not offer now, with the first check
+    /// that excluded it (see [`Withheld`]). The checks are those that build the offers, run in the
+    /// same pass, so a kind is offered or withheld, never both and never neither.
+    #[must_use]
+    pub fn withheld(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Vec<WithheldUnit> {
+        self.offers(state, content, sources).1
+    }
+
+    /// Whether one buildable unit is offered: what its offers need, or the first check that
+    /// excludes it. The checks of the unit and of this use come first, in the order of the
+    /// rules; the resources and the production limit last, as a player plans against them.
+    fn screen(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        id: &str,
+        kind: UnitType<'_>,
+    ) -> Result<Screened, Withheld> {
+        if self.only_unit.as_ref().is_some_and(|only| only != id) {
+            return Err(Withheld::OnlyAnother);
+        }
+        if self
+            .max_unit_cost
+            .is_some_and(|max| kind.cost() > f64::from(i32::try_from(max).unwrap_or(i32::MAX)))
+        {
+            return Err(Withheld::TooCostly);
+        }
+        // Ability production has no unit producer, but blanket bans still apply. A hook
+        // specific to space docks (Mitosis) must not bar production granted by an ability.
+        if self.ability
+            && crate::factions::hooks_economy::cannot_produce(
+                state,
+                content,
+                &self.player,
+                kind.base_type(),
+                "ability",
+            )
+        {
+            return Err(Withheld::Banned);
+        }
+        let (printed, pair) = price_of_under(Some(state), &kind);
+        let (cost, discount_used) = self.discounted_unit(state, kind, printed);
+        // Cabal Amalgamation: "When you produce a unit: You may return 1 captured unit of that
+        // type to produce that unit without spending resources." The exchange is settled here,
+        // before affordability is asked, because a unit bought by returning a captured model is
+        // not bought with resources: a Cabal with nothing left to spend still has the option the
+        // card gives it. The hook is pure -- it asks nothing and changes nothing.
+        let exchange = crate::factions::hooks_economy::production_unit_exchange(
+            state,
+            content,
+            sources,
+            &self.player,
+            &self.system,
+            id,
+        );
+        // Credit already paid counts towards affordability, or a build the player has in fact
+        // paid for would be withheld as unaffordable. Affordability is judged on the
+        // discounted bill: a unit Sarween Tools or Harrugh Gefhara brings within reach must
+        // not be withheld for a price nobody would actually charge. A unit bought with a
+        // captured model is not withheld at all, because no resource is being asked for it.
+        let affordable = cost
+            <= available(state, content, sources, &self.player, Spend::Resources) + self.credit;
+        // Producers barred from this unit (Mitosis: docks and infantry) do not lend it their
+        // PRODUCTION. The most this unit can use is what is left of the total, but never more
+        // than the total less the barred producers less what this use has already produced
+        // of the same unit (other purchases are assumed to have drawn on the barred share
+        // first, the most permissive reading).
+        let barred = if self.ability {
+            0
+        } else {
+            barred_capacity(state, content, sources, &self.player, &self.system, &kind)
+        };
+        let spots = self.spots(state, content, sources, kind);
+        if spots.is_empty() {
+            // A planet whose only producers are barred is not a spot (`placements`).
+            return Err(
+                if kind.is_ship() && blockaded(state, content, sources, &self.player, &self.system)
+                {
+                    Withheld::Blockade
+                } else if barred > 0 {
+                    Withheld::Barred
+                } else {
+                    Withheld::NoPlace
+                },
+            );
+        }
+        let unbarred = (barred > 0).then(|| {
+            let types = catalogue(content, sources);
+            let same_kind = self
+                .report
+                .produced
+                .iter()
+                .filter(|(produced, _)| {
+                    types
+                        .get(produced.as_str())
+                        .is_some_and(|made| made.base_type() == kind.base_type())
+                })
+                .count();
+            self.limit - barred - i64::try_from(same_kind).unwrap_or(i64::MAX)
+        });
+        let usable = unbarred.map_or(self.remaining, |room| self.remaining.min(room));
+        let extra = if matches!(kind.base_type(), "fighter" | "infantry") {
+            self.small_unit_exemptions
+        } else {
+            0
+        };
+        if unbarred.is_some_and(|room| room + extra <= 0) {
+            return Err(Withheld::Barred);
+        }
+        let made = pair.min(usize::try_from(usable + extra).unwrap_or(0));
+        // 31.4, asked once for two answers: the batch the box can actually supply, and whether
+        // the unit may be offered at all. Offering a unit with no plastic left would let a
+        // player spend resources on something that cannot be placed. Every quantity below is
+        // stated about the units that will arrive, not the batch that was bought -- and this
+        // walks the whole board for the count, which is why it is not asked twice. With no
+        // production left it is asked for one unit, to tell an empty box from a spent limit.
+        let placed = self.will_place(state, content, sources, id, made.max(1));
+        if placed == 0 {
+            return Err(Withheld::Supply);
+        }
+        if !affordable && !exchange {
+            return Err(Withheld::Unaffordable);
+        }
+        if made == 0 {
+            return Err(Withheld::Limit);
+        }
+        Ok(Screened {
+            printed,
+            pair,
+            cost,
+            discount_used,
+            exchange,
+            affordable,
+            spots,
+            made,
+            placed,
+        })
+    }
+
+    /// The options for what to build now, and every unit kind that is not offered, with why:
+    /// one pass of [`Self::screen`] over the buildable units.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one linear filter-and-price pass per buildable unit"
+    )]
+    fn offers(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> (Vec<ChoiceOption>, Vec<WithheldUnit>) {
         let types = catalogue(content, sources);
         // The position before any of these options is taken, read once for all of them.
         let before =
             crate::fleet::standing_using(&types, state, content, &self.player, &self.system, None);
         let spendable_resources =
             available(state, content, sources, &self.player, Spend::Resources);
+        let buildable = buildable_for(state, content, sources, &self.player);
         let mut options = Vec::new();
-        for id in buildable_for(state, content, sources, &self.player) {
+        // A kind that the seat cannot produce at all is the printed generic unit.
+        let mut withheld: Vec<WithheldUnit> = BUILDABLE
+            .iter()
+            .filter(|base| {
+                !buildable.iter().any(|id| {
+                    types
+                        .get(id.as_str())
+                        .is_some_and(|kind| kind.base_type() == **base)
+                })
+            })
+            .filter(|base| types.get(**base).is_some())
+            .map(|base| WithheldUnit {
+                unit: (*base).to_owned(),
+                reason: Withheld::Technology,
+            })
+            .collect();
+        for id in buildable {
             let Some(kind) = types.get(id.as_str()) else {
                 continue;
             };
-            if self.only_unit.as_ref().is_some_and(|only| only != &id) {
-                continue;
-            }
-            if self
-                .max_unit_cost
-                .is_some_and(|max| kind.cost() > f64::from(i32::try_from(max).unwrap_or(i32::MAX)))
-            {
-                continue;
-            }
-            // Ability production has no unit producer, but blanket bans still apply. A hook
-            // specific to space docks (Mitosis) must not bar production granted by an ability.
-            if self.ability
-                && crate::factions::hooks_economy::cannot_produce(
-                    state,
-                    content,
-                    &self.player,
-                    kind.base_type(),
-                    "ability",
-                )
-            {
-                continue;
-            }
-            let (printed, pair) = price_of_under(Some(state), kind);
-            let (cost, discount_used) = self.discounted_unit(state, *kind, printed);
-            // Cabal Amalgamation: "When you produce a unit: You may return 1 captured unit of that
-            // type to produce that unit without spending resources." The exchange is settled here,
-            // before affordability is asked, because a unit bought by returning a captured model is
-            // not bought with resources: a Cabal with nothing left to spend still has the option the
-            // card gives it. The hook is pure -- it asks nothing and changes nothing.
-            let exchange = crate::factions::hooks_economy::production_unit_exchange(
-                state,
-                content,
-                sources,
-                &self.player,
-                &self.system,
-                &id,
-            );
-            // Credit already paid counts towards affordability, or a build the player has in fact
-            // paid for would be withheld as unaffordable. Affordability is judged on the
-            // discounted bill: a unit Sarween Tools or Harrugh Gefhara brings within reach must
-            // not be withheld for a price nobody would actually charge. A unit bought with a
-            // captured model is not withheld at all, because no resource is being asked for it.
-            let affordable = cost
-                <= available(state, content, sources, &self.player, Spend::Resources) + self.credit;
-            if !affordable && !exchange {
-                continue;
-            }
-            let spots = self.spots(state, content, sources, *kind);
-            if spots.is_empty() {
-                continue;
-            }
-            // Producers barred from this unit (Mitosis: docks and infantry) do not lend it their
-            // PRODUCTION. The most this unit can use is what is left of the total, but never more
-            // than the total less the barred producers less what this use has already produced
-            // of the same unit (other purchases are assumed to have drawn on the barred share
-            // first, the most permissive reading).
-            let barred = if self.ability {
-                0
-            } else {
-                barred_capacity(state, content, sources, &self.player, &self.system, kind)
+            let Screened {
+                printed,
+                pair,
+                cost,
+                discount_used,
+                exchange,
+                affordable,
+                spots,
+                made,
+                placed,
+            } = match self.screen(state, content, sources, &id, *kind) {
+                Ok(screened) => screened,
+                Err(reason) => {
+                    withheld.push(WithheldUnit { unit: id, reason });
+                    continue;
+                }
             };
-            let usable = if barred == 0 {
-                self.remaining
-            } else {
-                let types = catalogue(content, sources);
-                let same_kind = self
-                    .report
-                    .produced
-                    .iter()
-                    .filter(|(produced, _)| {
-                        types
-                            .get(produced.as_str())
-                            .is_some_and(|made| made.base_type() == kind.base_type())
-                    })
-                    .count();
-                self.remaining
-                    .min(self.limit - barred - i64::try_from(same_kind).unwrap_or(i64::MAX))
-            };
-            let extra = if matches!(kind.base_type(), "fighter" | "infantry") {
-                self.small_unit_exemptions
-            } else {
-                0
-            };
-            let made = pair.min(usize::try_from(usable + extra).unwrap_or(0));
-            if made == 0 {
-                continue;
-            }
-            // 31.4, asked once for two answers: the batch the box can actually supply, and whether
-            // the unit may be offered at all. Offering a unit with no plastic left would let a
-            // player spend resources on something that cannot be placed. Every quantity below is
-            // stated about the units that will arrive, not the batch that was bought -- and this
-            // walks the whole board for the count, which is why it is not asked twice.
-            let placed = self.will_place(state, content, sources, &id, made);
-            if placed == 0 {
-                continue;
-            }
             let (remaining_after, free_capacity_after) =
                 self.post_build_constraints(state, content, sources, &id, placed);
             // The paid build is offered only when it can actually be paid for. An unaffordable
@@ -2847,7 +3105,7 @@ impl ProductionWindow {
                 options.push(exchange.previewed(Preview::certain(deltas)));
             }
         }
-        options
+        (options, withheld)
     }
 
     /// Put `made` copies of a unit into a placement, up to what the box still holds.
@@ -2962,7 +3220,7 @@ impl Window for ProductionWindow {
                 if self.remaining <= 0 && self.small_unit_exemptions <= 0 {
                     return None;
                 }
-                let mut options = self.build_options(state, content, sources);
+                let (mut options, withheld) = self.offers(state, content, sources);
                 if options.is_empty() {
                     return None;
                 }
@@ -2981,18 +3239,13 @@ impl Window for ProductionWindow {
                     &self.system,
                     None,
                 );
-                let mut fleet_supply = serde_json::json!({
-                    "used": standing.fleet_charged,
-                    "limit": standing.fleet_limit,
-                });
-                if crate::fleet::is_unlimited(state, &self.player) {
-                    fleet_supply["unlimited"] = serde_json::Value::Bool(true);
-                }
-                // Letnev's Armada: already inside `limit`; named so a client can mark it.
-                let armada = crate::faction_abilities::armada_bonus(state, content, &self.player);
-                if armada > 0 {
-                    fleet_supply["armada"] = serde_json::json!(armada);
-                }
+                let fleet_supply = crate::fleet::FleetSupplyHints::of(
+                    state,
+                    content,
+                    &self.player,
+                    &standing,
+                    true,
+                );
                 // Display only: this system's capacity today (LRR 16). `unused_support` is the
                 // space dock fighter support not yet used by fighters here, which excuses queued
                 // fighters (never ground forces) before they take capacity.
@@ -3024,12 +3277,14 @@ impl Window for ProductionWindow {
                             .sum()
                     })
                     .unwrap_or(0);
-                let capacity = serde_json::json!({
-                    "transport": standing.transport,
-                    "consumed": standing.consumed,
-                    "fighters": fighters_here,
-                    "unused_support": (support - fighters_here).max(0),
-                });
+                let capacity = CapacityHints {
+                    transport: standing.transport,
+                    consumed: standing.consumed,
+                    fighters: fighters_here,
+                    unused_support: (support - fighters_here).max(0),
+                };
+                // Display only: every kind that is not offered, with why, so a client can keep
+                // its row and say so.
                 Some(
                     Choice::new(
                         self.player.clone(),
@@ -3037,8 +3292,9 @@ impl Window for ProductionWindow {
                         options,
                     )
                     .contextualized(self.context(state))
-                    .detailed("fleet_supply", fleet_supply)
-                    .detailed("capacity", capacity),
+                    .hinted(crate::fleet::FLEET_SUPPLY_KEY, &fleet_supply)
+                    .hinted(WITHHELD_KEY, &withheld)
+                    .hinted(CAPACITY_KEY, &capacity),
                 )
             }
             Stage::Paying {
@@ -4278,17 +4534,16 @@ mod tests {
             planet_value(&content, sources, &influence_planet, Spend::Resources),
             0
         );
-        assert!(
-            planet_value(&content, sources, &influence_planet, Spend::Influence) >= 3
+        assert!(planet_value(&content, sources, &influence_planet, Spend::Influence) >= 3);
+        assert_eq!(
+            available(&state, content, sources, &player, Spend::Resources),
+            1
         );
-        assert_eq!(available(&state, content, sources, &player, Spend::Resources), 1);
 
         let mut window = ProductionWindow::new(&state, content, sources, &player, &system)
             .with_only_unit(Some("carrier".to_owned()));
         assert!(
-            window
-                .pending_choice(&state, content, sources)
-                .is_none(),
+            window.pending_choice(&state, content, sources).is_none(),
             "a carrier resource bill must not be funded by the other planet's influence"
         );
         window.stage = Stage::Paying {
@@ -5693,6 +5948,61 @@ mod tests {
         assert!(supply.get("unlimited").is_none());
     }
 
+    /// Letnev's Armada is one typed fact: the same `fleet_supply_bonus` in the pools of a
+    /// command-token decision and in the fleet supply of a production; absent for another seat.
+    #[test]
+    fn only_letnev_carries_the_armada_bonus_in_the_pools_and_the_production() {
+        let content = ContentStore::embedded();
+        let told = |faction: &str| {
+            let (mut state, system, planet) = seated();
+            state.player_mut(&player()).unwrap().faction = ti4_model::id::FactionId::new(faction);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), player());
+            put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+            let window = ProductionWindow::new(&state, content, POK, &player(), &system);
+            let production = window
+                .pending_choice(&state, content, POK)
+                .expect("production choice");
+            let tokens = crate::tokens::with_pool_details(
+                crate::tokens::TokenRedistribution::new(player())
+                    .pending_choice(&state)
+                    .expect("redistribution"),
+                &state,
+                content,
+                "redistribute",
+                None,
+            );
+            (
+                tokens
+                    .hint::<crate::tokens::CommandPools>("pools")
+                    .expect("the pools"),
+                production
+                    .hint::<crate::fleet::FleetSupplyHints>(crate::fleet::FLEET_SUPPLY_KEY)
+                    .expect("the fleet supply"),
+                tokens,
+                production,
+            )
+        };
+        let (pools, supply, tokens, production) = told("letnev");
+        assert_eq!(pools.fleet_supply_bonus, 2);
+        assert_eq!(supply.fleet_supply_bonus, 2);
+        assert_eq!(supply.limit, i64::from(pools.fleet) + 2);
+        assert_eq!(tokens.details["pools"]["fleet_supply_bonus"], 2);
+        assert_eq!(production.details["fleet_supply"]["fleet_supply_bonus"], 2);
+        assert!(tokens.details.get("fleet_supply_bonus").is_none());
+        assert!(production.details["fleet_supply"].get("armada").is_none());
+        let (pools, supply, tokens, production) = told("sol");
+        assert_eq!(pools.fleet_supply_bonus, 0);
+        assert_eq!(supply.fleet_supply_bonus, 0);
+        assert!(tokens.details["pools"].get("fleet_supply_bonus").is_none());
+        assert!(
+            production.details["fleet_supply"]
+                .get("fleet_supply_bonus")
+                .is_none()
+        );
+    }
+
     #[test]
     fn build_options_name_the_ships_they_add_to_the_fleet_pool() {
         let content = ContentStore::embedded();
@@ -5746,10 +6056,10 @@ mod tests {
         let window = ProductionWindow::new(&state, content, POK, &player(), &system);
         let choice = window.pending_choice(&state, content, POK).expect("choice");
         let standing = crate::fleet::standing(&state, content, POK, &player(), &system, None);
-        let detail = choice.details.get("capacity").expect("capacity detail");
-        assert_eq!(detail["transport"].as_i64(), Some(standing.transport));
-        assert_eq!(detail["consumed"].as_i64(), Some(standing.consumed));
-        assert_eq!(detail["fighters"].as_i64(), Some(2));
+        let detail: CapacityHints = choice.hint(CAPACITY_KEY).expect("capacity hints");
+        assert_eq!(detail.transport, standing.transport);
+        assert_eq!(detail.consumed, standing.consumed);
+        assert_eq!(detail.fighters, 2);
         let get = |unit: &str, field: &str| option_field(&choice, unit, field);
         assert_eq!(
             get("carrier", "capacity_provided"),
@@ -6866,6 +7176,15 @@ mod tests {
                     .any(|option| option.id.starts_with("build|") && option.id.contains("infantry")),
                 "the unbarred share is spent; the dock cannot make infantry"
             );
+            assert!(
+                window
+                    .withheld(&state, content, POK)
+                    .contains(&WithheldUnit {
+                        unit: "infantry".to_owned(),
+                        reason: Withheld::Barred,
+                    }),
+                "and says why"
+            );
         });
     }
 
@@ -6888,6 +7207,15 @@ mod tests {
                     })
                 });
             assert!(!offered);
+            // No planet is a spot: the ban is why.
+            assert!(
+                window
+                    .withheld(&state, content, POK)
+                    .contains(&WithheldUnit {
+                        unit: "infantry".to_owned(),
+                        reason: Withheld::Barred,
+                    })
+            );
         });
     }
 
@@ -7752,5 +8080,195 @@ mod bf_f3_tests {
         produce_by_ability(&mut state, &mut ctx, None, &pid("a"), &system, Some(1)).unwrap();
         assert_eq!(crate::supply::staged_events(&state), 0);
         assert!(state.faction_marks.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod withheld_tests {
+    use super::*;
+    use crate::factions::hooks_economy::{EconomyHooks, with_test_hooks};
+    use crate::fixtures::{a_placed_planet, game, put, put_on_planet};
+    use ti4_model::content_types::POK;
+
+    fn seat() -> PlayerId {
+        PlayerId::new("a")
+    }
+
+    /// Seat A with a space dock on a planet that it controls, and trade goods for anything.
+    fn dock_game() -> (GameState, SystemId, PlanetId) {
+        let mut state = game(&["a", "b"]);
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), seat());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        state.player_mut(&seat()).unwrap().trade_goods = 20;
+        (state, system, planet)
+    }
+
+    fn reason(withheld: &[WithheldUnit], unit: &str) -> Option<Withheld> {
+        withheld
+            .iter()
+            .find(|known| known.unit == unit)
+            .map(|known| known.reason)
+    }
+
+    /// The units that the question offers, by their id.
+    fn offered(choice: Option<&Choice>) -> Vec<String> {
+        choice
+            .map(|choice| {
+                choice
+                    .options
+                    .iter()
+                    .filter(|option| option.kind == PRODUCE_KIND)
+                    .filter_map(|option| Some(option.payload.get("unit")?.as_str()?.to_owned()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Each buildable unit is offered or withheld, never both and never neither; a kind that
+    /// the seat cannot build at all is withheld as its printed unit for its technology; and the
+    /// question carries the same reasons.
+    fn consistent(window: &ProductionWindow, state: &GameState) -> Vec<WithheldUnit> {
+        let content = ContentStore::embedded();
+        let withheld = window.withheld(state, content, POK);
+        let choice = window.pending_choice(state, content, POK);
+        let offered = offered(choice.as_ref());
+        for id in buildable_for(state, content, POK, &seat()) {
+            let held = withheld.iter().filter(|known| known.unit == id).count();
+            assert_eq!(
+                usize::from(offered.contains(&id)) + held,
+                1,
+                "{id}: offered {offered:?}, withheld {withheld:?}"
+            );
+        }
+        let types = catalogue(content, POK);
+        for known in &withheld {
+            if known.reason == Withheld::Technology {
+                let base = types.get(known.unit.as_str()).expect("a unit").base_type();
+                assert!(
+                    !buildable_for(state, content, POK, &seat())
+                        .iter()
+                        .any(|id| types.get(id.as_str()).unwrap().base_type() == base),
+                    "{known:?}"
+                );
+            }
+        }
+        if let Some(choice) = &choice {
+            assert_eq!(
+                choice.hint::<Vec<WithheldUnit>>(WITHHELD_KEY).as_ref(),
+                Some(&withheld)
+            );
+            // The JSON that a client reads.
+            assert!(choice.details[WITHHELD_KEY].as_array().is_some_and(|all| {
+                all.iter()
+                    .all(|known| known["unit"].is_string() && known["reason"].is_string())
+            }));
+        }
+        withheld
+    }
+
+    #[test]
+    fn a_war_sun_needs_its_technology_and_a_full_box_has_none_left() {
+        let content = ContentStore::embedded();
+        let (mut state, system, _) = dock_game();
+        let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+        let withheld = consistent(&window, &state);
+        assert_eq!(reason(&withheld, "warsun"), Some(Withheld::Technology));
+        assert_eq!(reason(&withheld, "carrier"), None);
+
+        put(&mut state, &system, "carrier", &seat(), 4);
+        let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+        assert_eq!(
+            reason(&consistent(&window, &state), "carrier"),
+            Some(Withheld::Supply)
+        );
+    }
+
+    #[test]
+    fn a_blockade_withholds_the_ships_and_no_place_the_ground_forces() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = dock_game();
+        put(&mut state, &system, "destroyer", &PlayerId::new("b"), 1);
+        let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+        let withheld = consistent(&window, &state);
+        assert_eq!(reason(&withheld, "cruiser"), Some(Withheld::Blockade));
+        assert_eq!(reason(&withheld, "infantry"), None);
+
+        let (mut state, system, _) = dock_game();
+        state
+            .laws
+            .insert("demilitarized_zone".to_owned(), planet.to_string());
+        let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+        let withheld = consistent(&window, &state);
+        assert_eq!(reason(&withheld, "infantry"), Some(Withheld::NoPlace));
+        assert_eq!(reason(&withheld, "cruiser"), None);
+    }
+
+    #[test]
+    fn a_use_of_one_unit_or_up_to_a_cost_withholds_the_others() {
+        let content = ContentStore::embedded();
+        let (state, system, _) = dock_game();
+        let only = ProductionWindow::for_ability(&state, content, POK, &seat(), &system, Some(1))
+            .with_only_unit(Some("cruiser".to_owned()));
+        let withheld = consistent(&only, &state);
+        assert_eq!(reason(&withheld, "cruiser"), None);
+        assert_eq!(reason(&withheld, "carrier"), Some(Withheld::OnlyAnother));
+        // The technology comes first.
+        assert_eq!(reason(&withheld, "warsun"), Some(Withheld::Technology));
+
+        let cheap = ProductionWindow::for_ability(&state, content, POK, &seat(), &system, Some(2))
+            .with_max_unit_cost(Some(2));
+        let withheld = consistent(&cheap, &state);
+        assert_eq!(reason(&withheld, "cruiser"), None);
+        assert_eq!(reason(&withheld, "dreadnought"), Some(Withheld::TooCostly));
+    }
+
+    #[test]
+    fn a_ban_of_production_by_an_ability_withholds_the_unit() {
+        let content = ContentStore::embedded();
+        let (state, system, _) = dock_game();
+        let banned = EconomyHooks {
+            cannot_produce: Some(|_, _, _, unit, producer| {
+                unit == "cruiser" && producer == "ability"
+            }),
+            ..EconomyHooks::NONE
+        };
+        with_test_hooks(banned, || {
+            let window =
+                ProductionWindow::for_ability(&state, content, POK, &seat(), &system, Some(2));
+            assert_eq!(
+                reason(&consistent(&window, &state), "cruiser"),
+                Some(Withheld::Banned)
+            );
+            // The ban is of a production by an ability only.
+            let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+            assert_eq!(reason(&consistent(&window, &state), "cruiser"), None);
+        });
+    }
+
+    #[test]
+    fn what_the_resources_or_the_limit_leave_out_comes_after_the_rules() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = dock_game();
+        state.player_mut(&seat()).unwrap().trade_goods = 0;
+        state.exhaust_planet(planet);
+        put(&mut state, &system, "carrier", &seat(), 4);
+        let window = ProductionWindow::new(&state, content, POK, &seat(), &system);
+        let withheld = consistent(&window, &state);
+        assert_eq!(
+            reason(&withheld, "dreadnought"),
+            Some(Withheld::Unaffordable)
+        );
+        // A rule of the unit is said before the resources.
+        assert_eq!(reason(&withheld, "carrier"), Some(Withheld::Supply));
+        assert_eq!(reason(&withheld, "warsun"), Some(Withheld::Technology));
+
+        let (state, system, _) = dock_game();
+        let spent = ProductionWindow::for_ability(&state, content, POK, &seat(), &system, Some(0));
+        let withheld = consistent(&spent, &state);
+        assert_eq!(reason(&withheld, "cruiser"), Some(Withheld::Limit));
+        assert_eq!(reason(&withheld, "infantry"), Some(Withheld::Limit));
     }
 }
