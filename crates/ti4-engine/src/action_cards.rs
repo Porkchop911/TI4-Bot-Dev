@@ -3860,15 +3860,25 @@ fn experimental_battlestation(context: &mut crate::timing::TimingContext<'_>, pl
             }
         }
     }
+    // "Adjacent" is the dock owner's: breaches, Quantum Entanglement, Void Tether.
+    let adjacency = context.galaxy.map(|galaxy| {
+        crate::movement::PlayerAdjacency::new(
+            context.state,
+            context.content,
+            context.sources,
+            galaxy,
+            player,
+        )
+    });
     let eligible: Vec<(String, String)> = dock_systems
         .iter()
         .filter(|here| {
             if **here == system.to_string() {
                 return true;
             }
-            context
-                .galaxy
-                .is_some_and(|galaxy| galaxy.adjacent(system.as_str()).contains(here.as_str()))
+            adjacency
+                .as_ref()
+                .is_some_and(|adjacency| adjacency.are_adjacent(system.as_str(), here.as_str()))
         })
         .map(|here| (here.clone(), format!("dock in {here}")))
         .collect();
@@ -4553,9 +4563,16 @@ fn exploration_probe(context: &mut crate::timing::TimingContext<'_>, player: &Pl
     let mine = systems_with_my_ships(context.state, context.content, context.sources, player);
     let mut eligible: BTreeSet<String> = mine.into_iter().collect();
     if let Some(galaxy) = context.galaxy {
+        let adjacency = crate::movement::PlayerAdjacency::new(
+            context.state,
+            context.content,
+            context.sources,
+            galaxy,
+            player,
+        );
         let mut adjacent = BTreeSet::new();
         for system in &eligible {
-            adjacent.extend(galaxy.adjacent(system).into_iter().map(str::to_owned));
+            adjacent.extend(adjacency.neighbours(system));
         }
         eligible.extend(adjacent);
     }
@@ -7044,15 +7061,16 @@ pub fn jamming_systems(
             mine.insert(system.as_str());
         }
     }
-    let mut reach: BTreeSet<&str> = mine.clone();
+    let adjacency = crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
+    let mut reach: BTreeSet<String> = mine.iter().map(|system| (*system).to_owned()).collect();
     for system in &mine {
-        reach.extend(galaxy.adjacent(system));
+        reach.extend(adjacency.neighbours(system));
     }
     // Home systems are never jammable, even when they hold the player's ships.
     // One corpus pass for the whole set, not one per system in `reach`.
     let homes = ti4_content::galaxy::home_systems(content, sources);
-    reach.retain(|system| !homes.contains(*system));
-    reach.into_iter().map(str::to_owned).collect()
+    reach.retain(|system| !homes.contains(system.as_str()));
+    reach.into_iter().collect()
 }
 
 /// Signal Jamming: strand a rival's command token in a system near your ships.

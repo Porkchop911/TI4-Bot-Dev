@@ -1202,6 +1202,7 @@ mod tests {
         );
         // Not held, not offered.
         let mut unheld = game();
+        unheld.player_mut(&a()).unwrap().breakthrough = None; // Crimson starts with it
         crate::fixtures::put(&mut unheld, &spot, "cruiser", &a(), 1);
         assert!(component_actions(&unheld, content(), &a()).is_empty());
         let _ = flip_breach;

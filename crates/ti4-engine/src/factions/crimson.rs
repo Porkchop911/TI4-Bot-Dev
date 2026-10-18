@@ -258,6 +258,39 @@ pub fn place_sorrow_breach(state: &mut GameState) {
     state.faction_marks.remove(&active_key(&sorrow));
 }
 
+/// Public mark: this Crimson seat has made its setup breakthrough roll for The Fracture.
+fn setup_roll_key(player: &PlayerId) -> String {
+    format!("crimson:setup_roll:{player}")
+}
+
+/// Crimson seats that hold Resonance Generator from setup and have not yet made the breakthrough
+/// roll (operator ruling 2026-10-18: Crimson starts with its breakthrough and rolls for The
+/// Fracture like any player gaining one). Holding it does not close the expedition to them.
+#[must_use]
+pub fn setup_rollers(state: &GameState) -> Vec<PlayerId> {
+    state
+        .seating_order
+        .iter()
+        .filter(|player| {
+            state.player(player).is_some_and(|seat| {
+                seat.faction.as_str() == FACTION
+                    && seat
+                        .breakthrough
+                        .as_ref()
+                        .is_some_and(|held| held.as_str() == BREAKTHROUGH)
+            }) && !state.faction_marks.contains_key(&setup_roll_key(player))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Record that `player` has made the setup roll, so it is never made twice.
+pub fn mark_setup_rolled(state: &mut GameState, player: &PlayerId) {
+    state
+        .faction_marks
+        .insert(setup_roll_key(player), "1".to_owned());
+}
+
 /// Flip the breach in `system`; `false`, changing nothing, when it holds none.
 pub fn flip_breach(state: &mut GameState, system: &SystemId) -> bool {
     if !has_breach(state, system) {
@@ -521,6 +554,11 @@ fn linked_systems(
     _galaxy: &Galaxy,
     _player: &PlayerId,
 ) -> Vec<(String, String)> {
+    breach_pairs(state)
+}
+
+/// Every pair of systems that active breaches make adjacent (for every player).
+pub(crate) fn breach_pairs(state: &GameState) -> Vec<(String, String)> {
     let active = active_breaches(state);
     let mut pairs = Vec::new();
     for (index, first) in active.iter().enumerate() {
@@ -978,6 +1016,13 @@ pub(crate) mod testkit {
             .collect()
     }
 
+    /// Make `first` and `second` adjacent through two active breaches.
+    pub(crate) fn link(state: &mut GameState, first: &str, second: &str) {
+        for system in [first, second] {
+            super::put_breach(state, &a(), &SystemId::new(system), true);
+        }
+    }
+
     pub(crate) fn emit(
         state: &mut GameState,
         galaxy: Option<&Galaxy>,
@@ -1022,6 +1067,31 @@ mod tests {
 
     fn home(state: &GameState) -> SystemId {
         state.player(&a()).unwrap().home_system.clone().unwrap()
+    }
+
+    // -- starting breakthrough -----------------------------------------------------------------
+
+    #[test]
+    fn the_crimson_starts_with_its_breakthrough_and_makes_the_fracture_roll_once() {
+        let mut state = game();
+        assert!(crate::breakthroughs::holds(&state, &a(), BREAKTHROUGH));
+        assert_eq!(setup_rollers(&state), vec![a()]);
+        state.phase = ti4_model::state::Phase::Strategy;
+        state.round = 1;
+        state.starting_tech_picks.clear();
+        let mut game = crate::game::Game::new(state, content()).with_sources(DEFAULT);
+        let _ = game.step();
+        assert!(
+            setup_rollers(&game.state).is_empty(),
+            "the roll is made and marked"
+        );
+        let fracture = game.state.fracture_in_play;
+        let _ = game.step();
+        assert_eq!(game.state.fracture_in_play, fracture, "never rolled twice");
+        assert!(
+            crate::breakthroughs::holds(&game.state, &a(), BREAKTHROUGH),
+            "the roll does not take the breakthrough away"
+        );
     }
 
     // -- Sorrow -------------------------------------------------------------------------------
@@ -2198,6 +2268,8 @@ mod tests {
             crate::tactical::effective_move_value(state, cruiser, player, origin)
         };
         let base = value(&state, &quiet, &a());
+        // Crimson starts with it; take it away to see the bonus is the breakthrough's.
+        state.player_mut(&a()).unwrap().breakthrough = None;
         assert_eq!(
             value(&state, &home, &a()),
             base,
@@ -2218,5 +2290,190 @@ mod tests {
             "an inactive breach gives nothing"
         );
         assert_eq!(value(&state, &home, &b()), base, "only its holder");
+    }
+}
+
+/// Phase 4 of the observation-gaps plan: effects that say "adjacent" see active breaches (which
+/// are adjacency for every player). Each test fails without the link-aware lookup.
+#[cfg(test)]
+mod adjacency_audit_tests {
+    use ti4_content::galaxy::Galaxy;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{PlanetId, SystemId};
+    use ti4_model::state::GameState;
+
+    use super::testkit::{b, c, content, game, link, plain, ring_map};
+
+    /// A ring map and a state whose systems `first` and `opposite` are two apart on the ring.
+    fn world() -> (Galaxy, GameState, String, String) {
+        let ring = plain(6);
+        let ring: Vec<&str> = ring.iter().map(String::as_str).collect();
+        let centre = plain(7).pop().unwrap();
+        let galaxy = ring_map(&centre, &ring);
+        let mut state = game();
+        for id in ring.iter().chain(std::iter::once(&centre.as_str())) {
+            state.board.entry(SystemId::new(*id)).or_default();
+        }
+        (galaxy, state, ring[0].to_owned(), ring[3].to_owned())
+    }
+
+    fn sys(id: &str) -> SystemId {
+        SystemId::new(id)
+    }
+
+    fn first_planet(system: &str) -> PlanetId {
+        let planets = ti4_content::galaxy::planets_in(content(), system, DEFAULT);
+        PlanetId::new(planets[0].id())
+    }
+
+    #[test]
+    fn retreats_may_cross_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &b(), 1);
+        let ask = |state: &GameState| {
+            (
+                crate::combat::eligible_retreats(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+                crate::combat::skilled_retreat_destinations(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+                crate::combat::det_retreat_destinations(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+            )
+        };
+        let (retreat, skilled, det) = ask(&state);
+        assert!(!retreat.contains(&sys(&opposite)));
+        assert!(!skilled.contains(&sys(&opposite)));
+        assert!(!det.contains(&sys(&opposite)));
+        link(&mut state, &first, &opposite);
+        let (retreat, skilled, det) = ask(&state);
+        assert!(retreat.contains(&sys(&opposite)), "78.7c retreat");
+        assert!(skilled.contains(&sys(&opposite)), "Skilled Retreat");
+        assert!(det.contains(&sys(&opposite)), "Dark Energy Tap");
+    }
+
+    #[test]
+    fn space_cannon_reaches_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &c(), 1);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&opposite),
+            &first_planet(&opposite),
+            "pds2",
+            &b(),
+            1,
+        );
+        let guns = |state: &GameState| {
+            crate::combat::space_cannon_guns(
+                state, content(), DEFAULT, &sys(&first), &c(), Some(&galaxy),
+            )
+            .units
+            .len()
+        };
+        assert_eq!(guns(&state), 0, "two apart");
+        link(&mut state, &first, &opposite);
+        assert_eq!(guns(&state), 1, "a PDS II fires through the breach link");
+    }
+
+    #[test]
+    fn signal_jamming_reaches_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        let reach = |state: &GameState| {
+            crate::action_cards::jamming_systems(state, content(), DEFAULT, Some(&galaxy), &b())
+        };
+        assert!(!reach(&state).contains(&opposite));
+        link(&mut state, &first, &opposite);
+        assert!(reach(&state).contains(&opposite));
+    }
+
+    #[test]
+    fn annexing_and_the_stellar_converter_reach_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) = world();
+        state
+            .system_mut(&sys(&first))
+            .planet_control
+            .insert(first_planet(&first), b());
+        crate::fixtures::put(&mut state, &sys(&first), "dreadnought", &b(), 1);
+        let annex = |state: &GameState| {
+            crate::faction_abilities::annexable(state, content(), DEFAULT, &galaxy, &b())
+                .iter()
+                .any(|(system, _)| system.as_str() == opposite)
+        };
+        let converter = |state: &GameState| {
+            crate::relics::stellar_converter_targets(state, content(), DEFAULT, &galaxy, &b())
+                .iter()
+                .any(|(system, _)| system.as_str() == opposite)
+        };
+        assert!(!annex(&state) && !converter(&state));
+        link(&mut state, &first, &opposite);
+        assert!(annex(&state), "Civil Accords annexation");
+        assert!(converter(&state), "Stellar Converter");
+    }
+
+    #[test]
+    fn a_space_dock_vortex_and_the_mahact_hero_see_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&first),
+            &first_planet(&first),
+            "spacedock",
+            &c(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &c(), 1);
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &b(), 1);
+        let vortex = |state: &GameState| {
+            !crate::factions::cabal::vortex_targets(state, content(), DEFAULT, &galaxy, &c())
+                .is_empty()
+        };
+        let hero = |state: &GameState| {
+            crate::factions::mahact_units::hero_pairs(state, content(), DEFAULT, &galaxy, &c())
+                .contains(&(sys(&first), sys(&opposite)))
+        };
+        assert!(!vortex(&state) && !hero(&state));
+        link(&mut state, &first, &opposite);
+        assert!(vortex(&state), "Cabal Vortex");
+        assert!(hero(&state), "Mahact hero");
+    }
+
+    #[test]
+    fn a_ship_beside_an_anomaly_through_a_breach_link_counts_for_the_secret() {
+        let ring = plain(6);
+        let ring: Vec<&str> = ring.iter().map(String::as_str).collect();
+        let centre = plain(7).pop().unwrap();
+        let homes = ti4_content::galaxy::home_systems(content(), DEFAULT);
+        let anomaly = ti4_content::galaxy::all_systems(content(), DEFAULT)
+            .iter()
+            .find(|(id, system)| {
+                system.is_anomaly() && !system.is_hyperlane() && !homes.contains(*id) && **id != "18"
+            })
+            .map(|(id, _)| (*id).to_owned())
+            .expect("an anomaly tile");
+        let mut placed = ring.clone();
+        placed[3] = anomaly.as_str();
+        let galaxy = ring_map(&centre, &placed);
+        let mut state = game();
+        crate::fixtures::put(&mut state, &sys(placed[0]), "cruiser", &b(), 1);
+        let count = |state: &GameState| {
+            let position = crate::secrets::Position {
+                state,
+                content: content(),
+                sources: DEFAULT,
+                player: &b(),
+                galaxy: Some(&galaxy),
+                imagined: crate::objectives::Imagined::NONE,
+            };
+            crate::secrets::ship_systems_beside_anomaly(&position)
+                .map_or(0, |systems| systems.len())
+        };
+        assert_eq!(count(&state), 0);
+        link(&mut state, placed[0], placed[3]);
+        assert_eq!(count(&state), 1);
     }
 }

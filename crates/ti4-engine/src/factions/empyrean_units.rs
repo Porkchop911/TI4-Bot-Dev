@@ -40,7 +40,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
-use ti4_content::galaxy::Galaxy;
 use ti4_model::id::{LeaderId, PlanetId, PlayerId, SystemId, UnitTypeId};
 use ti4_model::state::{GameState, LeaderStatus};
 use ti4_model::units::Unit;
@@ -50,6 +49,7 @@ use super::hooks_combat::CombatHooks;
 use crate::choice::{Choice, ChoiceOption};
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::event::Event;
+use crate::movement::PlayerAdjacency;
 use crate::production::Spend;
 use crate::timing::{Ability, Relation, TimingContext, TimingError};
 
@@ -112,9 +112,17 @@ fn ask(
         .map_err(TimingError::IllegalChoice)
 }
 
-/// Whether `a` is `b` or next to it on the map. Without a map only the same system counts.
-fn near(galaxy: Option<&Galaxy>, a: &SystemId, b: &SystemId) -> bool {
-    a == b || galaxy.is_some_and(|galaxy| galaxy.adjacent(a.as_str()).contains(b.as_str()))
+/// Whether `a` is `b` or next to it, as `owner` sees adjacency (breaches, their own links, tethers).
+/// Without a map only the same system counts.
+fn near(adjacency: Option<&PlayerAdjacency<'_>>, a: &SystemId, b: &SystemId) -> bool {
+    a == b || adjacency.is_some_and(|adjacency| adjacency.are_adjacent(a.as_str(), b.as_str()))
+}
+
+/// `owner`'s adjacency on the map the context carries.
+fn adjacency_of<'g>(context: &TimingContext<'g>, owner: &PlayerId) -> Option<PlayerAdjacency<'g>> {
+    context.galaxy.map(|galaxy| {
+        PlayerAdjacency::new(context.state, context.content, context.sources, galaxy, owner)
+    })
 }
 
 // -- Dynamo -------------------------------------------------------------------------------------
@@ -152,7 +160,7 @@ fn repair_target(event: &Event, state: &GameState) -> Option<Repair> {
 /// Whether `owner` has a Dynamo in the space area of `system` or of a system next to it.
 fn dynamo_reaches(
     state: &GameState,
-    galaxy: Option<&Galaxy>,
+    galaxy: Option<&PlayerAdjacency<'_>>,
     owner: &PlayerId,
     system: &SystemId,
 ) -> bool {
@@ -169,7 +177,12 @@ fn dynamo_reaches(
 /// the two influence can be paid.
 fn dynamo_window(context: &TimingContext<'_>, owner: &PlayerId, event: &Event) -> Option<Repair> {
     let target = repair_target(event, context.state)?;
-    (dynamo_reaches(context.state, context.galaxy, owner, &target.system)
+    (dynamo_reaches(
+        context.state,
+        adjacency_of(context, owner).as_ref(),
+        owner,
+        &target.system,
+    )
         && crate::payment::affordable(
             context.state,
             context.content,
@@ -252,7 +265,7 @@ type Place = (SystemId, Option<PlanetId>);
 /// in board order.
 fn watcher_sites(
     state: &GameState,
-    galaxy: Option<&Galaxy>,
+    galaxy: Option<&PlayerAdjacency<'_>>,
     owner: &PlayerId,
     actor: &PlayerId,
 ) -> Vec<Place> {
@@ -308,7 +321,12 @@ fn watcher_window(
     if &actor == owner || context.state.player(&actor).is_none() {
         return None;
     }
-    let sites = watcher_sites(context.state, context.galaxy, owner, &actor);
+    let sites = watcher_sites(
+        context.state,
+        adjacency_of(context, owner).as_ref(),
+        owner,
+        &actor,
+    );
     (!sites.is_empty()).then_some((actor, sites))
 }
 
@@ -582,6 +600,7 @@ mod tests {
     use std::sync::{Arc as Shared, Mutex};
 
     use super::*;
+    use ti4_content::galaxy::Galaxy;
     use crate::choice::{Decider, IllegalChoice, Scripted, Table};
     use crate::event::EventSequence;
     use serde_json::Value;

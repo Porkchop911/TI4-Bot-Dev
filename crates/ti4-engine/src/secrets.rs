@@ -187,7 +187,20 @@ pub struct Position<'a> {
     pub imagined: crate::objectives::Imagined<'a>,
 }
 
-impl Position<'_> {
+impl<'a> Position<'a> {
+    /// Adjacency as this player sees it (breaches, their own wormhole links, tethers), or `None`
+    /// without a map.
+    fn adjacency(&self) -> Option<crate::movement::PlayerAdjacency<'a>> {
+        let galaxy = self.galaxy?;
+        Some(crate::movement::PlayerAdjacency::new(
+            self.state,
+            self.content,
+            self.sources,
+            galaxy,
+            self.player,
+        ))
+    }
+
     /// Units of one base type this player has on the board, in space and on planets.
     fn units_on_board(&self, base_type: &str) -> usize {
         let types = ti4_content::units::catalogue(self.content, self.sources);
@@ -558,14 +571,14 @@ fn ship_systems_beside_anomaly_count(position: &Position<'_>) -> Option<usize> {
 pub fn ship_systems_beside_anomaly(
     position: &Position<'_>,
 ) -> Option<Vec<ti4_model::id::SystemId>> {
-    let galaxy = position.galaxy?;
+    let adjacency = position.adjacency()?;
     let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
     let mut found: Vec<ti4_model::id::SystemId> = ship_systems(position)
         .into_iter()
         .filter(|here| {
-            galaxy.adjacent(here.as_str()).into_iter().any(|other| {
+            adjacency.neighbours(here.as_str()).iter().any(|other| {
                 systems
-                    .get(other)
+                    .get(other.as_str())
                     .is_some_and(ti4_content::galaxy::System::is_anomaly)
             })
         })
@@ -576,7 +589,7 @@ pub fn ship_systems_beside_anomaly(
 }
 
 fn ship_systems_beside_rival_home_count(position: &Position<'_>) -> Option<usize> {
-    let galaxy = position.galaxy?;
+    let adjacency = position.adjacency()?;
     let mine = position
         .state
         .player(position.player)
@@ -587,8 +600,8 @@ fn ship_systems_beside_rival_home_count(position: &Position<'_>) -> Option<usize
         ship_systems(position)
             .into_iter()
             .filter(|here| {
-                galaxy.adjacent(here.as_str()).into_iter().any(|other| {
-                    systems.get(other).is_some_and(|system| {
+                adjacency.neighbours(here.as_str()).iter().any(|other| {
+                    systems.get(other.as_str()).is_some_and(|system| {
                         system.planets().into_iter().any(|planet| {
                             planets
                                 .get(planet)

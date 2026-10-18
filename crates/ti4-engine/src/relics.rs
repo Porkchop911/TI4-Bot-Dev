@@ -546,7 +546,7 @@ fn is_mecatol(planet: ti4_content::galaxy::Planet<'_>) -> bool {
     planet.planet_types().contains(&"MR")
 }
 
-fn stellar_converter_targets(
+pub(crate) fn stellar_converter_targets(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -554,7 +554,8 @@ fn stellar_converter_targets(
     player: &PlayerId,
 ) -> Vec<(ti4_model::id::SystemId, PlanetId)> {
     let types = ti4_content::units::catalogue(content, sources);
-    let mut reach: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let adjacency = crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
+    let mut reach: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for (system, here) in &state.board {
         let bombards = here.units_of(player).into_iter().any(|unit| {
             types
@@ -562,16 +563,16 @@ fn stellar_converter_targets(
                 .is_some_and(ti4_content::UnitType::has_bombardment)
         });
         if bombards {
-            reach.extend(galaxy.adjacent(system.as_str()));
+            reach.extend(adjacency.neighbours(system.as_str()));
         }
     }
     let mut targets = Vec::new();
     for system in reach {
-        let id = ti4_model::id::SystemId::new(system);
+        let id = ti4_model::id::SystemId::new(system.as_str());
         if !state.board.contains_key(&id) {
             continue; // purged by the Silver Flame, or never on this board
         }
-        for planet in ti4_content::galaxy::planets_in(content, system, sources) {
+        for planet in ti4_content::galaxy::planets_in(content, system.as_str(), sources) {
             let alias = planet.id();
             if planet.homeworld_of().is_some() || planet.is_legendary() || is_mecatol(planet) {
                 continue;

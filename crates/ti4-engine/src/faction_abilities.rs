@@ -598,9 +598,10 @@ pub fn annexable(
     if mine.is_empty() {
         return Vec::new();
     }
+    let adjacency = crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
     let mut reachable = mine.clone();
     for system in &mine {
-        reachable.extend(galaxy.adjacent(system).into_iter().map(ToOwned::to_owned));
+        reachable.extend(adjacency.neighbours(system));
     }
 
     // F-M08-019-1: iterate each system's planets in the order of the system record's own

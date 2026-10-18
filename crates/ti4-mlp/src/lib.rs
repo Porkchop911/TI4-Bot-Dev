@@ -2249,6 +2249,28 @@ mod tests {
     }
 
     #[test]
+    fn appended_names_on_zero_rows_keep_every_logit() {
+        // Appending vocabulary names (no growth) hands out free rows, which migration zeroes. An
+        // option over old columns scores as before, and adding the new names' columns changes nothing.
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let free_start = CAPACITY - 40;
+        let _ = actor.input_mut().narrow(0, free_start, 40).zero_();
+        let score = |actor: &Actor, option: SparseOption| {
+            ti4_tensor::to_vec(&actor.logits(&[option], "trade", row).expect("logits"))
+                .expect("vec")
+        };
+        let old = option(&[3, 48, 79], &[0.25, 1.0, -0.5]);
+        let before = score(&actor, old.clone());
+        let with_new = option(
+            &[3, 48, 79, free_start, free_start + 7],
+            &[0.25, 1.0, -0.5, 1.0, 1.0],
+        );
+        assert_eq!(score(&actor, with_new), before, "a new name moved a logit");
+        assert_eq!(score(&actor, old), before);
+    }
+
+    #[test]
     fn copying_a_fallback_row_keeps_the_logit_of_a_moved_name() {
         // BF-22 --init-from-oov: a name that resolved to column 7 (its OOV column) now has its own
         // column 300; copying row 7 to 300 leaves the option's score unchanged.

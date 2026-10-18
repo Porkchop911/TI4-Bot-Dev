@@ -261,6 +261,19 @@ pub fn cost_family_token(family: &CostFamily) -> String {
 }
 
 impl<'a> Position<'a> {
+    /// Adjacency as this player sees it (breaches, their own wormhole links, tethers), or `None`
+    /// without a map. Objectives that say "adjacent" use this, not `Galaxy::adjacent`.
+    pub(crate) fn adjacency(&self) -> Option<crate::movement::PlayerAdjacency<'a>> {
+        let galaxy = self.galaxy?;
+        Some(crate::movement::PlayerAdjacency::new(
+            self.state,
+            self.content,
+            self.sources,
+            galaxy,
+            self.player,
+        ))
+    }
+
     /// Resolve a player's position once, ready for any number of requirement checks.
     ///
     /// Planets the corpus does not know are dropped rather than counted, matching the
@@ -679,8 +692,9 @@ fn on_the_rim_count(position: &Position<'_>) -> Option<usize> {
 /// Have ships in two systems adjacent to Mecatol Rex's.
 fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
     let galaxy = position.galaxy?;
-    let beside: std::collections::BTreeSet<&str> =
-        galaxy.adjacent(crate::seating::mecatol_in_galaxy(galaxy));
+    let beside = position
+        .adjacency()?
+        .neighbours(crate::seating::mecatol_in_galaxy(galaxy));
     Some(
         position
             .systems_with_ships()

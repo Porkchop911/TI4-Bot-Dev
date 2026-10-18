@@ -399,7 +399,7 @@ pub(crate) fn ship_movement_barred(state: &GameState) -> bool {
 /// The `(origin, destination)` pairs the hero can use: `player` has ships in the origin's space area,
 /// the destination is adjacent and holds exactly one other seated player's ships and no neutral ones
 /// (so the combat has two sides), in board order.
-fn hero_pairs(
+pub(crate) fn hero_pairs(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -407,12 +407,13 @@ fn hero_pairs(
     player: &PlayerId,
 ) -> Vec<(SystemId, SystemId)> {
     let mut pairs = Vec::new();
+    let adjacency = crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
     for origin in state.board.keys() {
         if crate::combat::ships_of(state, content, sources, player, origin).is_empty() {
             continue;
         }
-        for adjacent in galaxy.adjacent(origin.as_str()) {
-            let destination = SystemId::new(adjacent);
+        for adjacent in adjacency.neighbours(origin.as_str()) {
+            let destination = SystemId::new(adjacent.as_str());
             let others: Vec<PlayerId> =
                 crate::combat::combatants(state, content, sources, &destination)
                     .into_iter()

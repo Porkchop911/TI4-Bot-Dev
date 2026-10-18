@@ -716,6 +716,7 @@ pub fn resolve_with(
             };
             let systems = ti4_content::galaxy::all_systems(content, sources);
             let mut exposed = std::collections::BTreeSet::new();
+            let mut wormhole_systems = std::collections::BTreeSet::new();
             // Only the systems *on this map*. Reading every wormhole system in the corpus
             // destroys garrisons in systems the game was never set up with.
             for id in galaxy.system_ids() {
@@ -726,7 +727,18 @@ pub fn resolve_with(
                     continue;
                 }
                 exposed.insert(id.to_owned());
+                wormhole_systems.insert(id.to_owned());
                 exposed.extend(galaxy.adjacent(id).into_iter().map(ToOwned::to_owned));
+            }
+            // Breach links are adjacency for every player, so they count here; per-player links
+            // (Quantum Entanglement, Lazax Gate Folding) have no acting player to belong to.
+            for (a, b) in crate::factions::crimson::breach_pairs(state) {
+                if wormhole_systems.contains(&a) {
+                    exposed.insert(b.clone());
+                }
+                if wormhole_systems.contains(&b) {
+                    exposed.insert(a);
+                }
             }
             let types = ti4_content::units::catalogue(content, sources);
             for board in state

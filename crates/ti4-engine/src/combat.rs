@@ -1989,6 +1989,8 @@ fn reaches_adjacent(kind: ti4_content::units::UnitType<'_>) -> bool {
 /// the id list is considered. `fires` says whose guns count.
 fn reaching_guns_by(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
     system: &SystemId,
@@ -1998,8 +2000,23 @@ fn reaching_guns_by(
     let Some(galaxy) = galaxy else {
         return Vec::new();
     };
+    // "Adjacent" is the gun owner's: breaches are everyone's, Quantum Entanglement / Lazax Gate
+    // Folding / Void Tether are per player (`PlayerAdjacency`).
+    let reach: std::collections::BTreeMap<&PlayerId, std::collections::BTreeSet<String>> = state
+        .players
+        .iter()
+        .map(|seat| &seat.id)
+        .filter(|owner| fires(owner))
+        .map(|owner| {
+            let adjacency =
+                crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, owner);
+            (owner, adjacency.neighbours(system.as_str()))
+        })
+        .collect();
+    let neighbours: std::collections::BTreeSet<&String> = reach.values().flatten().collect();
     let mut found = Vec::new();
-    for neighbour in galaxy.adjacent(system.as_str()) {
+    for neighbour in neighbours {
+        let neighbour = neighbour.as_str();
         let board = state.system_state(&SystemId::new(neighbour));
         // Miniaturization: a Ral Nel structure in the space area has no unit abilities.
         let standing = board
@@ -2011,6 +2028,7 @@ fn reaching_guns_by(
         found.extend(
             standing
                 .filter(|unit| fires(&unit.owner))
+                .filter(|unit| reach.get(&unit.owner).is_some_and(|set| set.contains(neighbour)))
                 // Quietus: a gun in an active breach beside another player's Quietus has lost it.
                 .filter(|unit| !crate::factions::crimson::abilities_lost(state, &unit.owner, &here))
                 .filter(|unit| {
@@ -2133,6 +2151,8 @@ pub fn space_cannon_guns(
     // PDS next door -- a technology every faction can research -- never fired at all.
     guns.extend(reaching_guns_by(
         state,
+        content,
+        sources,
         &types,
         galaxy,
         system,
@@ -3695,8 +3715,9 @@ pub fn eligible_retreats(
     let types = catalogue(content, sources);
     // A retreat is a move: Sundered and the sever token close the wormholes it may not use.
     let galaxy = crate::factions::hooks_movement::galaxy_for_mover(state, player, galaxy);
-    galaxy
-        .adjacent(system.as_str())
+    // "Adjacent" as the retreating player sees it: breaches, their own links, tethers.
+    crate::movement::PlayerAdjacency::new(state, content, sources, &galaxy, player)
+        .neighbours(system.as_str())
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
@@ -3747,8 +3768,8 @@ pub fn skilled_retreat_destinations(
         return Vec::new();
     }
     let types = catalogue(content, sources);
-    galaxy
-        .adjacent(system.as_str())
+    crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+        .neighbours(system.as_str())
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
@@ -3781,8 +3802,8 @@ pub fn det_retreat_destinations(
     player: &PlayerId,
     system: &SystemId,
 ) -> Vec<SystemId> {
-    galaxy
-        .adjacent(system.as_str())
+    crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+        .neighbours(system.as_str())
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
@@ -6315,6 +6336,8 @@ mod tests {
         let guns = |state: &GameState| {
             reaching_guns_by(
                 state,
+                ContentStore::embedded(),
+                POK,
                 &types,
                 Some(&hub.galaxy),
                 &active,
