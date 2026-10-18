@@ -2099,7 +2099,7 @@ fn main() {
             reward.fracture_planet_bonus
         );
         println!(
-            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (fighters/infantry half)",
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (all units at cost, upgraded ships x1.3)",
             reward.overpay_penalty, reward.unused_resources_weight, reward.build_weight
         );
     }
