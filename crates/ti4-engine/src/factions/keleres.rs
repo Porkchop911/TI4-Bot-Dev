@@ -227,14 +227,16 @@ pub fn has_iihq(state: &GameState, player: &PlayerId) -> bool {
 // -- I.I.H.Q. Modernization: neighbours ----------------------------------------------------------
 
 /// Whether `player` has units or controls planets in or adjacent to the Mecatol Rex system.
-fn near_mecatol(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> bool {
+///
+/// Adjacency is the IIHQ holder's (`holder`): breach links and their own wormhole links count.
+fn near_mecatol(state: &GameState, galaxy: &Galaxy, holder: &PlayerId, player: &PlayerId) -> bool {
     let mecatol = crate::seating::mecatol_in_galaxy(galaxy);
     let presence = crate::transactions::presence(state, player);
     presence.contains(&SystemId::new(mecatol))
-        || galaxy
-            .adjacent(mecatol)
-            .into_iter()
-            .any(|adjacent| presence.contains(&SystemId::new(adjacent)))
+        || crate::transactions::adjacency_of(state, galaxy, holder)
+            .neighbours(mecatol)
+            .iter()
+            .any(|adjacent| presence.contains(&SystemId::new(adjacent.as_str())))
 }
 
 /// "You are neighbors with all players that have units or control planets in or adjacent to the
@@ -247,8 +249,8 @@ pub(crate) fn mecatol_neighbours(
     a: &PlayerId,
     b: &PlayerId,
 ) -> bool {
-    (has_iihq(state, a) && near_mecatol(state, galaxy, b))
-        || (has_iihq(state, b) && near_mecatol(state, galaxy, a))
+    (has_iihq(state, a) && near_mecatol(state, galaxy, a, b))
+        || (has_iihq(state, b) && near_mecatol(state, galaxy, b, a))
 }
 
 // -- I.I.H.Q. Modernization: Custodia Vigilia ----------------------------------------------------

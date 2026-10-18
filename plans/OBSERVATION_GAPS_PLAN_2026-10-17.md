@@ -127,18 +127,31 @@ each site asks `PlayerAdjacency::new(.., acting player)`. All tests are in `fact
 | combat.rs `eligible_retreats` | 78.7c retreat to adjacent system | link-aware, retreating player | a retreat is a move to an adjacent system | `retreats_may_cross_a_breach_link` |
 | combat.rs `skilled_retreat_destinations` | Skilled Retreat "adjacent system" | link-aware, player | same | same |
 | combat.rs `det_retreat_destinations` | Dark Energy Tap | link-aware, player | same | same |
-| action_cards.rs Experimental Battlestation | dock "in or adjacent" | link-aware, player | card's player | (no dedicated test; same lookup as jamming) |
-| action_cards.rs Exploration Probe | frontier token "adjacent to your ships" | link-aware, player | same | (no dedicated test) |
+| action_cards.rs Experimental Battlestation | dock "in or adjacent" | link-aware, player | card's player | `experimental_battlestation_docks_across_a_breach_link` |
+| action_cards.rs Exploration Probe | frontier token "adjacent to your ships" | link-aware, player | same | `exploration_probe_reaches_a_frontier_token_across_a_breach_link` |
 | action_cards.rs `jamming_systems` | Signal Jamming | link-aware, player | same | `signal_jamming_reaches_a_breach_linked_system` |
-| agenda_effects.rs travel_ban | PDS "adjacent to a wormhole system" destroyed | breach links only | no acting player: breach links are global, per-player links have no owner | (no dedicated test; `breach_pairs` shared with the hook) |
+| agenda_effects.rs travel_ban | PDS "adjacent to a wormhole system" destroyed | breach links only | no acting player: breach links are global, per-player links have no owner | `travel_ban_counts_a_system_linked_to_a_wormhole_system` |
 | faction_abilities.rs `annexable` | Xxcha Civil Accords annex | link-aware, player | "adjacent to a planet you control" | `annexing_and_the_stellar_converter_...` |
 | relics.rs `stellar_converter_targets` | Stellar Converter | link-aware, player | "adjacent to your bombardment unit" | same |
 | secrets.rs (2) | secret objectives: ship beside anomaly / rival home | link-aware, scorer | objective is the scorer's board state | `a_ship_beside_an_anomaly_...` (anomaly case) |
-| objectives.rs `ships_adjacent_to_mecatol_count` | public objective | link-aware, scorer | same | (no dedicated test) |
-| cabal.rs `carrion_targets` | Cabal hero | link-aware, Cabal | hero text, Cabal's view | (no dedicated test) |
+| objectives.rs `ships_adjacent_to_mecatol_count` | public objective | link-aware, scorer | same | `the_mecatol_objective_counts_a_ship_linked_to_mecatol` |
+| cabal.rs `carrion_targets` | Cabal hero | link-aware, Cabal | hero text, Cabal's view | `cabal_carrion_reaches_a_ship_across_a_breach_link` |
 | cabal.rs `vortex_targets` | Vortex | link-aware, Cabal | same | `a_space_dock_vortex_and_the_mahact_hero_...` |
-| sardakk.rs `commit_candidates` | Sardakk commander commits from adjacent systems | link-aware, invader | invader's adjacency | (no dedicated test) |
+| sardakk.rs `commit_candidates` | Sardakk commander commits from adjacent systems | link-aware, invader | invader's adjacency | `the_sardakk_commander_commits_from_a_breach_linked_system` |
 | mahact_units.rs `hero_pairs` | Mahact hero | link-aware, Mahact | same | same Vortex/hero test |
-| empyrean_units.rs `near` (Dynamo, Watcher) | "in or adjacent to" | link-aware, Empyrean | owner's adjacency | (no dedicated test) |
+| empyrean_units.rs `near` (Dynamo, Watcher) | "in or adjacent to" | link-aware, Empyrean | owner's adjacency | `empyrean_dynamo_and_watcher_reach_across_a_breach_link` |
 | movement.rs:1182 | hex-geometry test fixture | geometric | test only | n/a |
 | game.rs `wormhole_hops` | counts wormhole hops for move bonus | geometric (comment added) | a breach link is not a wormhole | n/a |
+| combat.rs `reaching_guns_by`, `eligible_retreats` (per player) | Ghost Quantum Entanglement, Winnu Lazax Gate Folding | already link-aware (above); tests added | the link belongs to its holder only | `a_ghost_link_extends_only_the_ghosts_space_cannon_and_retreat`, `a_winnu_link_extends_only_the_winnus_own_tactical_action` |
+| transactions.rs `are_neighbours` | LRR 60 neighbours | link-aware, either neighbour's adjacency (checked only when the plain map says no) | "in or adjacent"; adjacency includes links. The link hooks ignore content/sources, so `adjacency_of` passes the embedded store | `transactions_reach_across_a_breach_link`, `a_ghost_link_makes_wormhole_holders_neighbours_for_no_one_else` |
+| keleres.rs `near_mecatol` (IIHQ) | "in or adjacent to the Mecatol Rex system" | link-aware, IIHQ holder | card's player | `iihq_neighbours_count_a_system_linked_to_mecatol` |
+| choice.rs `opponent_relationship` | policy "Neighbor" slot | geometric (reverted) | existing policy input; changing it breaks step-0 identity for Ghost/Winnu checkpoints. Links are seen via `route:link-adjacent` | — |
+| argent.rs `wing_transfer_targets` + finish | Wing Transfer "adjacent to that system" | link-aware, Argent | card text | `argent_wing_transfer_reaches_a_breach_linked_system` |
+| arborec.rs `near` (Bioplasmosis) | "same or adjacent systems" | link-aware, Arborec | card text | `arborec_bioplasmosis_moves_infantry_across_a_breach_link` |
+| obsidian.rs `with_adjacent` (Planesplitter, Neural Parasite) | "contains or is adjacent to your units" | link-aware, Obsidian | card text | `obsidian_neural_parasite_reaches_a_breach_linked_system` |
+| leaders.rs `naalucommander` unlock | "in or adjacent to Mecatol Rex" | link-aware, Naalu | unlock text | `the_naalu_commander_unlocks_on_ground_forces_linked_to_mecatol` |
+| leaders.rs Xxcha agent ready-planet | "system adjacent to one you control" | link-aware, Xxcha | card text | none (needs the full agent flow) |
+| objectives.rs `distinct_rival_home_reaches_count`, `implicated_systems("intimidate")` | Distant Lands, Intimidate Council | link-aware, scorer | same as the Mecatol objective | `rival_home_objectives_and_intimidate_see_a_breach_link` |
+| diplomacy/candidates.rs (4 sites) | deal-relevance heuristics (touching presence, military relevance) | geometric on purpose | no card text; two actors, no single owner | n/a |
+| objectives.rs `edge_systems`, map_feasibility.rs | rim / setup scoring from hex coordinates | geometric on purpose | board shape, not an adjacency effect | n/a |
+| movement.rs route search internals | route expansion | geometric inside `MovementRules`, which adds its own link table | already link-aware | n/a |

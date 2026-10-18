@@ -731,8 +731,10 @@ fn only_units_of(state: &GameState, player: &PlayerId, system: &SystemId) -> boo
 
 /// Adjacent systems Wing Transfer may put a token in: only the player's units, no token of
 /// theirs yet, and one still in reinforcements.
-fn wing_transfer_targets(
+pub(crate) fn wing_transfer_targets(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     galaxy: &ti4_content::galaxy::Galaxy,
     player: &PlayerId,
     active: &SystemId,
@@ -740,8 +742,8 @@ fn wing_transfer_targets(
     if !only_units_of(state, player, active) {
         return Vec::new();
     }
-    galaxy
-        .adjacent(active.as_str())
+    crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+        .neighbours(active.as_str())
         .into_iter()
         .map(SystemId::new)
         .filter(|system| {
@@ -807,6 +809,8 @@ fn wing_transfer_timing(owner_name: &str, seat: &PlayerId) -> Vec<Ability> {
                 context.galaxy.is_some_and(|galaxy| {
                     !wing_transfer_targets(
                         context.state,
+                        context.content,
+                        context.sources,
                         galaxy,
                         &placer_seat,
                         &SystemId::new(active),
@@ -836,10 +840,16 @@ fn wing_transfer_timing(owner_name: &str, seat: &PlayerId) -> Vec<Ability> {
             };
             let mut scope = vec![active.clone()];
             scope.extend(
-                galaxy
-                    .adjacent(active.as_str())
-                    .into_iter()
-                    .map(SystemId::new)
+                crate::movement::PlayerAdjacency::new(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    galaxy,
+                    &mover,
+                )
+                .neighbours(active.as_str())
+                .into_iter()
+                .map(SystemId::new)
                     .filter(|system| {
                         context
                             .state
@@ -910,7 +920,14 @@ fn wing_transfer_place(
         .faction_marks
         .insert(wing_transfer_key(player), active.to_string());
     loop {
-        let targets = wing_transfer_targets(context.state, galaxy, player, active);
+        let targets = wing_transfer_targets(
+            context.state,
+            context.content,
+            context.sources,
+            galaxy,
+            player,
+            active,
+        );
         if targets.is_empty() {
             return Ok(());
         }

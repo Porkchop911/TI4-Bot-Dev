@@ -120,11 +120,9 @@ pub fn commander_unlocked(
                 return Some(false); // without a map there is no "adjacent"
             };
             let types = ti4_content::units::catalogue(content, sources);
-            let mut nearby: std::collections::BTreeSet<String> = galaxy
-                .adjacent(crate::seating::mecatol_in_galaxy(galaxy))
-                .into_iter()
-                .map(ToOwned::to_owned)
-                .collect();
+            let mut nearby: std::collections::BTreeSet<String> =
+                crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+                    .neighbours(crate::seating::mecatol_in_galaxy(galaxy));
             nearby.insert(crate::seating::mecatol_in_galaxy(galaxy).to_owned());
             nearby.iter().any(|system| {
                 let board = state.system_state(&ti4_model::id::SystemId::new(system));
@@ -1187,10 +1185,16 @@ fn dispatch_leader(
                         .iter()
                         .map(|(system, _)| system.as_str())
                         .collect();
-                    let adjacent_to_mine = galaxy
-                        .adjacent(home.as_str())
-                        .into_iter()
-                        .any(|system| mine.contains(system));
+                    let adjacent_to_mine = crate::movement::PlayerAdjacency::new(
+                        context.state,
+                        context.content,
+                        context.sources,
+                        galaxy,
+                        player,
+                    )
+                    .neighbours(home.as_str())
+                    .iter()
+                    .any(|system| mine.contains(system.as_str()));
                     if adjacent_to_mine {
                         let types = ti4_content::units::catalogue(context.content, context.sources);
                         let has_infantry = context

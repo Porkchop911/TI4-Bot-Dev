@@ -2306,11 +2306,15 @@ mod adjacency_audit_tests {
 
     /// A ring map and a state whose systems `first` and `opposite` are two apart on the ring.
     fn world() -> (Galaxy, GameState, String, String) {
+        world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "hacan")])
+    }
+
+    fn world_seated(seats: &[(&str, &str)]) -> (Galaxy, GameState, String, String) {
         let ring = plain(6);
         let ring: Vec<&str> = ring.iter().map(String::as_str).collect();
         let centre = plain(7).pop().unwrap();
         let galaxy = ring_map(&centre, &ring);
-        let mut state = game();
+        let mut state = crate::fixtures::seated_game(seats, DEFAULT);
         for id in ring.iter().chain(std::iter::once(&centre.as_str())) {
             state.board.entry(SystemId::new(*id)).or_default();
         }
@@ -2475,5 +2479,512 @@ mod adjacency_audit_tests {
         assert_eq!(count(&state), 0);
         link(&mut state, placed[0], placed[3]);
         assert_eq!(count(&state), 1);
+    }
+
+    // -- sites that had no dedicated test ------------------------------------------------------
+
+    /// Run `run` in a timing context and return how many dice it rolled.
+    fn rolls(
+        state: &mut GameState,
+        galaxy: &Galaxy,
+        run: impl FnOnce(&mut crate::timing::TimingContext<'_>),
+    ) -> usize {
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::FirstOption));
+        crate::fixtures::with_context(state, DEFAULT, Some(galaxy), &mut table, |context| {
+            run(context);
+            context.dice.history().len()
+        })
+    }
+
+    #[test]
+    fn experimental_battlestation_docks_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&opposite),
+            &first_planet(&opposite),
+            "spacedock",
+            &c(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        state.active = Some(b());
+        state.active_system = Some(sys(&first));
+        let fired = |state: &mut GameState| {
+            rolls(state, &galaxy, |context| {
+                crate::action_cards::experimental_battlestation(context, &c());
+            })
+        };
+        assert_eq!(fired(&mut state.clone()), 0, "a dock two systems away");
+        link(&mut state, &first, &opposite);
+        assert!(fired(&mut state) > 0, "the dock fires through the link");
+    }
+
+    #[test]
+    fn exploration_probe_reaches_a_frontier_token_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &c(), 1);
+        state.frontier_tokens.insert(sys(&opposite));
+        let probe = |state: &mut GameState| {
+            rolls(state, &galaxy, |context| {
+                crate::action_cards::exploration_probe(context, &c());
+            });
+            state.frontier_tokens.contains(&sys(&opposite))
+        };
+        assert!(probe(&mut state.clone()), "a token two systems away stays");
+        link(&mut state, &first, &opposite);
+        assert!(!probe(&mut state), "the token is explored through the link");
+    }
+
+    #[test]
+    fn travel_ban_counts_a_system_linked_to_a_wormhole_system() {
+        let mut ring = plain(6);
+        ring[0] = super::testkit::wormhole_tiles("ALPHA")
+            .into_iter()
+            .next()
+            .expect("an alpha system");
+        let centre = plain(7).pop().unwrap();
+        let ids: Vec<&str> = ring.iter().map(String::as_str).collect();
+        let galaxy = ring_map(&centre, &ids);
+        let (wormhole, far) = (ring[0].clone(), ring[3].clone());
+        assert!(!galaxy.adjacent(&wormhole).contains(far.as_str()));
+        let mut state = game();
+        let planet = first_planet(&far);
+        crate::fixtures::put_on_planet(&mut state, &sys(&far), &planet, "pds", &c(), 1);
+        let ban = |state: &mut GameState| {
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut table = crate::choice::Table::with_default(Box::new(
+                crate::choice::Scripted::new(Vec::<String>::new()),
+            ));
+            let mut ctx = crate::choice::Resolving {
+                content: content(),
+                sources: DEFAULT,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: None,
+            };
+            crate::agenda_effects::resolve_with(
+                state,
+                &mut ctx,
+                Some(&galaxy),
+                "travel_ban",
+                "Against",
+                &crate::vote::Ballot::default(),
+            );
+            state
+                .system_state(&sys(&far))
+                .planet_units
+                .get(&planet)
+                .map_or(0, Vec::len)
+        };
+        assert_eq!(ban(&mut state.clone()), 1, "two systems from the wormhole");
+        link(&mut state, &wormhole, &far);
+        assert_eq!(ban(&mut state), 0, "beside the wormhole system by breach link");
+    }
+
+    #[test]
+    fn the_mecatol_objective_counts_a_ship_linked_to_mecatol() {
+        let mut ids = vec!["18".to_owned()];
+        ids.extend(plain(7));
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let mut galaxy = Galaxy::build(content(), &refs, DEFAULT, 2).expect("a valid map");
+        crate::seating::place_crimson_home(&mut galaxy, content(), DEFAULT).expect("home");
+        let far = ids[7].clone();
+        assert!(!galaxy.adjacent("18").contains(far.as_str()), "ring two");
+        let mut state = game();
+        crate::fixtures::put(&mut state, &sys(&far), "cruiser", &b(), 1);
+        let count = |state: &GameState| {
+            let player = b();
+            let mut position =
+                crate::objectives::Position::new(state, content(), DEFAULT, &player);
+            position.galaxy = Some(&galaxy);
+            crate::objectives::ships_adjacent_to_mecatol_count(&position)
+        };
+        assert_eq!(count(&state), Some(0));
+        link(&mut state, "18", &far);
+        assert_eq!(count(&state), Some(1));
+    }
+
+    #[test]
+    fn cabal_carrion_reaches_a_ship_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "cabal")]);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&first),
+            &first_planet(&first),
+            "cabal_spacedock",
+            &c(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &b(), 1);
+        let hits = |state: &GameState| {
+            crate::factions::cabal::carrion_targets(state, content(), DEFAULT, Some(&galaxy), &c())
+                .into_iter()
+                .filter(|(system, _)| system.as_str() == opposite)
+                .count()
+        };
+        assert_eq!(hits(&state), 0);
+        link(&mut state, &first, &opposite);
+        assert_eq!(hits(&state), 1);
+    }
+
+    #[test]
+    fn the_sardakk_commander_commits_from_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "sardakk")]);
+        state.player_mut(&c()).unwrap().leaders.insert(
+            ti4_model::id::LeaderId::new("sardakkcommander"),
+            ti4_model::state::LeaderStatus::Unlocked,
+        );
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&opposite),
+            &first_planet(&opposite),
+            "infantry",
+            &c(),
+            1,
+        );
+        let from_opposite = |state: &GameState| {
+            crate::factions::hooks_ground::commit_candidates(
+                state,
+                content(),
+                DEFAULT,
+                Some(&galaxy),
+                &c(),
+                &sys(&first),
+                &[],
+            )
+            .iter()
+            .filter(|candidate| candidate.system.as_str() == opposite)
+            .count()
+        };
+        assert_eq!(from_opposite(&state), 0);
+        link(&mut state, &first, &opposite);
+        assert_eq!(from_opposite(&state), 1);
+    }
+
+    #[test]
+    fn empyrean_dynamo_and_watcher_reach_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "empyrean")]);
+        crate::fixtures::put(&mut state, &sys(&opposite), "empyrean_flagship", &c(), 1);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&opposite),
+            &first_planet(&opposite),
+            "empyrean_mech",
+            &c(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        let seen = |state: &GameState| {
+            let adjacency =
+                crate::movement::PlayerAdjacency::new(state, content(), DEFAULT, &galaxy, &c());
+            (
+                crate::factions::empyrean_units::dynamo_reaches(
+                    state,
+                    Some(&adjacency),
+                    &c(),
+                    &sys(&first),
+                ),
+                !crate::factions::empyrean_units::watcher_sites(
+                    state,
+                    Some(&adjacency),
+                    &c(),
+                    &b(),
+                )
+                .is_empty(),
+            )
+        };
+        assert_eq!(seen(&state), (false, false));
+        link(&mut state, &first, &opposite);
+        assert_eq!(seen(&state), (true, true), "Dynamo and Watcher");
+    }
+
+    // -- sites fixed by the second audit pass --------------------------------------------------
+
+    /// "18" in the middle of a plain ring and a plain system in ring two (not touching 18).
+    fn mecatol_world(seats: &[(&str, &str)]) -> (Galaxy, GameState, String, String) {
+        let mut ids = vec!["18".to_owned()];
+        ids.extend(plain(7));
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let mut galaxy = Galaxy::build(content(), &refs, DEFAULT, 2).expect("a valid map");
+        crate::seating::place_crimson_home(&mut galaxy, content(), DEFAULT).expect("home");
+        let far = ids[7].clone();
+        assert!(!galaxy.adjacent("18").contains(far.as_str()), "ring two");
+        let beside = ids[1..7]
+            .iter()
+            .find(|id| !galaxy.adjacent(far.as_str()).contains(id.as_str()))
+            .expect("a ring-one system away from it")
+            .clone();
+        (galaxy, crate::fixtures::seated_game(seats, DEFAULT), beside, far)
+    }
+
+    #[test]
+    fn transactions_reach_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &c(), 1);
+        assert!(!crate::transactions::are_neighbours(&state, &galaxy, &b(), &c()));
+        link(&mut state, &first, &opposite);
+        assert!(crate::transactions::are_neighbours(&state, &galaxy, &b(), &c()));
+        assert!(crate::transactions::are_neighbours(&state, &galaxy, &c(), &b()));
+    }
+
+    #[test]
+    fn a_ghost_link_makes_wormhole_holders_neighbours_for_no_one_else() {
+        let seats = [("a", "hacan"), ("b", "sol"), ("c", "ghost")];
+        let (galaxy, mut state, alpha, beta) = wormhole_world(&seats);
+        let a = ti4_model::id::PlayerId::new("a");
+        crate::fixtures::put(&mut state, &sys(&alpha), "cruiser", &b(), 1);
+        crate::fixtures::put(&mut state, &sys(&beta), "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &sys(&beta), "cruiser", &c(), 1);
+        assert!(
+            !crate::transactions::are_neighbours(&state, &galaxy, &a, &b()),
+            "alpha and beta are two apart for everyone else"
+        );
+        assert!(
+            crate::transactions::are_neighbours(&state, &galaxy, &c(), &b()),
+            "Quantum Entanglement"
+        );
+    }
+
+    #[test]
+    fn iihq_neighbours_count_a_system_linked_to_mecatol() {
+        let (galaxy, mut state, _beside, far) =
+            mecatol_world(&[("a", "crimson"), ("b", "sol"), ("c", "hacan")]);
+        crate::technology::grant(&mut state, &c(), &ti4_model::TechnologyId::new("iihq"));
+        crate::fixtures::put(&mut state, &sys(&far), "cruiser", &b(), 1);
+        assert!(!crate::transactions::are_neighbours(&state, &galaxy, &b(), &c()));
+        link(&mut state, "18", &far);
+        assert!(crate::transactions::are_neighbours(&state, &galaxy, &b(), &c()));
+    }
+
+    #[test]
+    fn argent_wing_transfer_reaches_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "argent")]);
+        for system in [&first, &opposite] {
+            state.system_mut(&sys(system)).units.clear();
+            crate::fixtures::put(&mut state, &sys(system), "cruiser", &c(), 1);
+        }
+        let targets = |state: &GameState| {
+            crate::factions::argent::wing_transfer_targets(
+                state, content(), DEFAULT, &galaxy, &c(), &sys(&first),
+            )
+            .contains(&sys(&opposite))
+        };
+        assert!(!targets(&state));
+        link(&mut state, &first, &opposite);
+        assert!(targets(&state));
+    }
+
+    #[test]
+    fn arborec_bioplasmosis_moves_infantry_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "arborec")]);
+        for system in [&first, &opposite] {
+            state
+                .system_mut(&sys(system))
+                .planet_control
+                .insert(first_planet(system), c());
+        }
+        let available = std::collections::BTreeMap::from([(
+            (sys(&first), first_planet(&first)),
+            1_usize,
+        )]);
+        let shifts = |state: &GameState| {
+            crate::factions::arborec::shifts(
+                state, content(), DEFAULT, Some(&galaxy), &c(), &available,
+            )
+            .len()
+        };
+        let before = shifts(&state);
+        link(&mut state, &first, &opposite);
+        assert_eq!(shifts(&state), before + 1, "one more planet to move to");
+    }
+
+    #[test]
+    fn obsidian_neural_parasite_reaches_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) =
+            world_seated(&[("a", "crimson"), ("b", "sol"), ("c", "obsidian")]);
+        crate::fixtures::put_on_planet(
+            &mut state, &sys(&opposite), &first_planet(&opposite), "infantry", &c(), 1,
+        );
+        crate::fixtures::put_on_planet(
+            &mut state, &sys(&first), &first_planet(&first), "infantry", &b(), 1,
+        );
+        let victims = |state: &GameState| {
+            crate::factions::obsidian::parasite_victims(state, content(), DEFAULT, Some(&galaxy), &c())
+                .iter()
+                .filter(|victim| victim.0.as_str() == first)
+                .count()
+        };
+        assert_eq!(victims(&state), 0);
+        link(&mut state, &first, &opposite);
+        assert_eq!(victims(&state), 1);
+    }
+
+    #[test]
+    fn the_naalu_commander_unlocks_on_ground_forces_linked_to_mecatol() {
+        let (galaxy, mut state, _beside, far) =
+            mecatol_world(&[("a", "crimson"), ("b", "sol"), ("c", "naalu")]);
+        crate::fixtures::put_on_planet(&mut state, &sys(&far), &first_planet(&far), "infantry", &c(), 1);
+        let unlocked = |state: &GameState| {
+            crate::leaders::commander_unlocked(
+                state,
+                content(),
+                DEFAULT,
+                Some(&galaxy),
+                &c(),
+                &ti4_model::id::LeaderId::new("naalucommander"),
+            )
+        };
+        assert_eq!(unlocked(&state), Some(false));
+        link(&mut state, "18", &far);
+        assert_eq!(unlocked(&state), Some(true));
+    }
+
+    #[test]
+    fn rival_home_objectives_and_intimidate_see_a_breach_link() {
+        let (galaxy, mut state, beside, far) =
+            mecatol_world(&[("a", "crimson"), ("b", "sol"), ("c", "hacan")]);
+        // Sol's home is a ring-one system; Hacan holds a planet in ring two.
+        state.player_mut(&b()).unwrap().home_system = Some(sys(&beside));
+        state.system_mut(&sys(&far)).planet_control.insert(first_planet(&far), c());
+        let rows = |state: &GameState| {
+            let player = c();
+            let mut position = crate::objectives::Position::new(state, content(), DEFAULT, &player);
+            position.galaxy = Some(&galaxy);
+            (
+                crate::objectives::distinct_rival_home_reaches_count(&position),
+                crate::objectives::implicated_systems(
+                    &ti4_model::id::ObjectiveId::new("intimidate"),
+                    &position,
+                )
+                .is_some_and(|systems| systems.contains(&sys(&far))),
+            )
+        };
+        let (homes, intimidate) = rows(&state);
+        assert!(!intimidate);
+        link(&mut state, &beside, &far);
+        let (linked_homes, _) = rows(&state);
+        assert_eq!(linked_homes.zip(homes).map(|(after, before)| after - before), Some(1));
+        link(&mut state, "18", &far);
+        assert!(rows(&state).1, "Intimidate Council's ring includes the linked system");
+    }
+
+    // -- per-player links: Quantum Entanglement (Ghost) and Lazax Gate Folding (Winnu) ---------
+
+    /// "18" in the middle of a ring with an alpha system on it, and a beta system in ring two;
+    /// both print a planet and neither touches the other.
+    fn wormhole_world(seats: &[(&str, &str)]) -> (Galaxy, GameState, String, String) {
+        let with_planet = |kind: &str| {
+            super::testkit::wormhole_tiles(kind)
+                .into_iter()
+                .find(|id| !ti4_content::galaxy::planets_in(content(), id, DEFAULT).is_empty())
+                .expect("a wormhole system with a planet")
+        };
+        let (alpha, beta) = (with_planet("ALPHA"), with_planet("BETA"));
+        let mut ids = vec!["18".to_owned()];
+        ids.extend(plain(6));
+        ids[4] = alpha.clone();
+        ids.push(beta.clone());
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let mut galaxy = Galaxy::build(content(), &refs, DEFAULT, 2).expect("a valid map");
+        crate::seating::place_crimson_home(&mut galaxy, content(), DEFAULT).expect("home");
+        assert!(!galaxy.adjacent(&alpha).contains(beta.as_str()), "alpha and beta apart");
+        assert!(!galaxy.adjacent("18").contains(beta.as_str()), "beta is in ring two");
+        let mut state = crate::fixtures::seated_game(seats, DEFAULT);
+        for id in &ids {
+            state.board.entry(SystemId::new(id.as_str())).or_default();
+        }
+        (galaxy, state, alpha, beta)
+    }
+
+    fn guns(state: &GameState, galaxy: &Galaxy, at: &str, target: &str) -> usize {
+        let target = ti4_model::id::PlayerId::new(target);
+        crate::combat::space_cannon_guns(state, content(), DEFAULT, &sys(at), &target, Some(galaxy))
+            .units
+            .len()
+    }
+
+    fn retreats_to(
+        state: &GameState,
+        galaxy: &Galaxy,
+        who: &ti4_model::id::PlayerId,
+        from: &str,
+        to: &str,
+    ) -> bool {
+        crate::combat::eligible_retreats(state, content(), DEFAULT, galaxy, who, &sys(from))
+            .contains(&sys(to))
+    }
+
+    #[test]
+    fn a_ghost_link_extends_only_the_ghosts_space_cannon_and_retreat() {
+        let seats = [("a", "hacan"), ("b", "sol"), ("c", "ghost")];
+        let (galaxy, mut state, alpha, beta) = wormhole_world(&seats);
+        // Sol (b) and the Ghost (c) both hold a PDS II on the alpha planet; Hacan (a) is at beta.
+        for owner in [b(), c()] {
+            crate::fixtures::put_on_planet(
+                &mut state,
+                &sys(&alpha),
+                &first_planet(&alpha),
+                "pds2",
+                &owner,
+                1,
+            );
+        }
+        crate::fixtures::put(&mut state, &sys(&beta), "cruiser", &ti4_model::id::PlayerId::new("a"), 1);
+        assert_eq!(guns(&state, &galaxy, &beta, "a"), 1, "only the Ghost's gun reaches");
+        // The same board with no Ghost seated: two systems apart, nothing reaches.
+        state.player_mut(&c()).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        assert_eq!(guns(&state, &galaxy, &beta, "a"), 0, "geometry alone");
+
+        // Retreat: a Ghost fleet at beta may withdraw to alpha; a Sol fleet may not.
+        for (who, expected) in [(c(), true), (b(), false)] {
+            let (galaxy, mut state, alpha, beta) = wormhole_world(&seats);
+            crate::fixtures::put(&mut state, &sys(&beta), "cruiser", &who, 1);
+            crate::fixtures::put(&mut state, &sys(&alpha), "cruiser", &who, 1);
+            assert_eq!(retreats_to(&state, &galaxy, &who, &beta, &alpha), expected);
+        }
+    }
+
+    #[test]
+    fn a_winnu_link_extends_only_the_winnus_own_tactical_action() {
+        let seats = [("a", "hacan"), ("b", "sol"), ("c", "winnu")];
+        let (galaxy, mut state, _alpha, beta) = wormhole_world(&seats);
+        crate::technology::grant(&mut state, &c(), &ti4_model::TechnologyId::new("lgf"));
+        for owner in [b(), c()] {
+            crate::fixtures::put_on_planet(
+                &mut state,
+                &sys(&beta),
+                &first_planet(&beta),
+                "pds2",
+                &owner,
+                1,
+            );
+        }
+        crate::fixtures::put(&mut state, &sys("18"), "cruiser", &ti4_model::id::PlayerId::new("a"), 1);
+        assert_eq!(guns(&state, &galaxy, "18", "a"), 0, "outside any tactical action");
+        state.active = Some(b());
+        state.active_system = Some(sys("18"));
+        assert_eq!(guns(&state, &galaxy, "18", "a"), 0, "another player's action");
+        state.active = Some(c());
+        assert_eq!(guns(&state, &galaxy, "18", "a"), 1, "only the Winnu's gun, in its own action");
+
+        // Retreat from Mecatol's neighbour set: the Winnu may withdraw 18 -> beta, Sol may not.
+        for (who, expected) in [(c(), true), (b(), false)] {
+            let (galaxy, mut state, _, beta) = wormhole_world(&seats);
+            crate::technology::grant(&mut state, &c(), &ti4_model::TechnologyId::new("lgf"));
+            state.active = Some(c());
+            state.active_system = Some(sys("18"));
+            crate::fixtures::put(&mut state, &sys("18"), "cruiser", &who, 1);
+            crate::fixtures::put(&mut state, &sys(&beta), "cruiser", &who, 1);
+            assert_eq!(retreats_to(&state, &galaxy, &who, "18", &beta), expected);
+        }
     }
 }

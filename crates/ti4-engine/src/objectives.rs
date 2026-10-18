@@ -690,7 +690,7 @@ fn on_the_rim_count(position: &Position<'_>) -> Option<usize> {
 }
 
 /// Have ships in two systems adjacent to Mecatol Rex's.
-fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
+pub(crate) fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
     let galaxy = position.galaxy?;
     let beside = position
         .adjacency()?
@@ -771,8 +771,8 @@ pub fn neighbour_planet_counts(position: &Position<'_>) -> Option<Vec<NeighbourP
 ///
 /// "Different" is the whole difficulty: two planets around one opponent's home are one distant
 /// land, not two.
-fn distinct_rival_home_reaches_count(position: &Position<'_>) -> Option<usize> {
-    let galaxy = position.galaxy?;
+pub(crate) fn distinct_rival_home_reaches_count(position: &Position<'_>) -> Option<usize> {
+    position.galaxy?;
     let mut homes: Vec<(PlayerId, std::collections::BTreeSet<String>)> = Vec::new();
     for seat in &position.state.players {
         if &seat.id == position.player {
@@ -790,11 +790,9 @@ fn distinct_rival_home_reaches_count(position: &Position<'_>) -> Option<usize> {
         let Some(home) = home else {
             continue;
         };
-        let mut reach: std::collections::BTreeSet<String> = galaxy
-            .adjacent(&home)
-            .into_iter()
-            .map(ToOwned::to_owned)
-            .collect();
+        let mut reach: std::collections::BTreeSet<String> = position
+            .adjacency()?
+            .neighbours(&home);
         reach.insert(home);
         homes.push((seat.id.clone(), reach));
     }
@@ -1084,11 +1082,9 @@ pub fn implicated_systems(
         // Intimidate Council: "1 or more of your ships are in 2 systems that are each adjacent
         // to the Mecatol Rex system" -- the ring around Mecatol, exactly as
         // `ships_adjacent_to_mecatol_count` checks it, whoever currently sits there.
-        "intimidate" => galaxy
-            .adjacent(crate::seating::mecatol_in_galaxy(galaxy))
-            .into_iter()
-            .map(ToOwned::to_owned)
-            .collect(),
+        "intimidate" => position
+            .adjacency()?
+            .neighbours(crate::seating::mecatol_in_galaxy(galaxy)),
         // Populate the Outer Rim / Control the Borderlands: the rim itself, minus this player's
         // home -- the same exclusion `on_the_rim_count` applies, so the two never disagree about
         // which tiles are "the rim" for this player.
