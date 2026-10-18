@@ -554,6 +554,11 @@ fn crimson_homes(state: &GameState) -> Vec<(PlayerId, SystemId)> {
 /// relocation, production, an action card, an exploration or a leader, and each of those writes the
 /// board itself. It runs once per step (`Game::step`, beside the station and Keleres reconciles) and
 /// again when a movement step finishes, before anything fires (`sundered_after_movement`), so a
+    breach_pairs(state)
+}
+
+/// Every pair of systems that active breaches make adjacent (for every player).
+pub(crate) fn breach_pairs(state: &GameState) -> Vec<(String, String)> {
 /// unit never survives to be shot at, fight or take a planet. Ships are destroyed through the
 /// engine's staging (`SHIP_DESTROYED` follows); ground forces through the ground staging.
 pub fn enforce_sundered(state: &mut GameState, content: &ContentStore, sources: SourceSet) {
@@ -1011,6 +1016,13 @@ pub(crate) mod testkit {
             ("player", player.into()),
         ]
     }
+    /// Make `first` and `second` adjacent through two active breaches.
+    pub(crate) fn link(state: &mut GameState, first: &str, second: &str) {
+        for system in [first, second] {
+            super::put_breach(state, &a(), &SystemId::new(system), true);
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -2218,5 +2230,190 @@ mod tests {
             "an inactive breach gives nothing"
         );
         assert_eq!(value(&state, &home, &b()), base, "only its holder");
+    }
+}
+
+/// Phase 4 of the observation-gaps plan: effects that say "adjacent" see active breaches (which
+/// are adjacency for every player). Each test fails without the link-aware lookup.
+#[cfg(test)]
+mod adjacency_audit_tests {
+    use ti4_content::galaxy::Galaxy;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{PlanetId, SystemId};
+    use ti4_model::state::GameState;
+
+    use super::testkit::{b, c, content, game, link, plain, ring_map};
+
+    /// A ring map and a state whose systems `first` and `opposite` are two apart on the ring.
+    fn world() -> (Galaxy, GameState, String, String) {
+        let ring = plain(6);
+        let ring: Vec<&str> = ring.iter().map(String::as_str).collect();
+        let centre = plain(7).pop().unwrap();
+        let galaxy = ring_map(&centre, &ring);
+        let mut state = game();
+        for id in ring.iter().chain(std::iter::once(&centre.as_str())) {
+            state.board.entry(SystemId::new(*id)).or_default();
+        }
+        (galaxy, state, ring[0].to_owned(), ring[3].to_owned())
+    }
+
+    fn sys(id: &str) -> SystemId {
+        SystemId::new(id)
+    }
+
+    fn first_planet(system: &str) -> PlanetId {
+        let planets = ti4_content::galaxy::planets_in(content(), system, DEFAULT);
+        PlanetId::new(planets[0].id())
+    }
+
+    #[test]
+    fn retreats_may_cross_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &b(), 1);
+        let ask = |state: &GameState| {
+            (
+                crate::combat::eligible_retreats(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+                crate::combat::skilled_retreat_destinations(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+                crate::combat::det_retreat_destinations(
+                    state, content(), DEFAULT, &galaxy, &b(), &sys(&first),
+                ),
+            )
+        };
+        let (retreat, skilled, det) = ask(&state);
+        assert!(!retreat.contains(&sys(&opposite)));
+        assert!(!skilled.contains(&sys(&opposite)));
+        assert!(!det.contains(&sys(&opposite)));
+        link(&mut state, &first, &opposite);
+        let (retreat, skilled, det) = ask(&state);
+        assert!(retreat.contains(&sys(&opposite)), "78.7c retreat");
+        assert!(skilled.contains(&sys(&opposite)), "Skilled Retreat");
+        assert!(det.contains(&sys(&opposite)), "Dark Energy Tap");
+    }
+
+    #[test]
+    fn space_cannon_reaches_across_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &c(), 1);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&opposite),
+            &first_planet(&opposite),
+            "pds2",
+            &b(),
+            1,
+        );
+        let guns = |state: &GameState| {
+            crate::combat::space_cannon_guns(
+                state, content(), DEFAULT, &sys(&first), &c(), Some(&galaxy),
+            )
+            .units
+            .len()
+        };
+        assert_eq!(guns(&state), 0, "two apart");
+        link(&mut state, &first, &opposite);
+        assert_eq!(guns(&state), 1, "a PDS II fires through the breach link");
+    }
+
+    #[test]
+    fn signal_jamming_reaches_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &b(), 1);
+        let reach = |state: &GameState| {
+            crate::action_cards::jamming_systems(state, content(), DEFAULT, Some(&galaxy), &b())
+        };
+        assert!(!reach(&state).contains(&opposite));
+        link(&mut state, &first, &opposite);
+        assert!(reach(&state).contains(&opposite));
+    }
+
+    #[test]
+    fn annexing_and_the_stellar_converter_reach_a_breach_linked_system() {
+        let (galaxy, mut state, first, opposite) = world();
+        state
+            .system_mut(&sys(&first))
+            .planet_control
+            .insert(first_planet(&first), b());
+        crate::fixtures::put(&mut state, &sys(&first), "dreadnought", &b(), 1);
+        let annex = |state: &GameState| {
+            crate::faction_abilities::annexable(state, content(), DEFAULT, &galaxy, &b())
+                .iter()
+                .any(|(system, _)| system.as_str() == opposite)
+        };
+        let converter = |state: &GameState| {
+            crate::relics::stellar_converter_targets(state, content(), DEFAULT, &galaxy, &b())
+                .iter()
+                .any(|(system, _)| system.as_str() == opposite)
+        };
+        assert!(!annex(&state) && !converter(&state));
+        link(&mut state, &first, &opposite);
+        assert!(annex(&state), "Civil Accords annexation");
+        assert!(converter(&state), "Stellar Converter");
+    }
+
+    #[test]
+    fn a_space_dock_vortex_and_the_mahact_hero_see_a_breach_link() {
+        let (galaxy, mut state, first, opposite) = world();
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &sys(&first),
+            &first_planet(&first),
+            "spacedock",
+            &c(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &sys(&first), "cruiser", &c(), 1);
+        crate::fixtures::put(&mut state, &sys(&opposite), "cruiser", &b(), 1);
+        let vortex = |state: &GameState| {
+            !crate::factions::cabal::vortex_targets(state, content(), DEFAULT, &galaxy, &c())
+                .is_empty()
+        };
+        let hero = |state: &GameState| {
+            crate::factions::mahact_units::hero_pairs(state, content(), DEFAULT, &galaxy, &c())
+                .contains(&(sys(&first), sys(&opposite)))
+        };
+        assert!(!vortex(&state) && !hero(&state));
+        link(&mut state, &first, &opposite);
+        assert!(vortex(&state), "Cabal Vortex");
+        assert!(hero(&state), "Mahact hero");
+    }
+
+    #[test]
+    fn a_ship_beside_an_anomaly_through_a_breach_link_counts_for_the_secret() {
+        let ring = plain(6);
+        let ring: Vec<&str> = ring.iter().map(String::as_str).collect();
+        let centre = plain(7).pop().unwrap();
+        let homes = ti4_content::galaxy::home_systems(content(), DEFAULT);
+        let anomaly = ti4_content::galaxy::all_systems(content(), DEFAULT)
+            .iter()
+            .find(|(id, system)| {
+                system.is_anomaly() && !system.is_hyperlane() && !homes.contains(*id) && **id != "18"
+            })
+            .map(|(id, _)| (*id).to_owned())
+            .expect("an anomaly tile");
+        let mut placed = ring.clone();
+        placed[3] = anomaly.as_str();
+        let galaxy = ring_map(&centre, &placed);
+        let mut state = game();
+        crate::fixtures::put(&mut state, &sys(placed[0]), "cruiser", &b(), 1);
+        let count = |state: &GameState| {
+            let position = crate::secrets::Position {
+                state,
+                content: content(),
+                sources: DEFAULT,
+                player: &b(),
+                galaxy: Some(&galaxy),
+                imagined: crate::objectives::Imagined::NONE,
+            };
+            crate::secrets::ship_systems_beside_anomaly(&position)
+                .map_or(0, |systems| systems.len())
+        };
+        assert_eq!(count(&state), 0);
+        link(&mut state, placed[0], placed[3]);
+        assert_eq!(count(&state), 1);
     }
 }

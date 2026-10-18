@@ -828,9 +828,13 @@ fn carrion_targets(
     player: &PlayerId,
 ) -> Vec<(SystemId, ti4_model::units::Unit)> {
     let mut reach: BTreeSet<String> = BTreeSet::new();
+    // "Adjacent" as the hero's owner sees it.
+    let adjacency = galaxy.map(|galaxy| {
+        crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player)
+    });
     for tear in tear_systems(state) {
-        if let Some(galaxy) = galaxy {
-            reach.extend(galaxy.adjacent(&tear).into_iter().map(ToOwned::to_owned));
+        if let Some(adjacency) = &adjacency {
+            reach.extend(adjacency.neighbours(&tear));
         }
         reach.insert(tear);
     }
@@ -1463,7 +1467,7 @@ fn own_dock_systems(
 
 /// Every (owner, unit type) the card could take: another player's non-structure unit type in a
 /// system next to one of our space docks, with a unit of that type still in their reinforcements.
-fn vortex_targets(
+pub(crate) fn vortex_targets(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -1471,9 +1475,10 @@ fn vortex_targets(
     player: &PlayerId,
 ) -> Vec<(PlayerId, UnitTypeId)> {
     let mut targets: Vec<(PlayerId, UnitTypeId)> = Vec::new();
+    let adjacency = crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, player);
     for dock in own_dock_systems(state, content, sources, player) {
-        for neighbour in galaxy.adjacent(dock.as_str()) {
-            let Some(seat) = state.board.get(&SystemId::new(neighbour)) else {
+        for neighbour in adjacency.neighbours(dock.as_str()) {
+            let Some(seat) = state.board.get(&SystemId::new(neighbour.as_str())) else {
                 continue;
             };
             let present = seat

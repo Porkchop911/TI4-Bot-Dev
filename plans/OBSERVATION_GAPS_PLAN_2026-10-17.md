@@ -112,3 +112,33 @@ Read through `Observed::faction_mark` / `faction_marks_with_prefix` (refuse `pri
 | `actor-inventory:sleepers-placed` | acting Titans: own sleeper tokens on the board (0..5) |
 | `actor-inventory:nekro-z-tokens` | acting Nekro: Z tokens placed / 7 |
 | `{prefix}:sleeper`, `{prefix}:sleeper-own` | system has a planet holding a sleeper; `-own` when it is the actor's |
+
+## Phase 4 decisions (adjacency audit, 2026-10-18)
+
+`Galaxy::adjacent` already folds printed and token wormholes. Breach links are global (Crimson text:
+systems with active breaches are adjacent, for everyone). Quantum Entanglement (Creuss), Lazax Gate
+Folding (Winnu, own tactical action) and Void Tether (blocks other players' border) are per player, so
+each site asks `PlayerAdjacency::new(.., acting player)`. All tests are in `factions/crimson.rs`
+`adjacency_audit_tests` (active-breach pair, ring fixture).
+
+| Site | Effect | Decision | Reason | Test |
+|---|---|---|---|---|
+| combat.rs `reaching_guns_by` | PDS II / Xxcha mech SPACE CANNON "ships in adjacent systems" | link-aware, per gun owner (dice order kept: neighbours still sorted) | adjacency is the firing player's; a Creuss link is not an Xxcha's | `space_cannon_reaches_across_a_breach_link` |
+| combat.rs `eligible_retreats` | 78.7c retreat to adjacent system | link-aware, retreating player | a retreat is a move to an adjacent system | `retreats_may_cross_a_breach_link` |
+| combat.rs `skilled_retreat_destinations` | Skilled Retreat "adjacent system" | link-aware, player | same | same |
+| combat.rs `det_retreat_destinations` | Dark Energy Tap | link-aware, player | same | same |
+| action_cards.rs Experimental Battlestation | dock "in or adjacent" | link-aware, player | card's player | (no dedicated test; same lookup as jamming) |
+| action_cards.rs Exploration Probe | frontier token "adjacent to your ships" | link-aware, player | same | (no dedicated test) |
+| action_cards.rs `jamming_systems` | Signal Jamming | link-aware, player | same | `signal_jamming_reaches_a_breach_linked_system` |
+| agenda_effects.rs travel_ban | PDS "adjacent to a wormhole system" destroyed | breach links only | no acting player: breach links are global, per-player links have no owner | (no dedicated test; `breach_pairs` shared with the hook) |
+| faction_abilities.rs `annexable` | Xxcha Civil Accords annex | link-aware, player | "adjacent to a planet you control" | `annexing_and_the_stellar_converter_...` |
+| relics.rs `stellar_converter_targets` | Stellar Converter | link-aware, player | "adjacent to your bombardment unit" | same |
+| secrets.rs (2) | secret objectives: ship beside anomaly / rival home | link-aware, scorer | objective is the scorer's board state | `a_ship_beside_an_anomaly_...` (anomaly case) |
+| objectives.rs `ships_adjacent_to_mecatol_count` | public objective | link-aware, scorer | same | (no dedicated test) |
+| cabal.rs `carrion_targets` | Cabal hero | link-aware, Cabal | hero text, Cabal's view | (no dedicated test) |
+| cabal.rs `vortex_targets` | Vortex | link-aware, Cabal | same | `a_space_dock_vortex_and_the_mahact_hero_...` |
+| sardakk.rs `commit_candidates` | Sardakk commander commits from adjacent systems | link-aware, invader | invader's adjacency | (no dedicated test) |
+| mahact_units.rs `hero_pairs` | Mahact hero | link-aware, Mahact | same | same Vortex/hero test |
+| empyrean_units.rs `near` (Dynamo, Watcher) | "in or adjacent to" | link-aware, Empyrean | owner's adjacency | (no dedicated test) |
+| movement.rs:1182 | hex-geometry test fixture | geometric | test only | n/a |
+| game.rs `wormhole_hops` | counts wormhole hops for move bonus | geometric (comment added) | a breach link is not a wormhole | n/a |

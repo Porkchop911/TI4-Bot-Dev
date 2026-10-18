@@ -7174,6 +7174,7 @@ fn wormhole_hops(
             let ordinary = wormhole_map.are_adjacent(previous, step)
                 && !wormhole_map.wormhole_kinds(previous).is_empty()
                 && !wormhole_map.wormhole_kinds(step).is_empty();
+    // Geometric on purpose: this counts wormhole hops (the +1 move), and a breach link is not a wormhole.
             let quantum =
                 quantum_entanglement && has_alpha_or_beta(previous) && has_alpha_or_beta(step);
             hops += u32::from(ordinary || quantum);

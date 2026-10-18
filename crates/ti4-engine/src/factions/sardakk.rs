@@ -292,8 +292,10 @@ fn commit_candidates(
     // Adjacent systems that hold none of the invader's command tokens. A supernova cannot be
     // moved out of; other anomaly restrictions are not modelled (see the evidence file).
     if let Some(galaxy) = galaxy {
-        for adjacent in galaxy.adjacent(system.as_str()) {
-            let adjacent = SystemId::new(adjacent);
+        let adjacency =
+            crate::movement::PlayerAdjacency::new(state, content, sources, galaxy, invader);
+        for adjacent in adjacency.neighbours(system.as_str()) {
+            let adjacent = SystemId::new(adjacent.as_str());
             let blocked = state
                 .system_state(&adjacent)
                 .command_tokens
