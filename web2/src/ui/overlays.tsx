@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "./cx";
 import { Button, CloseButton } from "./Button";
 import type { IconName } from "./Icon";
@@ -108,6 +109,7 @@ export function Peek({
   const [open, setOpen] = useState<"peek" | "pinned" | null>(null);
   const root = useRef<HTMLSpanElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const note = useRef<HTMLDivElement>(null);
   const [, place] = useReducer((count: number) => count + 1, 0);
   useEffect(() => {
     if (!open) {
@@ -118,7 +120,9 @@ export function Peek({
       if (
         event instanceof KeyboardEvent
           ? event.key === "Escape"
-          : open === "pinned" && !root.current?.contains(event.target as Node)
+          : open === "pinned" &&
+            !root.current?.contains(event.target as Node) &&
+            !note.current?.contains(event.target as Node)
       ) {
         setOpen(null);
       }
@@ -167,28 +171,35 @@ export function Peek({
       >
         {trigger}
       </button>
-      {rect && (
-        <div
-          role="note"
-          className={cx("fixed z-30", above ? "pb-1.5" : "pt-1.5")}
-          style={{
-            ...(above ? { bottom: window.innerHeight - rect.top } : { top: rect.bottom }),
-            left: Math.max(8, Math.min(rect.left - 12, window.innerWidth - width - 8)),
-            width,
-          }}
-        >
+      {rect &&
+        // Out of the layout of the trigger: a row after it (its own "?") never paints over the
+        // text. In an open dialog it stays in the dialog, which is above the page.
+        createPortal(
           <div
-            className={cx(
-              "rounded-lg border border-[#415065] bg-raised text-xs leading-[1.45] font-normal whitespace-normal text-text shadow-pop",
-              !flush && "space-y-2 px-3 py-2.5",
-              tall && "overflow-y-auto overscroll-contain",
-            )}
-            style={tall ? { maxHeight: room } : undefined}
+            ref={note}
+            role="note"
+            onMouseEnter={peek}
+            onMouseLeave={unpeek}
+            className={cx("fixed z-30", above ? "pb-1.5" : "pt-1.5")}
+            style={{
+              ...(above ? { bottom: window.innerHeight - rect.top } : { top: rect.bottom }),
+              left: Math.max(8, Math.min(rect.left - 12, window.innerWidth - width - 8)),
+              width,
+            }}
           >
-            {children}
-          </div>
-        </div>
-      )}
+            <div
+              className={cx(
+                "rounded-lg border border-[#415065] bg-raised text-xs leading-[1.45] font-normal whitespace-normal text-text shadow-pop",
+                !flush && "space-y-2 px-3 py-2.5",
+                tall && "overflow-y-auto overscroll-contain",
+              )}
+              style={tall ? { maxHeight: room } : undefined}
+            >
+              {children}
+            </div>
+          </div>,
+          button.current?.closest("dialog") ?? document.body,
+        )}
     </span>
   );
 }
