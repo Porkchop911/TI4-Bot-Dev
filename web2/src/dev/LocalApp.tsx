@@ -10,18 +10,20 @@ import {
 import { SeatShape } from "../game/context";
 import { GameShell } from "../game/shell/GameShell";
 import { DEFAULT_GAME } from "./defaultGame";
+import { deliverFile } from "./deliverFile";
 import { GameTable } from "./GameTable";
 import { DEFAULT_NICKNAME, onlineAddress } from "./onlineStart";
 import {
   type LocalGame,
   STEPPING_KEY,
+  type GameCrash,
   gameOfSave,
   clearLeft,
   gameAddress,
-  idAddress,
   readWait,
   sideKey,
   slotOf,
+  storeCrash,
   storeLeft,
   storeWait,
 } from "../session/savedGame";
@@ -40,8 +42,10 @@ import {
   type SavedGameRecord,
   autosaveOf,
   engineOfSave,
+  exportSave,
   factionsOf,
   importFailure,
+  importSave,
   newSaveId,
   removeSave,
   saveStore,
@@ -96,15 +100,18 @@ type Start =
 export function LocalApp({
   game,
   id: savedId,
+  fresh = false,
   onNewGame,
   other = { label: "Start", href: "/" },
 }: {
   game: LocalGame;
-  /** The saved game of this id (`?save=<id>`), in place of the game of the slot of `game`. */
+  /** The saved game of this id (`?save=<id>`, `?single=<id>`), in place of the game of the slot of `game`. */
   id?: string;
+  /** `game` is a new game, kept under `id` from its first question on: the store has none of that id yet. */
+  fresh?: boolean;
   /**
    * "New game" leaves the game for what set it up, in place of the same game again: the game of
-   * a table goes back to its setup.
+   * a table goes back to its setup, and stays in the saved games.
    */
   onNewGame?: () => void;
   /** The way out of the game, in the header. */
@@ -162,7 +169,7 @@ export function LocalApp({
         await takeLeft(store, localStorage, nickname());
         const record =
           savedId === undefined ? await store.findSlot(slotOf(game)) : await store.load(savedId);
-        if (savedId !== undefined && !record) {
+        if (savedId !== undefined && !record && !fresh) {
           return { kind: "missing" };
         }
         // The models of the game are loaded before it starts (a saved game too).
@@ -185,14 +192,21 @@ export function LocalApp({
                 : `A model that this game seats did not load. ${message(error)}`,
           };
         }
-        return { kind: "ready", engine, store, id: record?.id ?? newSaveId(), record, files };
+        return {
+          kind: "ready",
+          engine,
+          store,
+          id: record?.id ?? savedId ?? newSaveId(),
+          record,
+          files,
+        };
       })
       .catch((error: unknown) => ({ kind: "failed" as const, message: message(error) }))
       .then((next) => stale || setStart(next));
     return () => {
       stale = true;
     };
-  }, [game, savedId]);
+  }, [game, savedId, fresh]);
 
   const store = start.kind === "ready" ? start.store : null;
   useEffect(() => {
@@ -240,7 +254,8 @@ export function LocalApp({
     /** The game was removed: what it saves from now on is not kept. */
     let gone = false;
     let factions = record?.summary.factions ?? null;
-    const slot = savedId === undefined ? slotOf(game) : undefined;
+    // A game of a table is of single player, also when it is opened by its id.
+    const slot = savedId === undefined || game.table ? slotOf(game) : undefined;
     const meta = (made: HostSave): GameMeta => ({
       nickname: nickname(),
       factions: factions?.length === made.players ? factions : factionsOf(null, made.players),
@@ -336,6 +351,38 @@ export function LocalApp({
   const module = start.kind === "ready" ? start.engine.module : null;
   const catalog = start.kind === "ready" ? start.engine.catalog : null;
   const id = start.kind === "ready" ? start.id : null;
+  const decided = useRef(0);
+  decided.current = decisions;
+  /** Keeps the last error of the game next to it, for its export. */
+  const keepCrash = useCallback(
+    (crash: Omit<GameCrash, "at" | "decisions">) => {
+      if (id !== null) {
+        storeCrash(localStorage, id, { ...crash, at: Date.now(), decisions: decided.current });
+      }
+    },
+    [id],
+  );
+  useEffect(() => {
+    if (error) {
+      keepCrash({ source: "engine", message: error });
+    }
+  }, [error, keepCrash]);
+  useEffect(() => {
+    const of = (reason: unknown) =>
+      reason instanceof Error
+        ? { message: reason.message, ...(reason.stack ? { stack: reason.stack } : {}) }
+        : { message: String(reason) };
+    const onError = (event: ErrorEvent) =>
+      keepCrash({ source: "page", ...of(event.error ?? event.message) });
+    const onRejection = (event: PromiseRejectionEvent) =>
+      keepCrash({ source: "page", ...of(event.reason) });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [keepCrash]);
   const openTable = useCallback(
     () =>
       localGameTable(module!, game, {
@@ -380,13 +427,15 @@ export function LocalApp({
     if (start.kind !== "ready") {
       return;
     }
+    if (onNewGame) {
+      // The game stays in the saved games, as it is now.
+      await saving.current?.flush();
+      return onNewGame();
+    }
     // What the game would still save is not kept: the game is gone.
     await saving.current?.drop();
     await removeSave(start.store, localStorage, start.id);
     setAnyway(false);
-    if (onNewGame) {
-      return onNewGame();
-    }
     if (savedId !== undefined) {
       // A game of an id has no address of its own to start again at: the address of its setup.
       window.location.search = gameAddress(game);
@@ -398,17 +447,15 @@ export function LocalApp({
     if (start.kind !== "ready") {
       return;
     }
+    let file: { filename: string; blob: Blob };
     try {
       await saving.current?.flush();
-      const { filename, blob } = await start.store.exportGame(start.id);
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      file = await exportSave(start.store, localStorage, start.id);
     } catch {
       setImportError("The game is not saved yet.");
+      return;
     }
+    await deliverFile(file.filename, file.blob);
   };
   const importGame = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -418,9 +465,8 @@ export function LocalApp({
     }
     const text = await file.text();
     try {
-      const imported = await start.store.importGame(text);
       // An imported game is a game of its own, with an id and no address of a setup.
-      window.location.search = idAddress(imported.id);
+      window.location.search = await importSave(start.store, text);
     } catch (failure) {
       setImportError(importFailure(failure, text));
     }

@@ -303,16 +303,18 @@ The single player games of both apps, in one IndexedDB database of the origin. I
 - **The record** (`SavedGameRecord`, schema 2): `id`, `slot?`, `nickname`, `createdAt`,
   `updatedAt`, `status`, `summary {playerCount, humans, factions, seed, round, phase, answers}`,
   `engine`, `resumeEstimateMs`, `imported`, `sizeBytes`, `save`.
-- **The slot** is the fixed address of a game in an app: `"single"`,
-  `"local.<seed>.<players>.<mask>"`, `"scenario.<id>.<mask>"`. A game found by its id only has
-  none.
+- **The slot** is the kind or the fixed address of a game in an app: `"single"` (web2's games
+  of single player, each found by its id), `"local.<seed>.<players>.<mask>"`,
+  `"scenario.<id>.<mask>"`. A game found by its id only may have none.
 - **The save** is the engine's `HostSave`, format 2 (`crates/ti4-wasm/README.md`). `validateSave`
   checks what the store and the lists rely on (2 to 8 players, the humans mask, every seat's
   decisions, the limits); the engine checks the rest when it resumes. A record that fails
   (an older save format or record schema, a broken row) is not shown and is counted in
   `status().unreadable`.
 - **The export file** is the one export format of both apps: `{kind: "ti4-offline-game",
-  version: 2, exportedAt, game: {nickname, factions, createdAt, engine, save}}`.
+  version: 2, exportedAt, game: {nickname, factions, createdAt, engine, save}}`. web2 writes
+  `report` beside `game` (the browser and the last error of the game, for debugging); an import
+  does not read it.
 - **The schema.** Database `ti4-offline`, version 2: `games` (key `id`, indexes `updatedAt` and
   `slot`), `feedback` (key `localId`), `meta`. A change adds a step to `MIGRATIONS` and bumps
   `DB_VERSION`; an old step is never edited. A database newer than the build is not touched (the
