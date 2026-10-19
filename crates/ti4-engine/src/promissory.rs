@@ -327,16 +327,12 @@ pub fn held_by(state: &GameState, player: &PlayerId) -> Vec<String> {
 
 /// Notes this player could put on the table.
 ///
-/// Holding is what makes a note offerable — the oracle prices and offers notes by who holds
-/// them, not who owns them; a lent-out note sits in your hand and is yours to sell from there.
-/// Two filters narrow that: a note faceup in a play area has already been played and is doing
-/// its work where it sits (69.3), and an Alliance conveys a commander ability *only while it is
-/// unlocked*, so before then it conveys precisely nothing and the oracle withholds it rather
-/// than price a null card.
+/// Holding makes a note offerable, including an Alliance whose commander is still locked.
+/// A faceup note is already in its recipient's play area and is no longer in hand to offer.
 #[must_use]
 pub fn available_notes(
     state: &GameState,
-    content: &ContentStore,
+    _content: &ContentStore,
     player: &PlayerId,
 ) -> Vec<String> {
     let mut notes = Vec::new();
@@ -344,18 +340,8 @@ pub fn available_notes(
         if state.promissory_faceup.contains(&note) {
             continue;
         }
-        let Some(owner_name) = owner_of(&note) else {
+        if owner_of(&note).is_none() {
             continue;
-        };
-        if alias_of(&note) == "an" {
-            // Nobody plays the faction an Alliance names on a duplicate-free table, and with no
-            // seat there is no commander to unlock — withhold it in that case as well.
-            let Some(owner) = seat_of(state, &owner_name) else {
-                continue;
-            };
-            if !commander_unlocked(state, content, &owner) {
-                continue;
-            }
         }
         notes.push(note);
     }
@@ -848,7 +834,7 @@ pub fn trade_agreement_worth(state: &GameState, content: &ContentStore, note: &s
 mod tests {
     use super::*;
     use crate::fixtures::game;
-    use ti4_model::content_types::POK;
+    use ti4_model::content_types::{FULL, POK};
     use ti4_model::id::{FactionId, LeaderId};
     use ti4_model::state::LeaderStatus;
 
@@ -892,10 +878,7 @@ mod tests {
         );
         assert!(mine.iter().any(|n| n == "convoys:hacan"));
         assert!(!mine.iter().any(|n| n == "cf:jolnar"), "not b's copy");
-        assert!(
-            !mine.iter().any(|n| n == "an:hacan"),
-            "Alliance waits for the commander"
-        );
+        assert!(mine.iter().any(|n| n == "an:hacan"));
     }
 
     #[test]
@@ -1036,18 +1019,18 @@ mod tests {
     }
 
     #[test]
-    fn alliance_is_withheld_until_the_commander_unlocks() {
-        // Before that, the note conveys precisely nothing — and a note worth nothing is what a
-        // search learns to sell.
+    fn locked_alliance_is_offerable_but_its_commander_benefit_waits_for_unlock() {
         let mut state = game_hacan_jolnar();
         let content = ContentStore::embedded();
 
         assert!(
-            !available_notes(&state, content, &a())
+            available_notes(&state, content, &a())
                 .iter()
                 .any(|n| n == "an:hacan"),
-            "commander still locked"
+            "a locked Alliance can still be traded"
         );
+        take(&mut state, content, &b(), "an:hacan");
+        assert!(!has_commander_ability(&state, &b(), "hacancommander"));
 
         state
             .player_mut(&a())
@@ -1055,11 +1038,35 @@ mod tests {
             .leaders
             .insert(LeaderId::new("hacancommander"), LeaderStatus::Unlocked);
 
-        assert!(
-            available_notes(&state, content, &a())
-                .iter()
-                .any(|n| n == "an:hacan")
-        );
+        assert!(has_commander_ability(&state, &b(), "hacancommander"));
+    }
+
+    #[test]
+    fn every_faction_alliance_is_dealt_and_offerable_before_unlock() {
+        let content = ContentStore::embedded();
+        let mut checked = 0;
+        for record in content.factions(FULL) {
+            let Some(faction) = record.id() else { continue };
+            if faction == "neutral" { continue; }
+            checked += 1;
+            let mut state = game(&["a", "b"]);
+            state.player_mut(&a()).unwrap().faction = FactionId::new(faction);
+            state.player_mut(&b()).unwrap().faction = FactionId::new("generic");
+            deal(&mut state, content, FULL);
+            let note = note_id("an", faction);
+            if faction == "mahact" {
+                assert!(!state.promissory_notes.contains_key(&note), "Hubris purges {note}");
+                continue;
+            }
+            assert_eq!(state.promissory_notes.get(&note), Some(&a()), "{faction} setup");
+            assert!(available_notes(&state, content, &a()).contains(&note),
+                "{faction} Alliance offerable while locked");
+            take(&mut state, content, &b(), &note);
+            assert!(state.promissory_faceup.contains(&note), "{faction} faceup on receipt");
+            assert!(!available_notes(&state, content, &b()).contains(&note),
+                "{faction} faceup card cannot be offered again");
+        }
+        assert_eq!(checked, 33);
     }
 
     #[test]
