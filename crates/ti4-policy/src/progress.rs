@@ -104,12 +104,12 @@ pub struct Progress {
     /// Bill of the units the chosen produce option builds (every unit type, full cost).
     #[serde(default)]
     pub built_cost: i64,
-    /// Build value in per-mille resources: the bill, times 1.3 for upgraded ships (the
-    /// `fleet_value_permille` convention, `SeatObservation::build_value_permille`).
+    /// Build value in per-mille reward points: the per-unit table (dreadnought 10, II 13, ...),
+    /// basic fighters only within capacity (`SeatObservation::build_value_permille`).
     #[serde(default)]
     pub built_value_permille: i64,
-    /// Cumulative value, in per-mille resources, of units this seat has removed for being over
-    /// fleet supply (37.3), valued like a build; reward bookkeeping only.
+    /// Cumulative table value, per-mille points, of units this seat has removed for being over
+    /// fleet supply (37.3) or capacity (16.3), valued like a build; reward bookkeeping only.
     #[serde(default)]
     pub scuttled_permille: i64,
 }

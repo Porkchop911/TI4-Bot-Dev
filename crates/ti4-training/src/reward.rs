@@ -1699,6 +1699,10 @@ mod tests {
         assert_shift(&shift(&episode, &reward), &[-1.84, -1.84, -1.04]);
         reward.scuttle_multiplier = 0.0;
         assert_shift(&shift(&episode, &reward), &[0.0, 0.0, 0.0]);
+        // A capacity removal of two basic fighters (2 x 1.8 = 3600): 3.6 x 2 x 0.1 = 0.72.
+        reward.scuttle_multiplier = 2.0;
+        let episode = holdings_episode(vec![scuttled(0), scuttled(3600)], scuttled(3600));
+        assert_shift(&shift(&episode, &reward), &[-0.72, 0.0]);
     }
 
     #[test]

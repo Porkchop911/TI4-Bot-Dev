@@ -1407,19 +1407,51 @@ impl<'a> Observed<'a> {
             .sum()
     }
 
-    /// Value in per-mille resources of buying `unit_id` for a total `bill`: the bill itself, times
-    /// 1.3 when the unit is an upgraded ship (same convention as [`Self::fleet_value_permille`]:
-    /// no premium for fighters or ground forces).
+    /// Reward points x1000 for building `count` of `unit_id` in `system`: the per-unit table of
+    /// [`Self::table_permille`]. Basic fighters score only up to the capacity free in `system`
+    /// (the unit is placed after this is read); fighters beyond it, and Fighter II (exempt, it
+    /// rides the fleet pool), follow that rule.
     #[must_use]
-    pub fn build_value_permille(&self, unit_id: &str, bill: i64) -> i64 {
+    pub fn build_value_permille(
+        &self,
+        player: &PlayerId,
+        unit_id: &str,
+        count: i64,
+        system: &SystemId,
+    ) -> i64 {
         let types = ti4_content::units::catalogue(self.content, self.sources);
-        let upgraded = types.get(unit_id).is_some_and(|stats| {
-            stats.is_ship() && !stats.is_fighter() && stats.upgrades_from().is_some()
-        });
-        if upgraded { bill * 1300 } else { bill * 1000 }
+        let Some(stats) = types.get(unit_id) else {
+            return 0;
+        };
+        let mut scored = count.max(0);
+        if stats.is_fighter() && stats.upgrades_from().is_none() {
+            let free = crate::fleet::standing(self.state, self.content, self.sources, player, system, None)
+                .capacity_free();
+            scored = scored.min(free);
+        }
+        Self::table_permille(*stats) * scored
     }
 
-    /// Cumulative per-mille value of this seat's units removed for being over fleet supply.
+    /// The per-unit reward table, x1000 (build value and scuttle claw-back both use it). Faction
+    /// units map to their base type and count as upgraded when they upgrade from something.
+    /// Structures and anything off the table are 0.
+    pub(crate) fn table_permille(stats: ti4_content::units::UnitType<'_>) -> i64 {
+        let up = stats.upgrades_from().is_some();
+        match stats.base_type() {
+            "warsun" => 20_000,
+            "dreadnought" => if up { 13_000 } else { 10_000 },
+            "flagship" => 10_000,
+            "carrier" => if up { 8_000 } else { 6_000 },
+            "mech" => 3_500,
+            "cruiser" => if up { 5_000 } else { 3_000 },
+            "destroyer" => if up { 3_200 } else { 2_400 },
+            "fighter" => if up { 2_500 } else { 1_800 },
+            "infantry" => if up { 2_000 } else { 1_500 },
+            _ => 0,
+        }
+    }
+
+    /// Cumulative per-mille table value of this seat's units removed for being over fleet supply or capacity.
     #[must_use]
     pub fn scuttled_permille(&self, player: &PlayerId) -> i64 {
         self.state.player(player).map_or(0, |seat| seat.scuttled_permille)

@@ -15,7 +15,7 @@
     Flags = @{
         'overpay-penalty'           = 0.05
         'unused-resources-weight'   = 0.1
-        'build-weight'              = 0.1
+        'build-weight'              = 0.035
         'scuttle-multiplier'        = 2
         'roster'           = 'wide'
         'stage'            = 2

@@ -56,7 +56,7 @@ use ti4_model::id::{FactionId, PlayerId};
 
 /// The six factions a `--roster six` game seats, in rotation order: the historical six, or
 /// `--factions a,b,c,d,e,f`.
-/// Overpay, unused ready-planet resources and build value (per-mille resources) and final fleet value (per-mille) summed over this
+/// Overpay, unused ready-planet resources and build value (per-mille table points) and final fleet value (per-mille) summed over this
 /// update's seat-games; read and reset when the update is reported.
 static PRODUCTION_TELEMETRY: [std::sync::atomic::AtomicI64; 5] = [
     std::sync::atomic::AtomicI64::new(0),
@@ -2304,7 +2304,7 @@ fn main() {
             reward.fracture_planet_bonus
         );
         println!(
-            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per resource built (all units at cost, upgraded ships x1.3) | scuttle {} x build weight per resource removed over fleet supply",
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per table point built (per-unit table: war sun 20, dreadnought 10/13, flagship 10, carrier 6/8, mech 3.5, cruiser 3/5, destroyer 2.4/3.2, fighter 1.8/2.5, infantry 1.5/2; basic fighters only within capacity) | scuttle {} x build weight per table point removed over fleet supply or capacity",
             reward.overpay_penalty,
             reward.unused_resources_weight,
             reward.build_weight,
@@ -3822,13 +3822,13 @@ fn main() {
                 |sums| sums.map(|value| value as f64),
             );
             println!(
-                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (resources, all units full, upgraded x1.3)",
+                "              overpay/seat {:.3}  unused/seat {:.3}  built/seat {:.3} (table points: dread 10..., fighters within capacity)",
                 overpaid / seats,
                 unused / seats,
                 built / 1000.0 / seats
             );
             println!(
-                "              fleet/seat {:.1}  scuttled/seat {:.3} (resources removed over fleet supply)",
+                "              fleet/seat {:.1}  scuttled/seat {:.3} (table points removed over fleet supply or capacity)",
                 fleet / 1000.0 / seats,
                 scuttled / 1000.0 / seats
             );

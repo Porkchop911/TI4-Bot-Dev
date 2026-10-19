@@ -602,7 +602,22 @@ impl MlpBot {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             record.progress.built_cost = cost;
-            record.progress.built_value_permille = seen.build_value_permille(unit, cost);
+            let count = answer
+                .payload
+                .get("count")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(1);
+            let system = answer
+                .payload
+                .get("system")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            record.progress.built_value_permille = seen.build_value_permille(
+                &choice.player,
+                unit,
+                count,
+                &ti4_model::id::SystemId::new(system),
+            );
         }
     }
 
