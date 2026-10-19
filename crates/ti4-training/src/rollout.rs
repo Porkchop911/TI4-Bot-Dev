@@ -468,6 +468,9 @@ fn seated(
             return Err(format!("deploy: {error}"));
         }
     }
+    // Every game started here is a real one: the seats that choose their starting technology are
+    // asked in round 1's strategy phase, as in the server.
+    ti4_engine::starting_tech::open(&mut state, content, sources);
 
     Ok((state, galaxy, factions.clone()))
 }
@@ -1178,7 +1181,17 @@ fn opening_baselines(
     let seen = Observed::new(state, content, sources, galaxy);
     players
         .iter()
-        .map(|player| (player.clone(), Baseline::taken(&seen, player)))
+        .map(|player| {
+            let mut baseline = Baseline::taken(&seen, player);
+            // Starting technologies still to be picked in round 1 are setup, not gains.
+            baseline.technologies += state
+                .starting_tech_picks
+                .iter()
+                .filter(|pick| &pick.player == player)
+                .map(|pick| usize::from(pick.remaining))
+                .sum::<usize>();
+            (player.clone(), baseline)
+        })
         .collect()
 }
 
@@ -2446,6 +2459,47 @@ mod tests {
 
     fn seats(names: &[&str]) -> Vec<PlayerId> {
         names.iter().map(|name| PlayerId::new(*name)).collect()
+    }
+
+    #[test]
+    fn a_winnu_seat_holds_its_picked_technology_after_the_picks() {
+        let players = seats(&["a", "b"]);
+        let factions: BTreeMap<PlayerId, FactionId> = [("a", "winnu"), ("b", "hacan")]
+            .into_iter()
+            .map(|(seat, faction)| (PlayerId::new(seat), FactionId::new(faction)))
+            .collect();
+        let mut game = setup_game_with_decider_factory(
+            ContentStore::embedded(),
+            &players,
+            &factions,
+            POK,
+            3,
+            &OpeningMap::RustVaried,
+            |baselines| {
+                assert_eq!(baselines.len(), 2);
+                Ok(players
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.clone(),
+                            Box::new(ti4_engine::choice::FirstOption) as Box<dyn Decider>,
+                        )
+                    })
+                    .collect())
+            },
+        )
+        .expect("setup");
+        let winnu = &players[0];
+        let before = game.state.player(winnu).unwrap().technologies.len();
+        assert_eq!(game.state.starting_tech_picks.len(), 1, "winnu owes a pick");
+        for _ in 0..200 {
+            if game.state.starting_tech_picks.is_empty() {
+                break;
+            }
+            assert!(game.step().error.is_none());
+        }
+        assert!(game.state.starting_tech_picks.is_empty());
+        assert_eq!(game.state.player(winnu).unwrap().technologies.len(), before + 1);
     }
 
     const SIX: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
