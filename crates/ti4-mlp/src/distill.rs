@@ -238,6 +238,20 @@ impl Adam {
         self.t
     }
 
+    /// Deep copies of the step counter and both moment tables, on the host.
+    pub(crate) fn snapshot_moments(&self) -> (i64, Vec<Tensor>, Vec<Tensor>) {
+        let host = |tensor: &Tensor| tensor.detach().to_device(ti4_tensor::Device::Cpu).copy();
+        (self.t, self.m.iter().map(host).collect(), self.v.iter().map(host).collect())
+    }
+
+    /// Put back what [`Self::snapshot_moments`] took, each table on its current device.
+    pub(crate) fn restore_moments(&mut self, t: i64, m: &[Tensor], v: &[Tensor]) {
+        for (tensor, saved) in self.m.iter_mut().zip(m).chain(self.v.iter_mut().zip(v)) {
+            *tensor = saved.to_device(tensor.device()).copy();
+        }
+        self.t = t;
+    }
+
     /// Move both moment tables without resetting their values or the bias-correction cursor.
     pub fn move_to(&mut self, device: ti4_tensor::Device) {
         for tensor in self.m.iter_mut().chain(&mut self.v) {

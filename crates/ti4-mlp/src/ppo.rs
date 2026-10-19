@@ -1126,6 +1126,14 @@ fn surrogate(log_prob: &Tensor, behaviour_log_prob: f64, advantage: f64, epsilon
     -unclipped_term.minimum(&clipped_term)
 }
 
+/// What [`Adam::snapshot`] took: host copies, independent of the live tensors.
+pub struct Snapshot {
+    parameters: Vec<Tensor>,
+    t: i64,
+    m: Vec<Tensor>,
+    v: Vec<Tensor>,
+}
+
 /// Stateful Adam over the exact parameter set selected by the critic mode.
 pub struct Adam {
     inner: crate::distill::Adam,
@@ -1273,6 +1281,41 @@ impl Adam {
     #[must_use]
     pub const fn steps(&self) -> i64 {
         self.inner.steps()
+    }
+
+    /// A host copy of the trained parameters and this optimiser's moments and counter, so a step
+    /// that failed half way (a CUDA out-of-memory) can be undone by [`Adam::restore`].
+    ///
+    /// # Errors
+    /// If the actor's parameters cannot be gathered for this critic mode.
+    pub fn snapshot(&self, actor: &Actor) -> Result<Snapshot, String> {
+        let parameters = parameters(actor, self.mode)?
+            .iter()
+            .map(|p| p.detach().to_device(ti4_tensor::Device::Cpu).copy())
+            .collect();
+        let (t, m, v) = self.inner.snapshot_moments();
+        Ok(Snapshot { parameters, t, m, v })
+    }
+
+    /// Put the actor's trained parameters, the moments and the counter back as [`Adam::snapshot`]
+    /// found them, and clear the gradients.
+    ///
+    /// # Errors
+    /// If the parameter set no longer matches the snapshot.
+    pub fn restore(&mut self, actor: &Actor, snapshot: &Snapshot) -> Result<(), String> {
+        let mut current = parameters(actor, self.mode)?;
+        if current.len() != snapshot.parameters.len() {
+            return Err("snapshot has a different parameter count".to_owned());
+        }
+        for (parameter, saved) in current.iter_mut().zip(&snapshot.parameters) {
+            let saved = saved.to_device(parameter.device());
+            tch::no_grad(|| {
+                let _ = parameter.copy_(&saved);
+            });
+            parameter.zero_grad();
+        }
+        self.inner.restore_moments(snapshot.t, &snapshot.m, &snapshot.v);
+        Ok(())
     }
 }
 
@@ -2364,6 +2407,35 @@ mod tests {
             refusal.contains("is not a leaf tensor"),
             "refused for the wrong reason: {refusal}"
         );
+    }
+
+    #[test]
+    fn restore_undoes_a_step_exactly() {
+        let batch = Batch::freeze(
+            vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 3, 1.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+        let settings = Settings { epochs: 1, minibatch: 2, ..Settings::default() };
+        let mut actor = trainable_actor();
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+        let read = |actor: &Actor| -> Vec<Vec<f32>> {
+            parameters(actor, CriticMode::BatchMean)
+                .expect("parameters")
+                .iter()
+                .map(|p| ti4_tensor::to_vec(p).expect("read"))
+                .collect()
+        };
+        let (weights, moments) = (read(&actor), optimizer.state_fingerprint().expect("state"));
+        let snapshot = optimizer.snapshot(&actor).expect("snapshot");
+        update(&mut actor, &batch, CriticMode::BatchMean, settings, 7, &mut optimizer)
+            .expect("update");
+        assert_ne!(read(&actor), weights, "the update changed nothing");
+        optimizer.restore(&actor, &snapshot).expect("restore");
+        assert_eq!(read(&actor), weights);
+        assert_eq!(optimizer.state_fingerprint().expect("state"), moments);
+        assert_eq!(optimizer.steps(), 0);
     }
 
     #[test]
