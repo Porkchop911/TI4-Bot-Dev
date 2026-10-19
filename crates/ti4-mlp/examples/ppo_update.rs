@@ -685,21 +685,34 @@ fn play_one(
     hash: bool,
     sil_margin: f64,
     focus: Option<&BTreeMap<&'static str, u32>>,
+    // Sticky target (per-faction async batching): this faction is seated in the game.
+    target: Option<&str>,
     gae_lambda: f64,
     record: Option<&Recorder>,
     update: usize,
 ) -> Result<Played, String> {
     // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
     // the seed (BF-22). With --faction-focus the wide draw is weighted toward trailing factions.
-    let factions = match focus {
-        None => ti4_training::rollout::game_factions(
+    let factions = match (focus, target) {
+        (None, None) => ti4_training::rollout::game_factions(
             content, roster, &*FACTIONS, players, DEFAULT, seed,
         )?,
-        Some(weights) => {
-            let weight = |entry: &str| weights.get(entry).copied().unwrap_or(FOCUS_SCALE);
-            let drawn =
-                ti4_engine::seating::seat_wide_weighted(content, players, DEFAULT, seed, &weight)
-                    .map_err(|error| format!("weighted wide roster for seed {seed}: {error}"))?;
+        (focus, target) => {
+            let weight = |entry: &str| {
+                focus.map_or(1, |weights| weights.get(entry).copied().unwrap_or(FOCUS_SCALE))
+            };
+            let drawn = match target {
+                Some(target) => ti4_engine::seating::seat_wide_with_target(
+                    content,
+                    players,
+                    DEFAULT,
+                    seed,
+                    focus.map(|_| &weight as &dyn Fn(&str) -> u32),
+                    target,
+                ),
+                None => ti4_engine::seating::seat_wide_weighted(content, players, DEFAULT, seed, &weight),
+            }
+            .map_err(|error| format!("wide roster for seed {seed}: {error}"))?;
             players
                 .iter()
                 .map(|player| {
@@ -1546,6 +1559,8 @@ struct Prefrozen {
     telemetry: [i64; 5],
     /// Per-faction batching: the model this batch trains.
     model: Option<usize>,
+    /// Cut early by the held-seat-games cap rather than because the bucket filled.
+    early: bool,
     /// Per-faction batching with `--self-imitation`: the decisions of this batch's seat-games that
     /// reached the VP bar, each with the weight it carries (the picks together weigh 1).
     sil: Vec<AdvantageDemo>,
@@ -1795,19 +1810,156 @@ struct AsyncState {
     stats: Vec<FactionStat>,
     finished_total: usize,
     updates_done: usize,
+    /// Sticky target (per-faction batching): the model every newly started game seats, the games
+    /// started with it, and the model names.
+    target: usize,
+    target_games: usize,
+    names: Vec<&'static str>,
+    /// Workers waiting for queue room right now.
+    waiting: usize,
+    /// Optimiser idle time so far, and since when it has been idle now.
+    idle_total: Duration,
+    idle_since: Option<Instant>,
+    last_optimise: Duration,
+    last_freeze: Duration,
+    last_publish: Duration,
+    /// The last [`RECENT_UPDATES`] updates, newest first.
+    recent: std::collections::VecDeque<serde_json::Value>,
+}
+
+/// Updates the status file lists.
+const RECENT_UPDATES: usize = 15;
+
+/// The next sticky target: the faction with the fullest bucket; ties go to the fewest batches
+/// sent so far, then to the name.
+fn pick_target(held: &[usize], sent: &[usize], names: &[&str]) -> Option<usize> {
+    (0..held.len()).min_by(|a, b| {
+        held[*b]
+            .cmp(&held[*a])
+            .then(sent[*a].cmp(&sent[*b]))
+            .then(names[*a].cmp(names[*b]))
+    })
+}
+
+impl AsyncState {
+    /// Route the seat-games (model, packed, victory points) of one finished game: each goes to its
+    /// own faction's bucket, a bucket that reaches the batch size is cut alone, and the next target
+    /// is chosen when the target's batch went out. Returns the (model, size) of early cuts.
+    fn route_game(&mut self, seats: Vec<(usize, PackedSeat, i64)>) -> Vec<(usize, usize)> {
+        let mut early = Vec::new();
+        let mut retarget = false;
+        for (model, packed, points) in seats {
+            self.stats[model].seat_games += 1;
+            self.stats[model].vp += points;
+            self.stats[model].ge6 += usize::from(points >= 6);
+            let queued = self.queued_seats;
+            for cut in self.router.push(model, packed, queued) {
+                if cut.early {
+                    early.push((cut.model, cut.seats.len()));
+                }
+                self.queued_seats += cut.seats.len();
+                self.stats[cut.model].sent += 1;
+                retarget |= cut.model == self.target;
+                self.raw.push_back(RawBatch::Seats(cut.seats, cut.early));
+            }
+        }
+        if retarget {
+            self.retarget();
+        }
+        early
+    }
+
+    /// Choose the next target; games already in flight keep their seating.
+    fn retarget(&mut self) {
+        let held: Vec<usize> = self.router.queues.iter().map(Vec::len).collect();
+        let sent: Vec<usize> = self.stats.iter().map(|stat| stat.sent).collect();
+        if let Some(next) = pick_target(&held, &sent, &self.names) {
+            self.target = next;
+            self.target_games = 0;
+        }
+    }
 }
 
 /// A cut batch before freezing: whole games, or a faction's packed seat-games.
 enum RawBatch {
     Games(Vec<Finished>),
-    Seats(Vec<PackedSeat>),
+    /// A faction's seat-games; `true` when the held cap forced the cut.
+    Seats(Vec<PackedSeat>, bool),
 }
 
 #[derive(Default, Clone)]
 struct FactionStat {
     updates: usize,
+    /// Batches cut for this faction (updates plus those still queued).
+    sent: usize,
     seat_games: usize,
     vp: i64,
+    /// Seat-games that ended with 6 or more VP.
+    ge6: usize,
+    last_update_mean_vp: f64,
+}
+
+/// Rates over the last minute, for the status file.
+#[derive(Default, Clone, Copy)]
+struct Rates {
+    games_per_s: f64,
+    seat_games_per_s: f64,
+    blocked_pct: f64,
+    idle_pct: f64,
+}
+
+/// Samples of the run's counters, kept for [`RateWindow::SPAN`] seconds.
+#[derive(Default)]
+struct RateWindow {
+    /// (seconds, games finished, seat-games, workers waiting, optimiser idle seconds)
+    samples: std::collections::VecDeque<(f64, usize, usize, f64, f64)>,
+}
+
+impl RateWindow {
+    const SPAN: f64 = 60.0;
+
+    fn push(&mut self, at: f64, games: usize, seats: usize, waiting: usize, idle: f64, workers: usize) -> Rates {
+        #[expect(clippy::cast_precision_loss, reason = "worker counts")]
+        self.samples.push_back((at, games, seats, waiting as f64, idle));
+        while self.samples.len() > 2 && self.samples[1].0 <= at - Self::SPAN {
+            self.samples.pop_front();
+        }
+        let (first, last) = (self.samples[0], self.samples[self.samples.len() - 1]);
+        let span = last.0 - first.0;
+        if span <= 0.0 {
+            return Rates::default();
+        }
+        #[expect(clippy::cast_precision_loss, reason = "counters of a few million")]
+        let per_s = |a: usize, b: usize| b.saturating_sub(a) as f64 / span;
+        #[expect(clippy::cast_precision_loss, reason = "sample and worker counts")]
+        let waiting = self.samples.iter().map(|sample| sample.3).sum::<f64>() / self.samples.len() as f64;
+        #[expect(clippy::cast_precision_loss, reason = "worker counts")]
+        let workers = workers.max(1) as f64;
+        Rates {
+            games_per_s: per_s(first.1, last.1),
+            seat_games_per_s: per_s(first.2, last.2),
+            blocked_pct: 100.0 * waiting / workers,
+            idle_pct: (100.0 * (last.4 - first.4) / span).clamp(0.0, 100.0),
+        }
+    }
+}
+
+/// What the status file needs besides the shared state.
+struct StatusContext<'a> {
+    started: &'a str,
+    updated: &'a str,
+    queue_limit: usize,
+    workers: usize,
+    rates: Rates,
+    ram_mb: Option<u64>,
+}
+
+/// Resident memory of this process in MB where `/proc` has it. Windows has no safe std route (the
+/// workspace forbids unsafe, and no sysinfo-like crate is a dependency), so there it is omitted.
+fn ram_mb() -> Option<u64> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+    Some(pages * 4096 / (1 << 20))
 }
 
 /// The `router_status.json` document: one small snapshot for a dashboard.
@@ -1816,7 +1968,7 @@ fn router_status(
     names: &[&str],
     batch: usize,
     max_held: usize,
-    updated: &str,
+    context: &StatusContext,
 ) -> serde_json::Value {
     let factions: serde_json::Map<String, serde_json::Value> = names
         .iter()
@@ -1824,7 +1976,11 @@ fn router_status(
         .map(|(model, name)| {
             let stat = state.stats.get(model).cloned().unwrap_or_default();
             #[expect(clippy::cast_precision_loss, reason = "a mean over a few thousand games")]
-            let mean_vp = if stat.seat_games == 0 { 0.0 } else { stat.vp as f64 / stat.seat_games as f64 };
+            let (mean_vp, ge6_share) = if stat.seat_games == 0 {
+                (0.0, 0.0)
+            } else {
+                (stat.vp as f64 / stat.seat_games as f64, stat.ge6 as f64 / stat.seat_games as f64)
+            };
             (
                 (*name).to_owned(),
                 serde_json::json!({
@@ -1832,20 +1988,43 @@ fn router_status(
                     "updates": stat.updates,
                     "seat_games": stat.seat_games,
                     "mean_vp": mean_vp,
+                    "last_update_mean_vp": stat.last_update_mean_vp,
+                    "ge6_share": ge6_share,
                 }),
             )
         })
         .collect();
-    serde_json::json!({
-        "updated": updated,
+    let idle_now = state.idle_since.map_or(0.0, |since| since.elapsed().as_secs_f64());
+    let mut document = serde_json::json!({
+        "updated": context.updated,
+        "started": context.started,
         "batch": batch,
         "max_held": max_held,
         "held": state.router.held() + state.queued_seats,
         "queued_batches": state.raw.len() + state.ready.len(),
+        "queue_limit": context.queue_limit,
         "updates_done": state.updates_done,
         "games_finished": state.finished_total,
+        "target": names.get(state.target).copied().unwrap_or(""),
+        "target_since_games": state.target_games,
+        "games_per_s": context.rates.games_per_s,
+        "seat_games_per_s": context.rates.seat_games_per_s,
+        "workers": context.workers,
+        "workers_blocked_pct": context.rates.blocked_pct,
+        "gpu": {
+            "last_optimise_s": state.last_optimise.as_secs_f64(),
+            "last_freeze_s": state.last_freeze.as_secs_f64(),
+            "last_publish_s": state.last_publish.as_secs_f64(),
+            "optimiser_idle_pct": context.rates.idle_pct,
+            "idle_now_s": idle_now,
+        },
+        "recent": state.recent.iter().collect::<Vec<_>>(),
         "factions": factions,
-    })
+    });
+    if let Some(mb) = context.ram_mb {
+        document["ram_mb"] = mb.into();
+    }
+    document
 }
 
 /// Write `value` to `path` through a `.tmp` file and a rename.
@@ -1898,7 +2077,69 @@ fn retry_on_oom<C, T>(
     Ok(None)
 }
 
+/// Weights waiting to be re-packed for the rollout workers, latest per model.
+struct PublishSlot<T> {
+    pending: Vec<Option<(T, usize)>>,
+    closed: bool,
+}
+
+/// Hands a faction's weights from the optimiser thread to a publish thread. The optimiser submits
+/// a snapshot and goes on; [`Publisher::run`] packs it and installs it. A newer snapshot of a
+/// model replaces an older one that has not been picked up, so the backlog is bounded.
+struct Publisher<T> {
+    slot: std::sync::Mutex<PublishSlot<T>>,
+    wake: std::sync::Condvar,
+}
+
+impl<T> Publisher<T> {
+    fn new(models: usize) -> Self {
+        Self {
+            slot: std::sync::Mutex::new(PublishSlot {
+                pending: (0..models).map(|_| None).collect(),
+                closed: false,
+            }),
+            wake: std::sync::Condvar::new(),
+        }
+    }
+
+    fn submit(&self, model: usize, snapshot: T, version: usize) {
+        self.slot.lock().expect("publish slot").pending[model] = Some((snapshot, version));
+        self.wake.notify_all();
+    }
+
+    fn close(&self) {
+        self.slot.lock().expect("publish slot").closed = true;
+        self.wake.notify_all();
+    }
+
+    /// The publish thread: pack each snapshot, then `install(model, packed, version, pack time)`.
+    /// `install` swaps the whole packed model in, so nobody sees it half-written. Returns once
+    /// closed and drained.
+    fn run<P>(&self, mut pack: impl FnMut(T) -> P, mut install: impl FnMut(usize, P, usize, Duration)) {
+        loop {
+            let (model, snapshot, version) = {
+                let mut slot = self.slot.lock().expect("publish slot");
+                loop {
+                    if let Some(model) = slot.pending.iter().position(Option::is_some) {
+                        let (snapshot, version) = slot.pending[model].take().expect("checked");
+                        break (model, snapshot, version);
+                    }
+                    if slot.closed {
+                        return;
+                    }
+                    slot = self.wake.wait(slot).expect("publish slot");
+                }
+            };
+            let started = Instant::now();
+            let packed = pack(snapshot);
+            install(model, packed, version, started.elapsed());
+        }
+    }
+}
+
 struct AsyncShared {
+    /// Per-faction batching: the thread that re-packs published weights.
+    publisher: Publisher<ti4_mlp::Actor>,
     state: std::sync::Mutex<AsyncState>,
     changed: std::sync::Condvar,
     /// The policy version (optimiser steps done) the packed weights are from, and the weights; with
@@ -2914,12 +3155,18 @@ fn main() {
         if publish % batch_games != 0 {
             refuse("--async-publish-games must be a multiple of --async-batch-games");
         }
+        let mut state = AsyncState {
+            router: SeatRouter::new(models.len(), batch_games, max_held),
+            stats: vec![FactionStat::default(); models.len()],
+            names: model_names.clone(),
+            ..AsyncState::default()
+        };
+        if per_faction_batches {
+            state.retarget();
+        }
         Arc::new(AsyncShared {
-            state: std::sync::Mutex::new(AsyncState {
-                router: SeatRouter::new(models.len(), batch_games, max_held),
-                stats: vec![FactionStat::default(); models.len()],
-                ..AsyncState::default()
-            }),
+            publisher: Publisher::new(models.len()),
+            state: std::sync::Mutex::new(state),
             changed: std::sync::Condvar::new(),
             weights: std::sync::RwLock::new((
                 0,
@@ -2986,9 +3233,10 @@ fn main() {
                     }
                 };
                 let started = Instant::now();
+                let early = matches!(raw, RawBatch::Seats(_, true));
                 let mut batch: Vec<Finished> = match raw {
                     RawBatch::Games(games) => games,
-                    RawBatch::Seats(seats) => seats.into_iter().map(PackedSeat::unpack).collect(),
+                    RawBatch::Seats(seats, _) => seats.into_iter().map(PackedSeat::unpack).collect(),
                 };
                 let frozen = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut steps: Vec<Step> = Vec::new();
@@ -3050,6 +3298,7 @@ fn main() {
                         freeze: started.elapsed(),
                         telemetry,
                         model,
+                        early,
                         sil,
                     })
                 }));
@@ -3063,20 +3312,42 @@ fn main() {
             }
         });
         if shared.separate {
-            // `<run dir>/router_status.json` every ~5 s for a dashboard; the run dir is --out's parent.
+            // `<run dir>/router_status.json` every ~2 s for a dashboard; the run dir is --out's parent.
             let status_path = match std::path::Path::new(&out).parent() {
                 Some(dir) if !dir.as_os_str().is_empty() => dir.join("router_status.json"),
                 _ => std::path::PathBuf::from("router_status.json"),
             };
             let names = &model_names;
+            let started = chrono::Utc::now().to_rfc3339();
+            let clock = Instant::now();
             scope.spawn(move || {
                 let mut warned = false;
+                let mut window = RateWindow::default();
                 loop {
                     let (document, done) = {
                         let state = shared.state.lock().expect("async state");
-                        let now = chrono::Utc::now().to_rfc3339();
+                        let idle = state.idle_total.as_secs_f64()
+                            + state.idle_since.map_or(0.0, |since| since.elapsed().as_secs_f64());
+                        let seats = state.stats.iter().map(|stat| stat.seat_games).sum();
+                        let rates = window.push(
+                            clock.elapsed().as_secs_f64(),
+                            state.finished_total,
+                            seats,
+                            state.waiting,
+                            idle,
+                            async_workers,
+                        );
+                        let updated = chrono::Utc::now().to_rfc3339();
+                        let context = StatusContext {
+                            started: &started,
+                            updated: &updated,
+                            queue_limit: shared.queue_batches,
+                            workers: async_workers,
+                            rates,
+                            ram_mb: ram_mb(),
+                        };
                         (
-                            router_status(&state, names, shared.batch_games, shared.max_held, &now),
+                            router_status(&state, names, shared.batch_games, shared.max_held, &context),
                             state.stop || state.failure.is_some(),
                         )
                     };
@@ -3088,7 +3359,7 @@ fn main() {
                     if done {
                         return;
                     }
-                    for _ in 0..50 {
+                    for _ in 0..20 {
                         std::thread::sleep(Duration::from_millis(100));
                         let state = shared.state.lock().expect("async state");
                         if state.stop || state.failure.is_some() {
@@ -3097,13 +3368,39 @@ fn main() {
                     }
                 }
             });
+            // Re-packs published weights off the optimiser thread; the swap is one write lock.
+            scope.spawn(|| {
+                shared.publisher.run(
+                    |actor| {
+                        Arc::new(
+                            ti4_mlp::infer::InferModel::from_actor(&actor, &slots_text, infer_backend)
+                                .unwrap_or_else(|error| {
+                                    refuse(&format!("packing the actor for ti4-infer: {error}"))
+                                }),
+                        )
+                    },
+                    |model, packed, version, took| {
+                        {
+                            let mut weights = shared.weights.write().expect("async weights");
+                            weights.1[model] = packed;
+                            weights.2[model] = version;
+                            weights.0 += 1;
+                        }
+                        shared.state.lock().expect("async state").last_publish = took;
+                        println!(
+                            "              published {} weights v{version} (packed in {took:.1?}, off the optimiser thread)",
+                            model_names[model]
+                        );
+                    },
+                );
+            });
         }
         for _ in 0..async_workers {
             scope.spawn(|| {
                 loop {
                     // Claim the next game, waiting while the queue is full.
                     let waiting = Instant::now();
-                    let job = {
+                    let (job, target) = {
                         let mut state = shared.state.lock().expect("async state");
                         loop {
                             if state.stop || state.failure.is_some() {
@@ -3126,12 +3423,15 @@ fn main() {
                                     "ROLLOUT QUEUE FULL: workers are waiting for the optimiser (reported per update as blocked)"
                                 );
                             }
+                            state.waiting += 1;
                             state = shared.changed.wait(state).expect("async state");
+                            state.waiting -= 1;
                         }
                         let job = state.next_job;
                         state.next_job += 1;
+                        state.target_games += 1;
                         state.blocked += waiting.elapsed();
-                        job
+                        (job, state.target)
                     };
                     let (version, models, versions) = {
                         let weights = shared.weights.read().expect("async weights");
@@ -3167,6 +3467,7 @@ fn main() {
                             hash_games,
                             sil_margin,
                             focus.as_deref(),
+                            shared.separate.then(|| model_names[target]),
                             gae_lambda,
                             recorder.as_ref(),
                             job / shared.batch_games,
@@ -3179,35 +3480,28 @@ fn main() {
                             state.finished_total += 1;
                             match result.and_then(|played| split_seat_games(job, played, &versions)) {
                                 Ok(seats) => {
-                                    for (model, seat) in seats {
-                                        let points = seat
-                                            .2
-                                            .as_ref()
-                                            .ok()
-                                            .and_then(|played| played.1.first())
-                                            .map_or(0, |outcome| outcome.victory_points);
-                                        let packed = match PackedSeat::pack(seat) {
-                                            Ok(packed) => packed,
-                                            Err(error) => {
-                                                state.failure = Some(error);
-                                                break;
-                                            }
-                                        };
-                                        state.stats[model].seat_games += 1;
-                                        state.stats[model].vp += points;
-                                        let queued = state.queued_seats;
-                                        for cut in state.router.push(model, packed, queued) {
-                                            if cut.early {
+                                    let packed: Result<Vec<_>, String> = seats
+                                        .into_iter()
+                                        .map(|(model, seat)| {
+                                            let points = seat
+                                                .2
+                                                .as_ref()
+                                                .ok()
+                                                .and_then(|played| played.1.first())
+                                                .map_or(0, |outcome| outcome.victory_points);
+                                            PackedSeat::pack(seat).map(|packed| (model, packed, points))
+                                        })
+                                        .collect();
+                                    match packed {
+                                        Ok(packed) => {
+                                            for (model, size) in state.route_game(packed) {
                                                 println!(
-                                                    "  early cut   {}: {} seat-games (cap {} held)",
-                                                    model_names[cut.model],
-                                                    cut.seats.len(),
-                                                    shared.max_held
+                                                    "  early cut   {}: {size} seat-games (cap {} held)",
+                                                    model_names[model], shared.max_held
                                                 );
                                             }
-                                            state.queued_seats += cut.seats.len();
-                                            state.raw.push_back(RawBatch::Seats(cut.seats));
                                         }
+                                        Err(error) => state.failure = Some(error),
                                     }
                                 }
                                 // The engine's no-progress guard drops that one game, logged.
@@ -3277,6 +3571,7 @@ fn main() {
             let rolled = Instant::now();
             let (batch, pre, queued, blocked, finished) = {
                 let mut state = shared.state.lock().expect("async state");
+                state.idle_since = Some(rolled);
                 let batch = loop {
                     if let Some(failure) = state.failure.clone() {
                         drop(state);
@@ -3291,6 +3586,8 @@ fn main() {
                     }
                     state = shared.changed.wait(state).expect("async state");
                 };
+                state.idle_since = None;
+                state.idle_total += rolled.elapsed();
                 let taken = (
                     batch.0,
                     batch.1,
@@ -3541,6 +3838,7 @@ fn main() {
                             hash_games,
                             sil_margin,
                             focus_weights.as_ref(),
+                            None,
                             gae_lambda,
                             recorder.as_ref(),
                             update,
@@ -3604,6 +3902,8 @@ fn main() {
         let sep_model: Option<usize> = prefrozen.as_ref().and_then(|pre| pre.model);
         // This batch's (victory points summed, seat-games at the bar), for the per-update line.
         let mut batch_vp = (0i64, 0usize);
+        let mut batch_ge6 = 0usize;
+        let early_cut = prefrozen.as_ref().is_some_and(|pre| pre.early);
         // Job order, whatever order the games finished in.
         // This update's self-imitation picks, in job order (deterministic), and the seats they
         // came from. Built before `Batch::freeze` consumes the steps.
@@ -3656,6 +3956,7 @@ fn main() {
                 if sep_model.is_some() {
                     batch_vp.0 += outcome.victory_points;
                     batch_vp.1 += usize::from(outcome.victory_points >= sil_min_vp);
+                    batch_ge6 += usize::from(outcome.victory_points >= 6);
                     let total = faction_totals.entry(outcome.faction.clone()).or_default();
                     total.1 += 1;
                     total.2 += outcome.victory_points;
@@ -4058,20 +4359,34 @@ fn main() {
                 let mut state = shared.state.lock().expect("async state");
                 state.stats[model].updates += 1;
                 state.updates_done += 1;
+                state.last_optimise = optimise_time;
+                state.last_freeze = freeze_time;
+                #[expect(clippy::cast_precision_loss, reason = "a few dozen seat-games")]
+                let (seats, mean_vp, ge6) = (
+                    games,
+                    batch_vp.0 as f64 / games.max(1) as f64,
+                    batch_ge6 as f64 / games.max(1) as f64,
+                );
+                state.stats[model].last_update_mean_vp = mean_vp;
+                let lag_mean = async_report.as_ref().map_or(0.0, |report| report.6);
+                let number = state.updates_done;
+                state.recent.push_front(serde_json::json!({
+                    "update": number,
+                    "faction": model_names[model],
+                    "seat_games": seats,
+                    "mean_vp": mean_vp,
+                    "ge6": ge6,
+                    "optimise_s": optimise_time.as_secs_f64(),
+                    "lag_mean": lag_mean,
+                    "early_cut": early_cut,
+                }));
+                state.recent.truncate(RECENT_UPDATES);
             }
             if publish_due[model] >= async_publish_updates {
                 publish_due[model] = 0;
-                let packing = Instant::now();
-                let packed = Arc::new(
-                    ti4_mlp::infer::InferModel::from_actor(&models[model].0, &slots_text, infer_backend)
-                        .unwrap_or_else(|error| refuse(&format!("packing the actor for ti4-infer: {error}"))),
-                );
+                // A device copy only; the publish thread packs it and swaps it in.
                 let version = usize::try_from(models[model].1.steps()).unwrap_or(0);
-                let mut weights = shared.weights.write().expect("async weights");
-                weights.1[model] = packed;
-                weights.2[model] = version;
-                weights.0 += 1;
-                published = Some((version, packing.elapsed()));
+                shared.publisher.submit(model, models[model].0.inference_copy(), version);
             }
         } else if let Some(shared) = &async_rt
             && (update + 1) % async_publish_updates == 0
@@ -4350,6 +4665,7 @@ fn main() {
     if let Some(shared) = &async_rt {
         shared.state.lock().expect("async state").stop = true;
         shared.changed.notify_all();
+        shared.publisher.close();
     }
     });
 
@@ -4617,11 +4933,22 @@ mod seat_router_tests {
         };
         let _ = MODEL_NAMES.set(vec!["sol", "letnev", "xxcha"]);
         state.router.push(0, PackedSeat::pack(seat_game(1, "sol", 1)).unwrap(), 0);
-        state.stats[0] = FactionStat { updates: 3, seat_games: 4, vp: 14 };
+        state.stats[0] = FactionStat { updates: 3, sent: 3, seat_games: 4, vp: 14, ge6: 1, last_update_mean_vp: 3.6 };
+        state.target = 1;
+        state.target_games = 12;
+        state.recent.push_front(serde_json::json!({"update": 3, "faction": "sol"}));
         state.queued_seats = 5;
         state.finished_total = 9;
         state.updates_done = 3;
-        let json = router_status(&state, &names, 60, 1500, "2026-10-19T12:00:00+00:00");
+        let context = StatusContext {
+            started: "2026-10-19T11:00:00+00:00",
+            updated: "2026-10-19T12:00:00+00:00",
+            queue_limit: 8,
+            workers: 30,
+            rates: Rates { games_per_s: 3.1, seat_games_per_s: 18.6, blocked_pct: 0.0, idle_pct: 5.0 },
+            ram_mb: Some(24000),
+        };
+        let json = router_status(&state, &names, 60, 1500, &context);
         assert_eq!(json["batch"], 60);
         assert_eq!(json["max_held"], 1500);
         assert_eq!(json["held"], 6);
@@ -4635,12 +4962,146 @@ mod seat_router_tests {
         assert_eq!(json["factions"]["sol"]["mean_vp"], 3.5);
         assert_eq!(json["factions"]["letnev"]["mean_vp"], 0.0);
         assert_eq!(json["factions"].as_object().unwrap().len(), 2);
-        assert_eq!(json.as_object().unwrap().len(), 8);
+        assert_eq!(json["factions"]["sol"]["last_update_mean_vp"], 3.6);
+        assert_eq!(json["factions"]["sol"]["ge6_share"], 0.25);
+        let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "batch", "factions", "games_finished", "games_per_s", "gpu", "held", "max_held", "queue_limit",
+                "queued_batches", "ram_mb", "recent", "seat_games_per_s", "started", "target", "target_since_games",
+                "updated", "updates_done", "workers", "workers_blocked_pct"
+            ]
+        );
+        assert_eq!((json["target"].as_str(), json["target_since_games"].as_u64()), (Some("letnev"), Some(12)));
+        assert_eq!((json["queue_limit"].as_u64(), json["workers"].as_u64(), json["ram_mb"].as_u64()), (Some(8), Some(30), Some(24000)));
+        assert_eq!(json["gpu"]["optimiser_idle_pct"], 5.0);
+        let mut gpu: Vec<&str> = json["gpu"].as_object().unwrap().keys().map(String::as_str).collect();
+        gpu.sort_unstable();
+        assert_eq!(gpu, ["idle_now_s", "last_freeze_s", "last_optimise_s", "last_publish_s", "optimiser_idle_pct"]);
+        assert_eq!(json["recent"][0]["faction"], "sol");
         let path = std::env::current_exe().unwrap().with_file_name("router_status_test.json");
         write_atomic(&path, &json).unwrap();
         write_atomic(&path, &json).unwrap();
         assert_eq!(serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(), json);
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn the_next_target_is_the_fullest_bucket_then_fewest_sent_then_name() {
+        let names = ["sol", "letnev", "xxcha", "hacan"];
+        assert_eq!(pick_target(&[5, 9, 2, 1], &[0; 4], &names), Some(1));
+        // Tie on 9: the one with fewer batches sent.
+        assert_eq!(pick_target(&[5, 9, 2, 9], &[0, 3, 0, 1], &names), Some(3));
+        // Tie on both: the name ("hacan" < "letnev").
+        assert_eq!(pick_target(&[0, 9, 2, 9], &[0, 2, 0, 2], &names), Some(3));
+        // Nothing held anywhere: fewest sent, then name.
+        assert_eq!(pick_target(&[0; 4], &[1, 1, 0, 0], &names), Some(3));
+        assert_eq!(pick_target(&[], &[], &[]), None);
+    }
+
+    #[test]
+    fn sticky_targets_send_one_faction_batch_at_a_time_and_every_seat_counts() {
+        let _ = MODEL_NAMES.set(vec!["sol", "letnev", "xxcha"]);
+        let mut state = AsyncState {
+            router: SeatRouter::new(8, 4, 10_000),
+            stats: vec![FactionStat::default(); 8],
+            names: vec!["a", "b", "c", "d", "e", "f", "g", "h"],
+            ..AsyncState::default()
+        };
+        state.retarget();
+        assert_eq!(state.target, 0); // nothing held, nothing sent: by name
+        let mut job = 0;
+        let mut targets = vec![state.target];
+        for game in 0..200 {
+            // Each game seats the target plus five others, drawn here by a fixed stride.
+            let target = state.target;
+            let mut table = vec![target];
+            let mut other = game % 8;
+            while table.len() < 6 {
+                if !table.contains(&other) {
+                    table.push(other);
+                }
+                other = (other + 3) % 8;
+            }
+            let seats: Vec<(usize, PackedSeat, i64)> = table
+                .iter()
+                .map(|model| {
+                    job += 1;
+                    (*model, PackedSeat::pack(seat_game(job, "sol", 1)).unwrap(), 3)
+                })
+                .collect();
+            let sent_before: usize = state.stats.iter().map(|stat| stat.sent).sum();
+            let queued_before = state.raw.len();
+            assert!(state.route_game(seats).is_empty(), "no early cut under a huge cap");
+            // Every cut is one faction's batch; a game adds at most one per seat it fed.
+            let sent_after: usize = state.stats.iter().map(|stat| stat.sent).sum();
+            assert_eq!(sent_after - sent_before, state.raw.len() - queued_before);
+            assert!(sent_after - sent_before <= 6);
+            if state.target != target {
+                targets.push(state.target);
+            }
+        }
+        assert_eq!(state.stats.iter().map(|stat| stat.seat_games).sum::<usize>(), 1200);
+        // Per-faction sends: each queued batch is exactly the batch size, of a single faction.
+        for batch in &state.raw {
+            let RawBatch::Seats(seats, early) = batch else { panic!("per-faction batches only") };
+            assert!(!early && seats.len() == 4);
+        }
+        // The target moved on whenever its batch went out, each time to a different faction.
+        assert!(targets.len() > 3 && targets.windows(2).all(|pair| pair[0] != pair[1]));
+        assert!(state.target_games <= 200);
+    }
+
+    #[test]
+    fn the_publish_thread_hands_over_whole_models_latest_first_and_stops_when_closed() {
+        let publisher: Publisher<Vec<u32>> = Publisher::new(2);
+        let live = std::sync::RwLock::new((0usize, vec![Arc::new(vec![0u32; 64]), Arc::new(vec![0u32; 64])], vec![0usize; 2]));
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                publisher.run(
+                    |weights: Vec<u32>| Arc::new(weights),
+                    |model, packed, version, _| {
+                        let mut live = live.write().unwrap();
+                        live.1[model] = packed;
+                        live.2[model] = version;
+                        live.0 += 1;
+                    },
+                );
+            });
+            // A reader that must never see a model whose entries disagree, nor a version that does
+            // not belong to the model installed with it.
+            scope.spawn(|| {
+                for _ in 0..20_000 {
+                    let live = live.read().unwrap();
+                    for (model, weights) in live.1.iter().enumerate() {
+                        assert!(weights.iter().all(|w| *w == weights[0]), "half-written model");
+                        assert_eq!(weights[0] as usize, live.2[model]);
+                    }
+                }
+            });
+            for version in 1..=200u32 {
+                publisher.submit((version % 2) as usize, vec![version; 64], version as usize);
+            }
+            publisher.close();
+        });
+        // Closed and drained: the last submitted version of each model is live.
+        let live = live.read().unwrap();
+        assert_eq!((live.1[0][0], live.1[1][0]), (200, 199));
+        assert!(live.0 >= 2 && live.0 <= 200);
+    }
+
+    #[test]
+    fn rates_cover_the_last_minute_and_count_idle_and_blocked_workers() {
+        let mut window = RateWindow::default();
+        assert_eq!(window.push(0.0, 0, 0, 0, 0.0, 10).games_per_s, 0.0);
+        let rates = window.push(10.0, 31, 186, 5, 2.0, 10);
+        assert!((rates.games_per_s - 3.1).abs() < 1e-9 && (rates.seat_games_per_s - 18.6).abs() < 1e-9);
+        assert!((rates.blocked_pct - 25.0).abs() < 1e-9 && (rates.idle_pct - 20.0).abs() < 1e-9);
+        // 100 s later the first sample has left the minute.
+        let rates = window.push(110.0, 131, 786, 0, 2.0, 10);
+        assert!((rates.games_per_s - 1.0).abs() < 1e-9);
     }
 
     #[test]

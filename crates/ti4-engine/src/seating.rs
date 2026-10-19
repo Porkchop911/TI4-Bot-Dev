@@ -401,7 +401,7 @@ pub fn seat_wide(
     sources: SourceSet,
     seed: u64,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
-    seat_wide_from(content, players, sources, seed, &[], None)
+    seat_wide_from(content, players, sources, seed, &[], None, None)
 }
 
 /// [`seat_wide`] with the roster ordered by integer weight instead of a uniform shuffle: entries
@@ -419,7 +419,25 @@ pub fn seat_wide_weighted(
     seed: u64,
     weight: &dyn Fn(&str) -> u32,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
-    seat_wide_from(content, players, sources, seed, &[], Some(weight))
+    seat_wide_from(content, players, sources, seed, &[], Some(weight), None)
+}
+
+/// [`seat_wide_weighted`] (uniform when `weight` is `None`) with `target` seated for certain: it
+/// takes the first pick, and the other seats are drawn from the rest as usual. `target` is a
+/// roster alias or a Keleres variant; the Tribuni rule holds for the whole table.
+///
+/// # Errors
+/// As [`seat_wide`], and [`FactionAssignmentError::UnavailableFaction`] when `target` is not on the
+/// wide roster.
+pub fn seat_wide_with_target(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    weight: Option<&dyn Fn(&str) -> u32>,
+    target: &str,
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    seat_wide_from(content, players, sources, seed, &[], weight, Some(target))
 }
 
 /// `entries` in a weighted order: repeated draws without replacement, probability proportional to
@@ -468,7 +486,7 @@ pub fn seat_new(
     sources: SourceSet,
     seed: u64,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
-    seat_wide_from(content, players, sources, seed, &IN_SCOPE_FACTIONS, None)
+    seat_wide_from(content, players, sources, seed, &IN_SCOPE_FACTIONS, None, None)
 }
 
 fn seat_wide_from(
@@ -478,6 +496,7 @@ fn seat_wide_from(
     seed: u64,
     excluded: &[&str],
     weight: Option<&dyn Fn(&str) -> u32>,
+    target: Option<&str>,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
     let mut seen_players = BTreeSet::new();
     for player in players {
@@ -498,9 +517,26 @@ fn seat_wide_from(
 
     let mut picked: Vec<&'static str> = Vec::with_capacity(players.len());
     let mut taken_base: Option<&'static str> = None;
+    // A forced target is the first pick; its roster entry (the family for a Keleres variant) is
+    // then skipped in the draw.
+    let mut forced_entry: Option<&'static str> = None;
+    if let Some(target) = target {
+        let variant = crate::factions::keleres::VARIANTS.into_iter().find(|v| *v == target);
+        let alias = variant.or_else(|| roster.iter().copied().find(|r| *r == target));
+        let entry = if variant.is_some() { Some(KELERES_FAMILY) } else { alias };
+        let Some(alias) = alias.filter(|_| entry.is_some_and(|e| roster.contains(&e))) else {
+            return Err(FactionAssignmentError::UnavailableFaction(target.to_owned()));
+        };
+        taken_base = tribuni_base(alias);
+        picked.push(alias);
+        forced_entry = entry;
+    }
     for entry in shuffled {
         if picked.len() == players.len() {
             break;
+        }
+        if Some(entry) == forced_entry {
+            continue;
         }
         if entry == KELERES_FAMILY {
             let available: Vec<&'static str> = tribuni_variants_available(picked.iter().copied())
@@ -1054,6 +1090,27 @@ mod tests {
             deploy(&mut state, content(), &player, &alias, POK).unwrap();
         }
         state
+    }
+
+    #[test]
+    fn a_forced_target_is_always_seated_once_and_the_table_stays_legal() {
+        let players: Vec<PlayerId> = (0..6).map(|i| PlayerId::new(format!("p{i}"))).collect();
+        let mut targets: Vec<&str> = wide_roster(content(), POK)
+            .into_iter()
+            .filter(|entry| *entry != KELERES_FAMILY)
+            .collect();
+        targets.extend(crate::factions::keleres::VARIANTS);
+        for target in targets {
+            for seed in 0..40 {
+                let table = seat_wide_with_target(content(), &players, POK, seed, None, target).unwrap();
+                let names: Vec<&str> = players.iter().map(|p| table[p].as_str()).collect();
+                assert_eq!(names.iter().filter(|n| **n == target).count(), 1, "{target} {seed}");
+                let distinct: BTreeSet<&str> = names.iter().copied().collect();
+                assert_eq!(distinct.len(), 6);
+                validate_tribuni(names.iter().copied()).unwrap();
+            }
+        }
+        assert!(seat_wide_with_target(content(), &players, POK, 1, None, "obsidian").is_err());
     }
 
     #[test]
