@@ -3413,9 +3413,8 @@ fn parley(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) {
     }
 }
 
-/// One Ghost Squad selection moves every unit of one ground-force type from one of the
-/// player's planets in the system to another; these are the selectable moves, in
-/// deterministic order.
+/// Ghost Squad selections for one or more ground forces of a type from one owned planet to
+/// another, in deterministic order.
 fn ghost_squad_moves(
     board: &ti4_model::state::SystemState,
     player: &PlayerId,
@@ -3466,18 +3465,26 @@ fn ghost_squad_moves(
                     .iter()
                     .filter(|u| u.type_id.as_str() == kind)
                     .count();
-                // The payload is display only: ids, order and kinds are what a replay binds.
-                options.push(
-                    crate::choice::ChoiceOption::labelled(
-                        format!("move|{from}|{to}|{kind}"),
-                        "move",
-                        format!("move {count} {kind} from {from} to {to}"),
-                    )
-                    .with("from", from.as_str())
-                    .with("to", to.as_str())
-                    .with("unit", kind)
-                    .with("count", count),
-                );
+                for amount in 1..=count {
+                    // Keep the old full-stack id for saved decisions; smaller subsets name
+                    // their count explicitly.
+                    let id = if amount == count {
+                        format!("move|{from}|{to}|{kind}")
+                    } else {
+                        format!("move|{from}|{to}|{kind}|{amount}")
+                    };
+                    options.push(
+                        crate::choice::ChoiceOption::labelled(
+                            id,
+                            "move",
+                            format!("move {amount} {kind} from {from} to {to}"),
+                        )
+                        .with("from", from.as_str())
+                        .with("to", to.as_str())
+                        .with("unit", kind)
+                        .with("count", amount),
+                    );
+                }
             }
         }
     }
@@ -3487,7 +3494,7 @@ fn ghost_squad_moves(
 /// Ghost Squad: "Move any number of your ground forces from any planet you control in the
 /// active system to any other planet you control in the active system."
 ///
-/// One selection moves every unit of one type from one of your planets to another, and the
+/// One selection moves the chosen count of one type from one planet to another, and the
 /// decider is asked again after each move — "any number" is the sum of the selections, and
 /// declining ends the effect. A selection is written `move|<from>|<to>|<type>`; the offer
 /// always carries a decline option so a single remaining move cannot move on its own.
@@ -3531,16 +3538,17 @@ fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
         if answer.is_decline() {
             return;
         }
-        let Some((from, to, kind)) = answer.id.strip_prefix("move|").and_then(|rest| {
+        let Some((from, to, kind, count)) = answer.id.strip_prefix("move|").and_then(|rest| {
             let mut parts = rest.split('|');
             let (from, to, kind) = (parts.next()?, parts.next()?, parts.next()?);
-            (parts.next().is_none()).then_some((from, to, kind))
+            let count = parts.next().and_then(|amount| amount.parse::<usize>().ok());
+            (parts.next().is_none()).then_some((from, to, kind, count))
         }) else {
             return;
         };
         let from = ti4_model::id::PlanetId::new(from);
         let to = ti4_model::id::PlanetId::new(to);
-        let moved: Vec<Unit> = context
+        let available: Vec<Unit> = context
             .state
             .system_state(&system)
             .on_planet(&from)
@@ -3554,12 +3562,18 @@ fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
             })
             .cloned()
             .collect();
-        if moved.is_empty() {
+        let count = count.unwrap_or(available.len());
+        if count == 0 || count > available.len() {
             return;
         }
+        let moved: Vec<Unit> = available.into_iter().take(count).collect();
         let board = context.state.system_mut(&system);
         if let Some(units) = board.planet_units.get_mut(&from) {
-            units.retain(|unit| !moved.iter().any(|m| m == unit));
+            for selected in &moved {
+                if let Some(index) = units.iter().position(|unit| unit == selected) {
+                    units.remove(index);
+                }
+            }
         }
         board
             .planet_units
@@ -11020,6 +11034,33 @@ mod tests {
         let before = state.clone();
         resolve_card_galaxed(&mut state, "ghost_ship", &player, &["25"], Some(galaxy));
         assert_eq!(state, before, "an illegal system cannot receive the destroyer");
+    }
+
+    #[test]
+    fn ghost_squad_can_move_just_one_of_several_ground_forces() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let system = ti4_model::id::SystemId::new("ghost-squad-test");
+        let from = ti4_model::id::PlanetId::new("alpha");
+        let to = ti4_model::id::PlanetId::new("beta");
+        state.active_system = Some(system.clone());
+        state.system_mut(&system).set_control(from.clone(), player.clone());
+        state.system_mut(&system).set_control(to.clone(), player.clone());
+        crate::fixtures::put_on_planet(&mut state, &system, &from, "infantry", &player, 2);
+        crate::fixtures::put_on_planet(&mut state, &system, &from, "pds", &player, 1);
+
+        resolve_card(&mut state, "ghost_squad", &player,
+            &["move|alpha|beta|infantry|1", "decline"]);
+        let board = state.system_state(&system);
+        let infantry = |planet: &ti4_model::id::PlanetId| {
+            board.on_planet_of(planet, &player).iter()
+                .filter(|unit| unit.type_id.as_str() == "infantry")
+                .count()
+        };
+        assert_eq!(infantry(&from), 1, "the unselected infantry stays");
+        assert_eq!(infantry(&to), 1, "one selected infantry moves");
+        assert!(board.on_planet_of(&from, &player).iter()
+            .any(|unit| unit.type_id.as_str() == "pds"), "structures stay");
     }
 
     /// The same as [`resolve_card`], but with a dice the test controls, so an effect that rolls
