@@ -52,9 +52,9 @@
         'home-loss-weight'          = 0.5
         'tech-weight'               = 0.1
         'fleet-weight'              = 0
-        'projection-weight'         = 0.02
+        'projection-weight'         = 0
         'keep-terminal-projection'  = 1
-        'projection-rank-weight'    = 0.3
+        'projection-rank-weight'    = 0
         'negotiation-step-penalty'  = 0.0005
         'fleet-hoard-penalty'       = 0
         'zero-fleet-penalty'        = 0
