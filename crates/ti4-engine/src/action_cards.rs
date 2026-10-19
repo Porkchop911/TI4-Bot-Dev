@@ -10998,6 +10998,30 @@ mod tests {
         effect(&mut context, player);
     }
 
+    #[test]
+    fn ghost_ship_places_one_destroyer_only_in_an_open_wormhole_system() {
+        let galaxy = galaxy_of(&["25", "26"]);
+        let player = PlayerId::new("a");
+        let rival = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let blocked = ti4_model::id::SystemId::new("25");
+        let chosen = ti4_model::id::SystemId::new("26");
+        crate::fixtures::put(&mut state, &blocked, "cruiser", &rival, 1);
+
+        resolve_card_galaxed(&mut state, "ghost_ship", &player, &["26"], Some(galaxy));
+        let own_destroyers = |system: &ti4_model::id::SystemId| {
+            state.system_state(system).units.iter().filter(|unit| {
+                unit.owner == player && unit.type_id.as_str() == "destroyer"
+            }).count()
+        };
+        assert_eq!(own_destroyers(&chosen), 1);
+        assert_eq!(own_destroyers(&blocked), 0, "enemy ships close the wormhole");
+
+        let before = state.clone();
+        resolve_card_galaxed(&mut state, "ghost_ship", &player, &["25"], Some(galaxy));
+        assert_eq!(state, before, "an illegal system cannot receive the destroyer");
+    }
+
     /// The same as [`resolve_card`], but with a dice the test controls, so an effect that rolls
     /// can be driven into a known branch (e.g. a space cannon that hits, or one that misses).
     fn resolve_card_loaded(
