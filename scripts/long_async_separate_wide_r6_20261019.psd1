@@ -1,7 +1,7 @@
 @{
-    # 2026-10-19 r6: r5 with vp-weight 12 (was 6; objective 0.6 and secret 0.4 unchanged), checkpoints every 200 updates (was 1500; each is ~32 per-faction models), sticky target = fewest updates first, graceful stop via a STOP file in the run dir. Still starts from checkpoint-201104; the user decides whether to restart from r5's checkpoint. One update = one faction's batch.
+    # 2026-10-19 r6: continues r5 (per-faction models from r5 checkpoint-1500, +0.29 VP vs checkpoint-201104 on 320 paired games); fewest-updates-first target, STOP-file graceful stop, vp-weight 12, checkpoints every 500 updates; self-imitation off.
 
-    Bundle   = 'D:\Projects\ti4-engine-rs\out\ppo-async-r1exp4-roundexp-from200-20261019\checkpoints\checkpoint-201104'
+    Bundle   = 'D:\Projects\ti4-engine-rs\out\ppo-async-separate-wide-20261019-r5\checkpoints\sol\checkpoint-1500'
     Pool     = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
     Run      = 'D:\Projects\ti4-engine-rs\out\ppo-async-separate-wide-20261019-r6'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128-20260908'
@@ -26,7 +26,7 @@
         'entropy-final'    = 0.25
         'entropy-start'    = 0.25
         'updates'          = 10800
-        'report-every'     = '200'
+        'report-every'     = '500'
         'async-batch-games'   = 60
         'async-publish-games' = 120
         'rollout-workers'     = 30
