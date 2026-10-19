@@ -1830,15 +1830,23 @@ struct AsyncState {
 /// Updates the status file lists.
 const RECENT_UPDATES: usize = 15;
 
-/// The next sticky target: the faction with the fullest bucket; ties go to the fewest batches
-/// sent so far, then to the name.
+/// The next sticky target: the faction with the fewest batches sent so far; ties go to the
+/// fullest bucket, then to the name.
 fn pick_target(held: &[usize], sent: &[usize], names: &[&str]) -> Option<usize> {
     (0..held.len()).min_by(|a, b| {
-        held[*b]
-            .cmp(&held[*a])
-            .then(sent[*a].cmp(&sent[*b]))
+        sent[*a]
+            .cmp(&sent[*b])
+            .then(held[*b].cmp(&held[*a]))
             .then(names[*a].cmp(names[*b]))
     })
+}
+
+/// The graceful-stop flag: a file named `STOP` in the run dir (the parent of `--out`).
+fn stop_flag(out: &str) -> std::path::PathBuf {
+    match std::path::Path::new(out).parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join("STOP"),
+        _ => std::path::PathBuf::from("STOP"),
+    }
 }
 
 impl AsyncState {
@@ -4536,7 +4544,12 @@ fn main() {
         let report_started = Instant::now();
         // ---- the periodic report ----
         let done = update + 1;
-        if cadence.due(done) || done == updates {
+        // A STOP file in the run dir ends the run after this step, with a full checkpoint.
+        let stop_seen = stop_flag(&out).exists();
+        if stop_seen {
+            println!("  STOP file seen at {}: finishing update {done}, checkpointing every model, then exiting 0 (the file is left in place)", stop_flag(&out).display());
+        }
+        if cadence.due(done) || done == updates || stop_seen {
             report(done, &window, previous.as_ref(), reported_at);
             if !demonstrations.is_empty() {
                 let (reference_kl, greedy_flip) = reference_drift(
@@ -4659,6 +4672,10 @@ fn main() {
                 writeln!(file, "{game}")
                     .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));
             }
+        }
+        if stop_seen {
+            println!("  stopped on request after update {done}; workers stopping, final status follows");
+            break;
         }
     }
 
@@ -4989,16 +5006,23 @@ mod seat_router_tests {
     }
 
     #[test]
-    fn the_next_target_is_the_fullest_bucket_then_fewest_sent_then_name() {
+    fn the_next_target_is_fewest_sent_then_the_fullest_bucket_then_name() {
         let names = ["sol", "letnev", "xxcha", "hacan"];
+        // Equal sent: the fullest bucket.
         assert_eq!(pick_target(&[5, 9, 2, 1], &[0; 4], &names), Some(1));
-        // Tie on 9: the one with fewer batches sent.
-        assert_eq!(pick_target(&[5, 9, 2, 9], &[0, 3, 0, 1], &names), Some(3));
+        // Fewest sent beats a fuller bucket.
+        assert_eq!(pick_target(&[5, 9, 2, 9], &[1, 3, 0, 1], &names), Some(2));
+        // Tie on sent, then the fullest of the tied.
+        assert_eq!(pick_target(&[5, 9, 2, 9], &[0, 3, 0, 1], &names), Some(0));
         // Tie on both: the name ("hacan" < "letnev").
-        assert_eq!(pick_target(&[0, 9, 2, 9], &[0, 2, 0, 2], &names), Some(3));
-        // Nothing held anywhere: fewest sent, then name.
-        assert_eq!(pick_target(&[0; 4], &[1, 1, 0, 0], &names), Some(3));
+        assert_eq!(pick_target(&[0, 9, 2, 9], &[2, 0, 2, 0], &names), Some(3));
         assert_eq!(pick_target(&[], &[], &[]), None);
+    }
+
+    #[test]
+    fn the_stop_flag_sits_in_the_run_dir() {
+        assert_eq!(stop_flag("run/r6/checkpoints"), std::path::Path::new("run/r6").join("STOP"));
+        assert_eq!(stop_flag("checkpoints"), std::path::PathBuf::from("STOP"));
     }
 
     #[test]
