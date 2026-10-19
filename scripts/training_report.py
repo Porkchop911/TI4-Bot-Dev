@@ -276,7 +276,8 @@ def main(argv):
         state, state_cls = "Healthy", "good"
 
     name = os.path.basename(os.path.normpath(run_dir))
-    m = re.search(r"\d{8}-(.+)$", name)
+    # ...-20261019-r6b -> r6b; ...-wide-blank-20261019 -> blank
+    m = re.search(r"\d{8}-(.+)$", name) or re.search(r"-([a-z0-9]+)-\d{8}$", name)
     short = m.group(1) if m else name
     title = f"TI4 Run {short}"
     last_no = updates[-1]["update"] if updates else "none"
