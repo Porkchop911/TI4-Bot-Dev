@@ -10,16 +10,19 @@ import math
 import os
 import sys
 import time
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 
 CLEAR = "\x1b[2J\x1b[H"
 SEATS, FACTION_SEATS = 32, 6  # a faction sits in about 6 of 32 seats
 
 
 def render(status):
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     try:
-        age = f"{(now - datetime.fromisoformat(status['updated'])).total_seconds():.0f}s old"
+        # The trainer writes UTC with nanoseconds; Python parses at most microseconds.
+        stamp = re.sub(r"(\.\d{6})\d+", r"", status["updated"])
+        age = f"{(now - datetime.fromisoformat(stamp)).total_seconds():.0f}s old"
     except (KeyError, TypeError, ValueError):
         age = "age ?"
     lines = [
