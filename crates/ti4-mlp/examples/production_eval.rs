@@ -351,6 +351,32 @@ fn main() {
     let loaded = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let (vocabulary, actor) = (loaded.vocabulary, loaded.actor);
+    // A bundle of a separate-models run plays each faction on its own model (packed once for
+    // ti4-infer and shared by every worker); otherwise one actor plays every seat.
+    let separate: Option<BTreeMap<String, Arc<ti4_mlp::infer::InferModel>>> =
+        ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path))
+            .unwrap_or_else(|error| refuse(&error))
+            .map(|bundles| {
+                let slots = std::fs::read_to_string(std::path::Path::new(&bundle_path).join("slots.json"))
+                    .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
+                bundles
+                    .into_iter()
+                    .map(|(faction, path)| {
+                        let model = ti4_mlp::bundle::read(&path)
+                            .unwrap_or_else(|error| refuse(&format!("reading {}: {error}", path.display())));
+                        let packed = ti4_mlp::infer::InferModel::from_actor(
+                            &model.actor,
+                            &slots,
+                            ti4_infer::Backend::fastest(),
+                        )
+                        .unwrap_or_else(|error| refuse(&format!("packing {faction}: {error}")));
+                        (faction, Arc::new(packed))
+                    })
+                    .collect()
+            });
+    if let Some(models) = &separate {
+        println!("separate models: {} factions", models.len());
+    }
 
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
@@ -427,12 +453,23 @@ fn main() {
                                 let stream = seed
                                     .wrapping_mul(1_000_003)
                                     .wrapping_add(u64::try_from(index).unwrap_or(0));
-                                let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
-                                    &local,
-                                    vocabulary.clone(),
-                                    row,
-                                    stream,
-                                )
+                                let bot = match &separate {
+                                    Some(models) => ti4_mlp::bot::MlpBot::on_infer(
+                                        models.get(seated[player].as_str()).ok_or_else(|| {
+                                            format!("the separate models have no {}", seated[player])
+                                        })?,
+                                        vocabulary.clone(),
+                                        row,
+                                        stream,
+                                    ),
+                                    None => ti4_mlp::bot::MlpBot::sharing(
+                                        &local,
+                                        vocabulary.clone(),
+                                        row,
+                                        stream,
+                                    ),
+                                };
+                                let (decider, _status) = bot
                                 .at_temperature(temperature)
                                 .from_setup(baseline)
                                 .seat();
