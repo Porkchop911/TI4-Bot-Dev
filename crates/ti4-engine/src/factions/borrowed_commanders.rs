@@ -853,6 +853,34 @@ mod tests {
         assert_eq!(infantry(&state), 1);
     }
 
+    #[test]
+    fn sol_alliance_places_infantry_for_its_recipient_when_ground_combat_starts() {
+        let mut state = arena();
+        let recipient = PlayerId::new("a");
+        let sol = PlayerId::new("b");
+        state.player_mut(&sol).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        let system = ti4_model::id::SystemId::new("sol-alliance-test");
+        let planet = ti4_model::id::PlanetId::new("sol-alliance-planet");
+        state.system_mut(&system).set_control(planet.clone(), recipient.clone());
+        let note = crate::promissory::note_id("an", "sol");
+        crate::promissory::take(&mut state, ContentStore::embedded(), &recipient, &note);
+        let count = |state: &GameState| {
+            state.system_state(&system).on_planet_of(&planet, &recipient).len()
+        };
+        let ability = "leader:yin:solcommander:GROUND_COMBAT_STARTED:after";
+
+        ground_start(&mut state, system.as_str(), planet.as_str(), ability);
+        assert_eq!(count(&state), 0, "locked Sol commander gives no benefit");
+        state.player_mut(&sol).unwrap().leaders.insert(
+            LeaderId::new("solcommander"), LeaderStatus::Unlocked,
+        );
+        ground_start(&mut state, system.as_str(), planet.as_str(), ability);
+        assert_eq!(count(&state), 1, "the recipient places their infantry");
+        crate::promissory::give_back(&mut state, &note);
+        ground_start(&mut state, system.as_str(), planet.as_str(), ability);
+        assert_eq!(count(&state), 1, "returning Alliance removes that benefit");
+    }
+
     fn grant(state: &mut GameState, who: &str) {
         assert!(crate::promissory::grant_commander_ability(
             state,
