@@ -3019,9 +3019,11 @@ fn main() {
             models.push((actor, adam));
         }
         if per_faction_batches {
+            let own = model_names.iter().filter(|name| previous.contains_key(**name)).count();
             println!(
-                "  model       {} models all start from {bundle_path} (Adam moments {})",
+                "  model       {} models: {own} start from their own checkpoint beside {bundle_path}, {} from it directly (Adam moments {})",
                 model_names.len(),
+                model_names.len() - own,
                 if models[0].1.steps() > 0 { "from its .adam" } else { "fresh" }
             );
         }
