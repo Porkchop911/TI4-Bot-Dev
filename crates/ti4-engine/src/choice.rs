@@ -724,6 +724,14 @@ impl<'a> Observed<'a> {
         }
     }
 
+    /// Measurement hook: the position itself, so a probe can try hypothetical boards (add a unit,
+    /// re-ask the power map). Not for deciders: it exposes the whole state, not only public facts.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn probe_state(&self) -> &'a GameState {
+        self.state
+    }
+
     /// The content corpus this game is played from.
     #[must_use]
     pub const fn content(&self) -> &'a ContentStore {
