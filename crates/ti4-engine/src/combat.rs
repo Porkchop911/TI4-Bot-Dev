@@ -2292,6 +2292,14 @@ pub fn space_cannon_shots(
             Some(active.clone())
         }
     };
+    let antimass_penalty = |owner: &PlayerId, target: &Option<PlayerId>| {
+        i64::from(
+            state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
+                && target.as_ref().is_some_and(|victim| {
+                    victim != owner && crate::technology::owns_technology(state, victim, "amd")
+                }),
+        )
+    };
     let mut shots = Vec::new();
     // Plasma Scoring: one of a player's firing units rolls a die more. The player picks which; the
     // engine gives it to the unit that hits most easily, the pick nobody would refuse.
@@ -2339,14 +2347,7 @@ pub fn space_cannon_shots(
         .max(1);
         // Antimass Deflectors: -1 to other players' SPACE CANNON rolls against the owner's units,
         // the same as asking 1 more of the die.
-        let value = value
-            + i64::from(
-                state.rules_version >= ti4_model::state::RULES_TECH_EFFECTS
-                    && target.as_ref().is_some_and(|victim| {
-                        *victim != unit.owner
-                            && crate::technology::owns_technology(state, victim, "amd")
-                    }),
-            );
+        let value = value + antimass_penalty(&unit.owner, &target);
         shots.push(CannonShot {
             owner: unit.owner.clone(),
             planet: None,
@@ -2357,13 +2358,15 @@ pub fn space_cannon_shots(
         });
     }
     for (owner, planet, value, count) in attachment_guns {
+        let target = target_of(&owner);
         shots.push(CannonShot {
-            target: target_of(&owner),
+            hits_on: u32::try_from(i64::from(value) + antimass_penalty(&owner, &target))
+                .unwrap_or(u32::MAX),
+            target,
             owner,
             unit: None,
             planet: Some(planet),
             dice: count,
-            hits_on: value,
         });
     }
     shots
@@ -8104,6 +8107,46 @@ mod tests {
             .map(|shot| (shot.dice, Some(shot.hits_on)))
             .collect();
         assert_eq!(rolled, planned);
+    }
+
+    #[test]
+    fn antimass_deflectors_penalize_enemy_unit_and_attachment_cannons() {
+        let (mut state, system) = arena();
+        let planet = ti4_model::id::PlanetId::new("mecatol_rex");
+        state.system_mut(&system).set_control(planet.clone(), defender());
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(Unit::new(UnitTypeId::new(a_cannon_unit()), defender()));
+        state
+            .planet_attachments
+            .insert(planet, vec!["titanshero".to_owned()]);
+        put(&mut state, &system, "cruiser", &attacker(), 1);
+
+        let shots = |state: &GameState| {
+            space_cannon_shots(state, ContentStore::embedded(), POK, &system, &attacker(), None)
+        };
+        let baseline = shots(&state);
+        assert_eq!(baseline.len(), 2, "the unit and Geoform both fire");
+        assert_eq!(baseline.iter().filter(|shot| shot.planet.is_some()).count(), 1);
+
+        state.player_mut(&attacker()).unwrap().technologies.insert(
+            ti4_model::id::TechnologyId::new("amd"),
+        );
+        let protected = shots(&state);
+        for (normal, protected) in baseline.iter().zip(&protected) {
+            assert_eq!(protected.target, Some(attacker()));
+            assert_eq!(protected.hits_on, normal.hits_on + 1,
+                "Antimass changes every enemy SPACE CANNON die, including an attachment");
+        }
+        state.player_mut(&attacker()).unwrap().technologies.clear();
+        state.player_mut(&defender()).unwrap().technologies.insert(
+            ti4_model::id::TechnologyId::new("amd"),
+        );
+        assert_eq!(shots(&state), baseline,
+            "the gunner's technology does not penalize their own shots");
     }
 
     #[test]
