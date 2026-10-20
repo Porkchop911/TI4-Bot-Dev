@@ -48,7 +48,7 @@ if ($diplomacy) {
 $allowed = @(
     'clear-bonus', 'clearance-weight', 'conjunctive-weight', 'curriculum-seeds',
     'demo-corpus', 'demo-per-update', 'device', 'entropy-final', 'entropy-start', 'expansion-weight',
-    'fleet-hoard-penalty', 'fleet-weight', 'projection-weight', 'status-income-tg', 'fracture-entry-bonus', 'fracture-planet-bonus',
+    'fleet-hoard-penalty', 'fleet-weight', 'projection-weight', 'status-income-tg', 'fracture-entry-bonus', 'fracture-planet-bonus', 'fracture-planet-shaping', 'styx-shaping', 'relic-shaping',
     'high-vp-bonus', 'learning-rate', 'movement-entropy', 'objective-weight', 'r1-bonus',
     'r1-shaping', 'report-every', 'rounds', 'secret-weight', 'seed-base', 'stage',
     'strategy-diversity-weight', 'styx-bonus', 'tech-weight', 'temperature',

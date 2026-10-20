@@ -201,6 +201,19 @@ pub struct Reward {
     /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
     #[serde(default)]
     pub fracture_planet_bonus: f64,
+    /// Potential per Fracture planet this seat controls, Styx included. Pure shaping: `returns`
+    /// takes it back at the horizon, so it pays for taking Fracture planets, not for holding them at
+    /// the end (`fracture_planet_bonus` is the terminal version). Off by default.
+    #[serde(default)]
+    pub fracture_planet_shaping: f64,
+    /// Potential while this seat controls Styx, on top of its victory point and of
+    /// `fracture_planet_shaping`. Pure shaping, like it. Off by default.
+    #[serde(default)]
+    pub styx_shaping: f64,
+    /// Potential per relic held, up to [`RELIC_SHAPING_CAP`]. Pure shaping, like
+    /// `fracture_planet_shaping`. Off by default.
+    #[serde(default)]
+    pub relic_shaping: f64,
     /// Zero the scoreable public/secret counts in the final snapshot, as projection is, so
     /// `objective_weight`/`secret_weight` become pure shaping: a game can no longer bank reward for
     /// standing next to a point at the horizon. Off keeps the reference reward exactly.
@@ -305,6 +318,9 @@ impl Default for Reward {
             scuttle_multiplier: 0.0,
             fracture_entry_bonus: 0.0,
             fracture_planet_bonus: 0.0,
+            fracture_planet_shaping: 0.0,
+            styx_shaping: 0.0,
+            relic_shaping: 0.0,
             zero_terminal_objectives: false,
             home_loss_weight: 0.0,
             keep_terminal_projection: false,
@@ -322,6 +338,9 @@ pub const FLEET_HOARD_AT: i64 = 7;
 
 /// Trade goods up to this many are free of `trade_goods_hoard_weight`.
 pub const TRADE_GOODS_FREE: i64 = 7;
+
+/// Relics beyond this many earn no `relic_shaping`.
+pub const RELIC_SHAPING_CAP: i64 = 2;
 
 impl Reward {
     /// The default coefficients for a stage.
@@ -380,6 +399,21 @@ impl Reward {
             + self.secret_weight * secret
             + self.fleet_weight * fleet
             + self.tech_weight * techs
+            + self.discovery_potential(progress)
+    }
+
+    /// The Fracture, Styx and relic shaping inside [`Self::horizon_potential`]. `returns` takes it
+    /// back at the horizon, so these terms only speed up discovering the Fracture.
+    #[must_use]
+    pub fn discovery_potential(&self, progress: &Progress) -> f64 {
+        #[expect(clippy::cast_precision_loss, reason = "a handful of planets and relics")]
+        let (planets, relics) = (
+            progress.fracture_planets as f64,
+            progress.relics.min(RELIC_SHAPING_CAP) as f64,
+        );
+        self.fracture_planet_shaping * planets
+            + self.styx_shaping * f64::from(u8::from(progress.holds_styx))
+            + self.relic_shaping * relics
     }
 
     /// Whether this reward is self-consistent.
@@ -495,6 +529,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     let mut rewards = step_rewards(&snapshots, reward);
     if rewards.is_empty() {
         return Vec::new();
+    }
+    // The discovery terms are pure shaping: their horizon potential is taken back at the final
+    // slot. Not by zeroing the final snapshot, which the terminal Styx/Fracture bonuses still read.
+    if reward.stage == Stage::Two
+        && let (Some(slot), Some(horizon)) = (rewards.last_mut(), snapshots.last())
+    {
+        *slot -= reward.discovery_potential(horizon);
     }
 
     match reward.stage {
@@ -1575,6 +1616,41 @@ mod tests {
             },
         );
         assert_shift(&shift(&styx, &reward), &[16.0]);
+    }
+
+    #[test]
+    fn discovery_shaping_pays_the_capture_and_takes_the_horizon_back() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_planet_shaping = 8.0;
+        reward.styx_shaping = 4.0;
+        reward.relic_shaping = 2.0;
+        let planets = |count: i64, progress: Progress| Progress {
+            fracture_planets: count,
+            ..progress
+        };
+        // The first decision takes a planet (+8); the horizon holds two. With the horizon
+        // potential taken back, each undiscounted return is minus the potential before its
+        // decision, so the capture reaches the policy through the step reward (GAE), not the suffix.
+        let episode = holdings_episode(
+            vec![holding(1, 3, 0), planets(1, holding(2, 3, 0))],
+            planets(2, holding(4, 3, 0)),
+        );
+        assert_shift(&shift(&episode, &reward), &[0.0, -8.0]);
+        let mut snapshots = episode.steps.clone();
+        snapshots.push(episode.final_progress);
+        let steps = step_rewards(&snapshots, &reward);
+        assert!((steps[0] - 8.0).abs() < 1e-9, "{steps:?}");
+        // Styx, and relics capped at two: 8 + 4 + 2 * 2.
+        let rich = Progress {
+            holds_styx: true,
+            relics: 3,
+            ..planets(1, Progress::default())
+        };
+        assert!((reward.discovery_potential(&rich) - 16.0).abs() < 1e-9);
+        // The terminal Styx bonus still reads the unaltered horizon.
+        reward.styx_bonus = 5.0;
+        let styx = holdings_episode(vec![holding(1, 3, 0)], rich);
+        assert_shift(&shift(&styx, &reward), &[5.0]);
     }
 
     #[test]

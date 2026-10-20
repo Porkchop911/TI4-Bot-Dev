@@ -70,6 +70,9 @@ pub struct Progress {
     /// Planets in Fracture systems this seat controls, Styx included; reward bookkeeping only.
     #[serde(default)]
     pub fracture_planets: i64,
+    /// Relics this seat holds; reward bookkeeping only.
+    #[serde(default)]
+    pub relics: i64,
     /// Opportunity, in thousandths: planet value this seat could expect to take with one activation
     /// ([`crate::power_map::opportunity`]). Zero unless [`MEASURE_PROJECTION`] is on and a
     /// recording bot fills it, because the movement search behind it costs about a millisecond.
@@ -190,6 +193,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
                 .filter(|(system, _)| seen.is_fracture_system(system))
                 .count(),
         ),
+        relics: seen.seat(player).map_or(0, |seat| count(seat.relics.len())),
         holds_styx: controlled
             .iter()
             .any(|(_, planet)| planet.as_str() == "styx"),

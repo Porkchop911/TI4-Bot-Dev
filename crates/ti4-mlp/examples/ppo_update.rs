@@ -264,6 +264,9 @@ const VALUE_FLAGS: &[&str] = &[
     "--status-income-tg",
     "--fracture-entry-bonus",
     "--fracture-planet-bonus",
+    "--fracture-planet-shaping",
+    "--styx-shaping",
+    "--relic-shaping",
     "--high-vp-bonus",
     "--learning-rate",
     "--map-pool",
@@ -2674,11 +2677,19 @@ fn main() {
     reward.fracture_entry_bonus = weight("--fracture-entry-bonus", reward.fracture_entry_bonus);
     // Each Fracture planet held at the end of the horizon; Styx also earns `--styx-bonus`.
     reward.fracture_planet_bonus = weight("--fracture-planet-bonus", reward.fracture_planet_bonus);
+    // Pure-shaping versions: potentials taken back at the horizon (`Reward::discovery_potential`).
+    reward.fracture_planet_shaping =
+        weight("--fracture-planet-shaping", reward.fracture_planet_shaping);
+    reward.styx_shaping = weight("--styx-shaping", reward.styx_shaping);
+    reward.relic_shaping = weight("--relic-shaping", reward.relic_shaping);
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
         ("--fracture-entry-bonus", reward.fracture_entry_bonus),
         ("--fracture-planet-bonus", reward.fracture_planet_bonus),
+        ("--fracture-planet-shaping", reward.fracture_planet_shaping),
+        ("--styx-shaping", reward.styx_shaping),
+        ("--relic-shaping", reward.relic_shaping),
         ("--fleet-hoard-penalty", reward.fleet_hoard_penalty),
         ("--zero-fleet-penalty", reward.zero_fleet_penalty),
         (
@@ -2791,7 +2802,7 @@ fn main() {
             reward.strategy_diversity_weight
         );
         println!(
-            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {}",
+            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {} | shaping: per Fracture planet {}, Styx {}, per relic {} (max {})",
             ti4_training::reward::FLEET_HOARD_AT,
             reward.fleet_hoard_penalty,
             reward.zero_fleet_penalty,
@@ -2799,7 +2810,11 @@ fn main() {
             reward.trade_goods_hoard_weight,
             reward.styx_bonus,
             reward.fracture_entry_bonus,
-            reward.fracture_planet_bonus
+            reward.fracture_planet_bonus,
+            reward.fracture_planet_shaping,
+            reward.styx_shaping,
+            reward.relic_shaping,
+            ti4_training::reward::RELIC_SHAPING_CAP
         );
         println!(
             "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per table point built (per-unit table: war sun 20, dreadnought 10/13, flagship 10, carrier 6/8, mech 3.5, cruiser 3/5, destroyer 2.4/3.2, fighter 1.8/2.5, infantry 1.5/2; basic fighters only within capacity) | scuttle {} x build weight per table point removed over fleet supply or capacity",
