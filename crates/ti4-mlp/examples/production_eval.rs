@@ -316,6 +316,10 @@ struct Row {
     negative_windows: i64,
     ready_planet: i64,
     ready_pool: i64,
+    /// Tactical actions that activated a system and then moved, produced and landed nothing (the
+    /// trainer's `--waste-penalty` count, `positive_corpus::wasted_segment_ends`).
+    wasted_activations: i64,
+    tactical_actions: i64,
 }
 
 #[expect(clippy::cast_precision_loss, reason = "small counts")]
@@ -426,6 +430,10 @@ fn main() {
                     })
                     .collect();
                 let mut handles: BTreeMap<PlayerId, Rc<RefCell<Stats>>> = BTreeMap::new();
+                // The bot's own decision notes (head, choice, decline), which only exist while it
+                // records PPO steps; they are what the trainer counts wasted activations from.
+                let mut notes: BTreeMap<PlayerId, Rc<RefCell<Vec<ti4_mlp::positive_corpus::Note>>>> =
+                    BTreeMap::new();
                 let (rollout, _) =
                     ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
                         content,
@@ -469,10 +477,12 @@ fn main() {
                                         stream,
                                     ),
                                 };
-                                let (decider, _status) = bot
-                                .at_temperature(temperature)
-                                .from_setup(baseline)
-                                .seat();
+                                let bot = bot
+                                    .at_temperature(temperature)
+                                    .from_setup(baseline)
+                                    .recording_ppo(ti4_mlp::bundle::CriticMode::Shared);
+                                notes.insert(player.clone(), bot.ppo_notes());
+                                let (decider, _status) = bot.seat();
                                 let stats = Rc::new(RefCell::new(Stats {
                                     trace,
                                     ..Stats::default()
@@ -495,6 +505,16 @@ fn main() {
                 }
                 for seat in &rollout.seats {
                     let s = handles[&seat.player].borrow();
+                    let seat_notes = notes[&seat.player].borrow();
+                    let wasted_activations =
+                        ti4_mlp::positive_corpus::wasted_segment_ends(&seat_notes).len();
+                    let tactical_actions = seat_notes
+                        .iter()
+                        .filter(|note| {
+                            note.head == "turn"
+                                && note.chosen == ti4_mlp::positive_corpus::TACTICAL_ACTION_ID
+                        })
+                        .count();
                     let mut snap = BTreeMap::new();
                     for (r, m) in &s.snaps {
                         for (k, v) in m {
@@ -515,6 +535,8 @@ fn main() {
                         negative_windows: s.negative_windows,
                         ready_planet: s.ready.values().map(|v| v.0).sum(),
                         ready_pool: s.ready.values().map(|v| v.1).sum(),
+                        wasted_activations: i64::try_from(wasted_activations).unwrap_or(i64::MAX),
+                        tactical_actions: i64::try_from(tactical_actions).unwrap_or(i64::MAX),
                     });
                 }
             }
@@ -540,15 +562,16 @@ fn main() {
             k.dedup();
             k
         };
-        let mut body = format!("seed\trotation\tfaction\tvp\tunits_total\twaste\tproduction_cost\twindows\tneg_windows\tready_planet_res\tready_pool_res\t{}\n", types.join("\t"));
+        let mut body = format!("seed\trotation\tfaction\tvp\tunits_total\twaste\tproduction_cost\twindows\tneg_windows\tready_planet_res\tready_pool_res\t{}\twasted_activations\ttactical_actions\n", types.join("\t"));
         for r in &rows {
             let total: i64 = r.units.values().sum();
             let per: Vec<String> = types.iter().map(|t| r.units.get(t).copied().unwrap_or(0).to_string()).collect();
             let snaps: Vec<String> = snap_keys.iter().map(|k| r.snap.get(k).copied().unwrap_or(0.0).to_string()).collect();
             body.push_str(&format!(
-                "{}\t{}\t{}\t{}\t{total}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                "{}\t{}\t{}\t{}\t{total}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                 r.seed, r.rotation, r.faction, r.vp, r.waste, r.production_cost, r.windows,
-                r.negative_windows, r.ready_planet, r.ready_pool, per.join("\t")
+                r.negative_windows, r.ready_planet, r.ready_pool, per.join("\t"),
+                r.wasted_activations, r.tactical_actions
             ));
         }
         std::fs::write(path, body).unwrap_or_else(|error| refuse(&format!("writing {path}: {error}")));
@@ -566,12 +589,14 @@ fn main() {
         let (pc, _) = f(&|r| r.production_cost as f64);
         let (rp, rpe) = f(&|r| r.ready_planet as f64);
         let (rq, _) = f(&|r| r.ready_pool as f64);
+        let (wa, wae) = f(&|r| r.wasted_activations as f64);
+        let (ta, _) = f(&|r| r.tactical_actions as f64);
         let by: Vec<String> = types
             .iter()
             .map(|t| format!("{t}={:.2}", f(&|r| r.units.get(t).copied().unwrap_or(0) as f64).0))
             .collect();
         println!(
-            "  {label:<10} n={:<4} VP {vp:.2}+-{vpe:.2} | units {un:.2}+-{une:.2} | prodcost {pc:.1} | waste {w:.2}+-{we:.2} | ready_planet {rp:.1}+-{rpe:.1} | ready_pool {rq:.1} | {}",
+            "  {label:<10} n={:<4} VP {vp:.2}+-{vpe:.2} | units {un:.2}+-{une:.2} | prodcost {pc:.1} | waste {w:.2}+-{we:.2} | ready_planet {rp:.1}+-{rpe:.1} | ready_pool {rq:.1} | wasted_act {wa:.2}+-{wae:.2} of tactical {ta:.2} | {}",
             set.len(), by.join(" ")
         );
     };
