@@ -49,7 +49,11 @@ pub fn goals(setup: &Galaxy, frames: &[ReviewFrame], upto: usize) -> Vec<SeatGoa
         .map(|(player, snaps)| {
             let terms = faction_terms::status(&snaps);
             let paying_vp = terms.iter().map(|t| t.paying_vp).sum();
-            SeatGoals { player, terms, paying_vp }
+            SeatGoals {
+                player,
+                terms,
+                paying_vp,
+            }
         })
         .collect()
 }
@@ -90,12 +94,12 @@ pub fn goals_sheet(ui: &mut egui::Ui, frame: &ReviewFrame, goals: &[SeatGoals]) 
             .striped(true)
             .num_columns(5)
             .show(ui, |ui| {
-                for h in ["Term", "Weight", "By round", "State", "Paying"] {
+                for h in ["Goal", "Weight", "By round", "State", "Paying"] {
                     ui.strong(h);
                 }
                 ui.end_row();
                 for t in &seat.terms {
-                    ui.label(t.id);
+                    ui.label(&t.goal).on_hover_text(t.id);
                     ui.monospace(format!("{:.2}", t.weight_vp));
                     ui.monospace(t.deadline.map_or("–".to_owned(), |d| d.to_string()));
                     ui.label(state_label(t, frame.round));
@@ -111,7 +115,16 @@ mod tests {
     use super::*;
 
     fn term(deadline: Option<u32>, earned: bool, met_now: bool) -> TermStatus {
-        TermStatus { id: "x", weight_vp: 0.5, deadline, once: false, earned, met_now, paying_vp: 0.0 }
+        TermStatus {
+            id: "x",
+            goal: String::new(),
+            weight_vp: 0.5,
+            deadline,
+            once: false,
+            earned,
+            met_now,
+            paying_vp: 0.0,
+        }
     }
 
     #[test]
@@ -128,19 +141,28 @@ mod tests {
     /// potential the trainer would see.
     #[test]
     fn status_follows_the_table_and_sums_to_the_potential() {
-        let Some((n, row)) = (1_u8..=40).find_map(|n| faction_terms::row_for(n).map(|r| (n, r))) else {
+        let Some((n, row)) = (1_u8..=40).find_map(|n| faction_terms::row_for(n).map(|r| (n, r)))
+        else {
             panic!("no measured faction");
         };
         let mut snap = Progress::default();
         snap.faction_terms.faction = n;
         snap.round_number = 1;
-        let history = [snap, Progress { round_number: 2, ..snap }];
+        let history = [
+            snap,
+            Progress {
+                round_number: 2,
+                ..snap
+            },
+        ];
         let terms = faction_terms::status(&history);
         let ids: Vec<&str> = terms.iter().map(|t| t.id).collect();
         let table: Vec<&str> = row.terms.iter().map(|t| t.id).collect();
         assert_eq!(ids, table);
         let paying: f64 = terms.iter().map(|t| t.paying_vp).sum();
-        let last = *faction_terms::potentials(&history).last().expect("potential");
+        let last = *faction_terms::potentials(&history)
+            .last()
+            .expect("potential");
         assert!((paying - last).abs() < 1e-9);
     }
 }

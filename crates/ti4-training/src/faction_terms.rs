@@ -65,6 +65,130 @@ impl Cond {
             Self::Any(any) => any.iter().any(|c| c.met(p)),
         }
     }
+
+    /// The goal in plain words, for the replayer.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        // "1 mech" / "3 mechs".
+        let n = |count: i64, one: &str, many: &str| {
+            format!("{count} {}", if count == 1 { one } else { many })
+        };
+        match *self {
+            Self::Q(q, k) => {
+                let k = i64::from(k);
+                match q {
+                    Q::Bt => "Gain the faction breakthrough".to_owned(),
+                    Q::Cmdr => "Unlock the commander".to_owned(),
+                    Q::Hero => "Unlock the hero".to_owned(),
+                    Q::Mecatol => "Control Mecatol Rex".to_owned(),
+                    Q::Upg => format!("Own {}", n(k, "unit upgrade", "unit upgrades")),
+                    Q::Colours2 => format!("Own 2+ technologies in {}", n(k, "colour", "colours")),
+                    Q::Dock => format!("Have {} on the board", n(k, "space dock", "space docks")),
+                    Q::HomeDock => format!(
+                        "Have {} in the home system",
+                        n(k, "space dock", "space docks")
+                    ),
+                    Q::FarDock => "Have a space dock outside the home system".to_owned(),
+                    Q::Struct => format!(
+                        "Have {} (PDS and space docks)",
+                        n(k, "structure", "structures")
+                    ),
+                    Q::Ftr => format!("Have {} on the board", n(k, "fighter", "fighters")),
+                    Q::HomeFtr => {
+                        format!("Keep {} in the home system", n(k, "fighter", "fighters"))
+                    }
+                    Q::Mech => format!("Have {} on the board", n(k, "mech", "mechs")),
+                    Q::WarSun => format!("Have {} on the board", n(k, "war sun", "war suns")),
+                    Q::Out => format!(
+                        "Control {} outside the home system",
+                        n(k, "planet", "planets")
+                    ),
+                    Q::ActionCards => format!("Hold {}", n(k, "action card", "action cards")),
+                    Q::CapUnits => format!("Hold {}", n(k, "captured unit", "captured units")),
+                    Q::Assim => format!(
+                        "Place {}",
+                        n(k, "Valefar Assimilator token", "Valefar Assimilator tokens")
+                    ),
+                    Q::Coexist => format!("Coexist on {}", n(k, "planet", "planets")),
+                    Q::Plots => format!("Have {} in play", n(k, "plot", "plots")),
+                    Q::Flipped => "Flip to the Obsidian".to_owned(),
+                    Q::ForeignTok => format!(
+                        "Hold command tokens of {} in the fleet pool",
+                        n(k, "other player", "other players")
+                    ),
+                    Q::Sleeper => format!("Place {}", n(k, "sleeper token", "sleeper tokens")),
+                    Q::HelTitan => format!("Have {} on the board", n(k, "Hel-Titan", "Hel-Titans")),
+                    Q::Explore => format!("Explore {}", n(k, "time", "times")),
+                    Q::Mallice => "Control Mallice".to_owned(),
+                }
+            }
+            Self::Tech(id) => format!("Research {}", tech_name(id)),
+            Self::Inf(k) => format!("Have {}", n(k, "infantry", "infantry")),
+            Self::Cap(k) => format!("Have {}", n(k, "ship with capacity", "ships with capacity")),
+            Self::Frac(k) => format!("Control {} in the Fracture", n(k, "planet", "planets")),
+            Self::Styx => "Control Styx".to_owned(),
+            Self::Relic(k) => format!("Hold {}", n(k, "relic", "relics")),
+            Self::Gained(k) => format!(
+                "Gain {} beyond the start",
+                n(k, "technology", "technologies")
+            ),
+            Self::All(all) => joined(all, " and "),
+            Self::Any(any) => joined(any, " or "),
+        }
+    }
+}
+
+/// The parts' goals joined by `word`, later parts lower-cased: "Have 4 infantry and have 2 ...".
+fn joined(parts: &[Cond], word: &str) -> String {
+    let mut out = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        let goal = part.describe();
+        if i == 0 {
+            out.push_str(&goal);
+        } else {
+            out.push_str(word);
+            let mut chars = goal.chars();
+            if let Some(first) = chars.next() {
+                out.extend(first.to_lowercase());
+                out.push_str(chars.as_str());
+            }
+        }
+    }
+    out
+}
+
+/// Printed name of a technology the table uses, by content id.
+fn tech_name(id: &str) -> &str {
+    match id {
+        "gd" => "Gravity Drive",
+        "cv2" => "Carrier II",
+        "ff2" => "Fighter II",
+        "dn2" => "Dreadnought II",
+        "dd2" => "Destroyer II",
+        "x89" => "X-89 Bacterial Weapon",
+        "swa2" => "Strike Wing Alpha II",
+        "pds2" => "PDS II",
+        "helios2" => "Helios V2",
+        "vtx" => "Vortex",
+        "qdn" => "Quantum Datahub Node",
+        "nes" => "Non-Euclidean Shielding",
+        "sdn2" => "Super Dreadnought II",
+        "sr" => "Sling Relay",
+        "asn" => "Agency Supply Network",
+        "fl" => "Fleet Logistics",
+        "pws2" => "Prototype War Sun II",
+        "hcf2" => "Hybrid Crystal Fighter II",
+        "det" => "Dark Energy Tap",
+        "cm" => "Chaos Mapping",
+        "ac2" => "Advanced Carrier II",
+        "se2" => "Saturn Engine II",
+        "cr2" => "Cruiser II",
+        "bs" => "Bio-Stims",
+        "mi" => "Mageon Implants",
+        "pfa" => "Pre-Fab Arcologies",
+        "ws" => "War Sun",
+        other => other,
+    }
 }
 
 /// One paid milestone.
@@ -614,6 +738,8 @@ pub fn scale_of(row: &Row) -> f64 {
 pub struct TermStatus {
     /// Term id.
     pub id: &'static str,
+    /// The goal in plain words ([`Cond::describe`]).
+    pub goal: String,
     /// Effective weight in VP after the scale-down.
     pub weight_vp: f64,
     /// Deadline round.
@@ -692,6 +818,7 @@ pub fn status(snapshots: &[Progress]) -> Vec<TermStatus> {
             let weight_vp = t.weight * if t.exempt { 1.0 } else { scale };
             TermStatus {
                 id: t.id,
+                goal: t.cond.describe(),
                 weight_vp,
                 deadline: t.deadline,
                 once: t.once,
@@ -762,6 +889,23 @@ mod tests {
     }
     fn set(p: &mut Progress, q: Q, n: u8) {
         p.faction_terms.q[q as usize] = n;
+    }
+
+    #[test]
+    fn every_goal_is_spelled_out() {
+        for row in TABLE {
+            for term in row.terms {
+                let goal = term.cond.describe();
+                assert!(!goal.is_empty(), "{} {}", row.faction, term.id);
+                if let Cond::Tech(id) = term.cond {
+                    assert_ne!(tech_name(id), id, "{} has no printed name", id);
+                }
+            }
+        }
+        assert_eq!(
+            Cond::All(&[Cond::Inf(4), Cond::Cap(2)]).describe(),
+            "Have 4 infantry and have 2 ships with capacity"
+        );
     }
 
     #[test]
