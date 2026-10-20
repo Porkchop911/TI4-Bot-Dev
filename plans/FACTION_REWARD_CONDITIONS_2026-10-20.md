@@ -323,3 +323,37 @@ Source: `plans/evidence/SCPT-TOPICAL-REEXTRACTIONS-2026-10-20.md`, covering epis
 | Naaz-Rokha | relic deadline R4 → R3 |
 
 Xxcha stays H@R2 (operator).
+
+## 7. Base terms re-evaluated (operator request, 2026-10-20)
+
+Config: `scripts/long_async_faction_terms_r7_20261020.psd1`. It is prepared but **not launched**.
+At `vp-weight 12`, 1 VP = 12 reward units. "Per game" sizes are for a typical seat-game.
+"measured" means the r5 log or `eval320_r5` (mean VP about 3.4 per seat at round 4); "est."
+means estimated from typical slice values, not measured.
+
+The aim is that real points stay dominant. The faction terms (≤1 VP of shaping) and the shared
+Fracture terms (≤~0.75 VP of shaping) now carry the guide-specific plans. Kept, non-VP rewards
+should total well under one point per game.
+
+| Term | r6 | r7 | Size per game in VP (r7) | Why |
+|---|---|---|---|---|
+| `vp-weight` | 12 | 12 | – | The objective |
+| `sftt-weight` | 0.3 | 0.3 | – | Operator rule |
+| `objective-weight` (shaping) | 0.6 | **1.8** | 0.15 per scoreable public objective | 462/477: count near-term scoring capacity. Taken back at the horizon, so safe |
+| `secret-weight` (shaping) | 0.4 | **1.2** | 0.10 per scoreable secret | Same |
+| `r1-expansion-weight` (kept) | 2.0 | **1.0** | ~0.75 (est.; ~9 res+inf held after round 1) | Guides back round-one expansion, but 2.0 paid ~1.5 VP, about half a bot's real score. Faction terms now add round-1 `out`/`inf`/`cap` milestones |
+| `round-expansion-weight` (kept) | 0.25 | **0.15** | ~0.75 (est.; ~15 res+inf × rounds 2–5) | Five rounds instead of four would have grown it; overlaps faction "control N planets" terms |
+| `build-weight` | 0.035 | 0.035 | ~0.13 (measured: ~45 table points built) | Small, matches "money into plastic" |
+| `scuttle-multiplier` | 2 | 2 | – | Unchanged |
+| `unused-resources-weight` | 0.1 | 0.1 | ~0.04 (measured: ~5 per seat) | Unchanged |
+| `overpay-penalty` | 0.05 | 0.05 | <0.01 (measured) | Unchanged |
+| `waste-penalty` | 1 | 1 | ~0.05 (measured: ~0.6 wasted activations) | Unchanged |
+| `home-loss-weight` (kept) | 0.5 | **1.2** | 0.10 per lost home planet (0.20 for Cabal, Hacan, Muaat, Winnu) | At vp 12 the old 0.04 VP was invisible; losing home bars public scoring. Still small, since 477 says home matters less in TE |
+| `tech-weight` | 0.1 | **0** | was 0.008 per tech | Negligible, and it double-paid the faction tech goals |
+| `negotiation-step-penalty` | 0.0005 | 0.0005 | – | Unchanged |
+| `rounds` | 4 | **5** | – | Operator |
+| `faction-terms-weight` | – | **1** | ≤1.0 shaping | §4, §6 |
+| Fracture entry / planet / Styx / relic | 0 | **1.2 / 1.8 / 3.6 / 1.2** | 0.10 once / 0.15 / 0.30 / 0.10 (max 2), shaping | §2.9 |
+
+**Not measured:** the expansion sizes. The production probe does not report non-home planet value.
+Check them in the first r7 report before trusting the balance.
