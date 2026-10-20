@@ -1,12 +1,13 @@
 @{
-    # 2026-10-20 r7 (PREPARED, NOT LAUNCHED - needs the operator's go): continues r6b's per-faction models with
+    # 2026-10-20 r7 (launched on the operator's go): per-faction separate models FROM BLANK (operator), with the same
+    # async plumbing as r5/r6b (60 seat-game batches, publish every 120, fewest-updates-first target, STOP file), plus
     # the per-faction milestone terms (--faction-terms-weight), the shared Fracture/Styx/relic shaping, a
     # five-round horizon and the rebalanced base terms. Rationale and per-term sizes:
     # plans/FACTION_REWARD_CONDITIONS_2026-10-20.md section 7. At vp-weight 12, 1 VP = 12 reward units.
 
-    Bundle   = 'D:\Projects\ti4-engine-rs\out\ppo-async-separate-wide-20261019-r6b\checkpoints\sol\checkpoint-2098'
+    Bundle   = 'D:\Projects\ti4-engine-rs\out\blank-like16448-diplomacy-arena-20261017'
     Pool     = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
-    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-async-faction-terms-20261020-r7'
+    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-async-faction-terms-blank-20261020-r7'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128-20260908'
 
     SeparateModels  = $true
@@ -29,7 +30,7 @@
         'async-batch-games'   = 60
         'async-publish-games' = 120
         'rollout-workers'     = 30
-        'seed-base'        = 1275058500
+        'seed-base'        = 1277058500  # same as the earlier blank run (long_async_separate_wide_blank_20261019)
         'seeds-per-update' = 30
         'rotations'        = 1
         'device'           = 'cuda'
