@@ -306,7 +306,6 @@ pub const TABLE: &[Row] = &[
         &[
             mr(M, Some(2)),
             tech("swa2", M, 3),
-            o("pds2", Cond::Tech("pds2"), L, None),
             cmdr(M, Some(2)),
             h(
                 "fwd",
@@ -344,7 +343,7 @@ pub const TABLE: &[Row] = &[
             ),
             h("capt", Cond::Q(Q::CapUnits, 3), L, None),
             cmdr(L, None),
-            bt(M, Some(2)),
+            bt(H, Some(2)), // 428
             h("frac", Cond::Frac(1), M, Some(3)),
         ],
     ),
@@ -413,7 +412,7 @@ pub const TABLE: &[Row] = &[
             tech("sr", M, 1),
             tech("cv2", M, 2),
             cmdr(M, Some(3)),
-            bt(H, Some(2)),
+            bt(H, Some(1)), // 428
             hero(L, 4),
         ],
     ),
@@ -426,7 +425,7 @@ pub const TABLE: &[Row] = &[
             tech("qdn", H, 3),
             h("hdock", Cond::Q(Q::HomeDock, 2), M, Some(1)),
             h("hftr", Cond::Q(Q::HomeFtr, 4), M, None),
-            bt(L, None),
+            bt(M, None), // 428
             hero(L, 3),
         ],
     ),
@@ -439,7 +438,6 @@ pub const TABLE: &[Row] = &[
             h("upg2", Cond::Q(Q::Upg, 2), M, Some(3)),
             h("upg3", Cond::Q(Q::Upg, 3), M, Some(5)),
             o("colours", Cond::Q(Q::Colours2, 3), M, Some(4)),
-            tech("pds2", L, 2),
             hero(L, 4),
         ],
     ),
@@ -447,7 +445,7 @@ pub const TABLE: &[Row] = &[
         "keleres",
         false,
         &[
-            bt(H, Some(2)),
+            bt(H, Some(1)), // 428
             fdock(M, 1),
             tech("asn", H, 3),
             tech("gd", M, 4),
@@ -488,7 +486,7 @@ pub const TABLE: &[Row] = &[
         false,
         &[
             h("foreign", Cond::Q(Q::ForeignTok, 2), H, Some(3)),
-            bt(M, Some(2)),
+            bt(H, Some(2)), // 428
             h("relic1", Cond::Relic(1), M, Some(3)),
             h("relic2", Cond::Relic(2), L, Some(4)),
             tech("gd", M, 4),
@@ -523,7 +521,7 @@ pub const TABLE: &[Row] = &[
             h("ftr6", Cond::Q(Q::Ftr, 6), M, Some(3)),
             tech("hcf2", H, 3),
             cmdr(M, Some(2)),
-            bt(L, None),
+            bt(M, None), // 428
         ],
     ),
     row(
@@ -532,7 +530,7 @@ pub const TABLE: &[Row] = &[
         &[
             h("mech3", Cond::Q(Q::Mech, 3), M, Some(2)),
             o("explore4", Cond::Q(Q::Explore, 4), M, Some(3)),
-            h("relic", Cond::Relic(1), M, Some(4)),
+            h("relic", Cond::Relic(1), M, Some(3)), // 447: early relics
             fdock(M, 2),
             o(
                 "gd+pfa+x89",
@@ -608,7 +606,7 @@ pub const TABLE: &[Row] = &[
             tech("gd", M, 3),
             tech("cv2", M, 3),
             inf(8, M, None),
-            bt(L, None),
+            bt(H, Some(2)), // 428
         ],
     ),
     row(

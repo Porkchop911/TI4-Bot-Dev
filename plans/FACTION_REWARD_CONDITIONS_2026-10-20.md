@@ -303,3 +303,23 @@ Format: **pay for** (tier, deadline) · **avoid** · **horizon change** · cover
 
 Assumed without asking: one Keleres model for all three variants; one Firmament model across the
 Obsidian flip; deal-based advice is never rewarded (§2.8).
+
+## 6. Revisions from the SCPT topical episodes (operator-approved 2026-10-20)
+
+Source: `plans/evidence/SCPT-TOPICAL-REEXTRACTIONS-2026-10-20.md`, covering episodes 428, 455,
+459 and 447. Where these changes differ from §4, they win. The code table
+(`crates/ti4-training/src/faction_terms.rs`) is authoritative.
+
+| Faction | Change |
+|---|---|
+| Cabal | breakthrough M@R2 → H@R2 |
+| Sardakk | breakthrough L → H@R2 |
+| Mahact | breakthrough M@R2 → H@R2 |
+| Ghost | breakthrough deadline R2 → R1 |
+| Keleres | breakthrough deadline R2 → R1 |
+| Hacan | breakthrough L → M |
+| Naalu | breakthrough L → M |
+| Argent, Jol-Nar | PDS II term removed (F tier) |
+| Naaz-Rokha | relic deadline R4 → R3 |
+
+Xxcha stays H@R2 (operator).
