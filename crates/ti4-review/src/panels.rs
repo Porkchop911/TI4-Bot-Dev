@@ -618,6 +618,13 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                     item_section(ui, "●", "Planets", controlled_planets, color);
                     item_section(
                         ui,
+                        "⚑",
+                        "Faction state",
+                        crate::faction_state::seat_lines(&frame.state, &player.id),
+                        color,
+                    );
+                    item_section(
+                        ui,
                         "✨",
                         "Special effects",
                         crate::novelty::standing(frame, &player.id),

@@ -1498,8 +1498,12 @@ pub fn board_view(
             token_labels.push("Frontier".to_owned());
         }
         if state.breach_tokens.contains(&system_id) {
-            token_labels.push("Breach".to_owned());
+            token_labels.push(format!(
+                "Breach ({})",
+                crate::faction_state::breach_state(state, &system_id)
+            ));
         }
+        token_labels.extend(crate::faction_state::tile_labels(state, &system_id));
         if state.thunders_edge_system.as_ref() == Some(&system_id) {
             token_labels.push("Thunder's Edge".to_owned());
         }

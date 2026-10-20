@@ -153,15 +153,6 @@ pub fn standing(frame: &ReviewFrame, player: &ti4_model::id::PlayerId) -> Vec<St
         for (card, tech) in &seat.assimilated_technologies {
             lines.push(format!("assimilated · {card} copies {tech}"));
         }
-        if !seat.captured_units.is_empty() {
-            let mut held: Vec<String> = seat
-                .captured_units
-                .iter()
-                .map(|(owner, unit)| format!("{unit} of {owner}"))
-                .collect();
-            held.sort();
-            lines.push(format!("captured · {}", held.join(", ")));
-        }
     }
     let held = frame.state.tokens_held_by_mahact(player);
     if held > 0 {

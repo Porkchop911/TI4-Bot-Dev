@@ -61,6 +61,7 @@ pub mod diplomacy;
 pub mod faction_goals;
 #[cfg(feature = "simulate")]
 pub mod gui;
+pub mod faction_state;
 pub mod novelty;
 pub mod panels;
 #[cfg(feature = "simulate")]
