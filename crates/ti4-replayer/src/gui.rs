@@ -86,6 +86,10 @@ pub struct Replayer {
     show_branches: bool,
     /// The Power window: every seat's immediate defence and one-activation projection.
     show_power: bool,
+    /// The Faction goals window: each seat's faction milestone terms.
+    show_goals: bool,
+    /// Its goals for the frame shown, keyed by branch, frame and engine step.
+    goals: Option<(String, usize, usize, Vec<ti4_review::faction_goals::SeatGoals>)>,
     /// Out-of-the-ordinary rules effects per frame of the branch on screen, keyed by branch and
     /// frame count so it is rebuilt only when the branch grows or changes.
     novelty: Option<(String, usize, Vec<Vec<ti4_review::novelty::Note>>)>,
@@ -348,6 +352,8 @@ impl Replayer {
             show_decision: settings.decisions_open,
             show_branches: settings.branches_open,
             show_power: false,
+            show_goals: false,
+            goals: None,
             novelty: None,
             power: None,
             overlay: ti4_review::power::Overlay::Off,
@@ -1163,6 +1169,8 @@ impl Replayer {
                 changed |= ui.toggle_value(&mut self.show_decision, "◨ Choices").changed();
                 ui.toggle_value(&mut self.show_power, "⚔ Power")
                     .on_hover_text("Each seat's defence and one-activation projection, per system.");
+                ui.toggle_value(&mut self.show_goals, "🎯 Goals")
+                    .on_hover_text("Each seat's faction milestone terms: weight, deadline, state.");
                 if changed {
                     self.persist();
                 }
@@ -1804,6 +1812,39 @@ impl Replayer {
         self.show_power = open;
     }
 
+    /// The Faction goals window, recomputed only when the frame shown changes.
+    fn goals_window(
+        &mut self,
+        root: &mut egui::Ui,
+        session: &ReviewSession,
+        frames: &[ReviewFrame],
+        frame: &ReviewFrame,
+        branch: &str,
+        index: usize,
+    ) {
+        let stale = self.goals.as_ref().is_none_or(|(b, i, step, _)| {
+            b != branch || *i != index || *step != frame.engine_step
+        });
+        if stale {
+            let seats = ti4_review::power::galaxy_of(session, ContentStore::embedded())
+                .map(|galaxy| ti4_review::faction_goals::goals(&galaxy, frames, index))
+                .unwrap_or_default();
+            self.goals = Some((branch.to_owned(), index, frame.engine_step, seats));
+        }
+        let mut open = self.show_goals;
+        egui::Window::new("🎯 Faction goals")
+            .open(&mut open)
+            .default_size([520.0, 560.0])
+            .resizable(true)
+            .show(root.ctx(), |ui| {
+                egui::ScrollArea::both().show(ui, |ui| {
+                    let seats = self.goals.as_ref().map_or(&[][..], |(_, _, _, s)| s.as_slice());
+                    ti4_review::faction_goals::goals_sheet(ui, frame, seats);
+                });
+            });
+        self.show_goals = open;
+    }
+
     /// The map, with the reviewer's own seat row and legend over it.
     fn centre(
         &mut self,
@@ -2099,6 +2140,9 @@ impl eframe::App for Replayer {
                     }
                     if self.show_power {
                         self.power_window(root, session, frame);
+                    }
+                    if self.show_goals {
+                        self.goals_window(root, session, store.frames(branch), frame, &format!("{branch:?}"), viewed.unwrap_or(0));
                     }
                     let frames = store.frames(branch);
                     let key = format!("{branch:?}");

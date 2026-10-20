@@ -214,6 +214,10 @@ pub struct Reward {
     /// `fracture_planet_shaping`. Off by default.
     #[serde(default)]
     pub relic_shaping: f64,
+    /// Scale on the per-faction milestone terms ([`crate::faction_terms`]), in VP times `vp_weight`.
+    /// Pure shaping except the doubled home charge. 0 = off, and then nothing changes.
+    #[serde(default)]
+    pub faction_terms_weight: f64,
     /// Zero the scoreable public/secret counts in the final snapshot, as projection is, so
     /// `objective_weight`/`secret_weight` become pure shaping: a game can no longer bank reward for
     /// standing next to a point at the horizon. Off keeps the reference reward exactly.
@@ -321,6 +325,7 @@ impl Default for Reward {
             fracture_planet_shaping: 0.0,
             styx_shaping: 0.0,
             relic_shaping: 0.0,
+            faction_terms_weight: 0.0,
             zero_terminal_objectives: false,
             home_loss_weight: 0.0,
             keep_terminal_projection: false,
@@ -625,6 +630,14 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                 }
             }
             charge_holdings(&snapshots, reward, &mut rewards);
+            if reward.faction_terms_weight > 0.0 {
+                crate::faction_terms::add_to_rewards(
+                    &snapshots,
+                    reward.faction_terms_weight * reward.vp_weight,
+                    reward.home_loss_weight,
+                    &mut rewards,
+                );
+            }
         }
     }
 

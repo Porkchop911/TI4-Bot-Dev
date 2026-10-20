@@ -51,6 +51,9 @@ pub struct Progress {
     /// dreadnought II 5.2 = 5200). Infantry and mechs, in space or on planets, use normal cost.
     #[serde(default)]
     pub fleet_value_permille: i64,
+    /// Faction-term milestones ([`crate::faction_measure`]); zero unless `MEASURE_FACTION_TERMS` is on.
+    #[serde(default)]
+    pub faction_terms: crate::faction_measure::FactionProgress,
     /// Technologies owned beyond the setup baseline, so a seat is paid for researching rather
     /// than for what it was dealt.
     #[serde(default)]
@@ -176,6 +179,13 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         scoreable_secret: count(seen.scoreable_secret(player)),
         round_number: seen.round(),
         fleet_value_permille: seen.fleet_value_permille(player),
+        faction_terms: if crate::faction_measure::MEASURE_FACTION_TERMS
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            crate::faction_measure::measure(seen, player)
+        } else {
+            Default::default()
+        },
         technologies_gained: {
             let held = seen.seat(player).map_or(0, |seat| seat.technologies.len());
             count(held.saturating_sub(baseline.technologies))

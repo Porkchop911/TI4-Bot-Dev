@@ -58,6 +58,8 @@ use ti4_training::rollout::{
 
 pub mod diplomacy;
 #[cfg(feature = "simulate")]
+pub mod faction_goals;
+#[cfg(feature = "simulate")]
 pub mod gui;
 pub mod novelty;
 pub mod panels;

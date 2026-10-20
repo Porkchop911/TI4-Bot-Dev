@@ -267,6 +267,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--fracture-planet-shaping",
     "--styx-shaping",
     "--relic-shaping",
+    "--faction-terms-weight",
     "--high-vp-bonus",
     "--learning-rate",
     "--map-pool",
@@ -2682,6 +2683,10 @@ fn main() {
         weight("--fracture-planet-shaping", reward.fracture_planet_shaping);
     reward.styx_shaping = weight("--styx-shaping", reward.styx_shaping);
     reward.relic_shaping = weight("--relic-shaping", reward.relic_shaping);
+    // Per-faction milestone terms (`ti4_training::faction_terms`); the measurement scan runs only when on.
+    reward.faction_terms_weight = weight("--faction-terms-weight", reward.faction_terms_weight);
+    ti4_policy::faction_measure::MEASURE_FACTION_TERMS
+        .store(reward.faction_terms_weight > 0.0, std::sync::atomic::Ordering::Relaxed);
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
@@ -2690,6 +2695,7 @@ fn main() {
         ("--fracture-planet-shaping", reward.fracture_planet_shaping),
         ("--styx-shaping", reward.styx_shaping),
         ("--relic-shaping", reward.relic_shaping),
+        ("--faction-terms-weight", reward.faction_terms_weight),
         ("--fleet-hoard-penalty", reward.fleet_hoard_penalty),
         ("--zero-fleet-penalty", reward.zero_fleet_penalty),
         (

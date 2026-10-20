@@ -13,6 +13,7 @@ pub mod bot;
 pub mod card_tags;
 pub mod critic;
 pub mod deal_value;
+pub mod faction_measure;
 pub mod features;
 pub mod inference;
 pub mod intern;

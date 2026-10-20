@@ -56,6 +56,7 @@ pub fn wide_profiles(
 }
 pub mod capture;
 pub mod evaluation;
+pub mod faction_terms;
 pub mod gradient;
 pub mod ppo;
 pub mod promotion;
