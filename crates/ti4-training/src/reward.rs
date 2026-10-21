@@ -181,6 +181,13 @@ pub struct Reward {
     /// Planets only; trade goods have `trade_goods_hoard_weight`. Off by default.
     #[serde(default)]
     pub unused_resources_weight: f64,
+    /// Count unused resources after the status phase's scoring instead of at the last Action-phase
+    /// decision: the round's figure is the lowest ready-planet count from that decision through the
+    /// round's Status-phase decisions (scoring only spends, readying only adds, and the token
+    /// redistribution comes between them), so resources spent on a spend objective count as used.
+    /// Off keeps the reference reward exactly.
+    #[serde(default)]
+    pub unused_after_scoring: bool,
     /// Bonus per resource of units built (the produce option's bill), paid on the producing
     /// decision. Every unit counts at full cost, including fighters, infantry and mechs; upgraded
     /// ships count 1.3x their bill, the `Progress::fleet_value_permille` convention. Rewards
@@ -318,6 +325,7 @@ impl Default for Reward {
             styx_bonus: 0.0,
             overpay_penalty: 0.0,
             unused_resources_weight: 0.0,
+            unused_after_scoring: false,
             build_weight: 0.0,
             scuttle_multiplier: 0.0,
             fracture_entry_bonus: 0.0,
@@ -660,6 +668,9 @@ pub struct ProductionTerms {
     pub overpay: Vec<(usize, i64)>,
     /// Ready planet resources at each round's last Action-phase decision.
     pub unused: Vec<(usize, i64)>,
+    /// The same after the status phase's scoring: per round, the lowest ready count from the last
+    /// Action-phase decision through the round's Status-phase decisions (`Reward::unused_after_scoring`).
+    pub unused_after_scoring: Vec<(usize, i64)>,
     /// Build value in per-mille resources: full bill, upgraded ships at 1.3x.
     pub built_permille: Vec<(usize, i64)>,
     /// Value of units removed for being over fleet supply, per-mille, at the decision before the
@@ -679,6 +690,8 @@ pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
     let mut window: Option<(i64, i64, bool)> = None; // bill, pool drop, valid
     let (mut prev_pool, mut prev_round, mut prev_scuttled) = (0, 0, 0);
     let mut last_action: std::collections::BTreeMap<u32, (usize, i64)> =
+        std::collections::BTreeMap::new();
+    let mut after_scoring: std::collections::BTreeMap<u32, (usize, i64)> =
         std::collections::BTreeMap::new();
     for (index, now) in snapshots.iter().enumerate() {
         if let Some(open) = window.as_mut() {
@@ -711,11 +724,26 @@ pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
         prev_scuttled = now.scuttled_permille.max(prev_scuttled);
         if now.action_phase {
             last_action.insert(now.round_number, (index, now.ready_planet_resources));
+            after_scoring.insert(now.round_number, (index, now.ready_planet_resources));
+        }
+        // Scoring spends and readying adds, so the round's lowest status count is the one after
+        // scoring and before the planets ready (latest on a tie).
+        if now.status_phase {
+            let entry = after_scoring
+                .entry(now.round_number)
+                .or_insert((index, now.ready_planet_resources));
+            if now.ready_planet_resources <= entry.1 {
+                *entry = (index, now.ready_planet_resources);
+            }
         }
         prev_pool = now.spend_pool;
         prev_round = now.round_number;
     }
     terms.unused = last_action
+        .into_values()
+        .map(|(index, ready)| (index.saturating_sub(1), ready))
+        .collect();
+    terms.unused_after_scoring = after_scoring
         .into_values()
         .map(|(index, ready)| (index.saturating_sub(1), ready))
         .collect();
@@ -775,7 +803,12 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
             for &(slot, lost) in &terms.overpay {
                 rewards[slot] -= reward.overpay_penalty * lost as f64;
             }
-            for &(slot, ready) in &terms.unused {
+            let unused = if reward.unused_after_scoring {
+                &terms.unused_after_scoring
+            } else {
+                &terms.unused
+            };
+            for &(slot, ready) in unused {
                 rewards[slot] -= reward.unused_resources_weight * ready as f64;
             }
             for &(slot, permille) in &terms.built_permille {
@@ -1852,6 +1885,33 @@ mod tests {
                 returns(&episode, &stage_one_off)
             );
         }
+    }
+
+    #[test]
+    fn unused_after_scoring_counts_what_the_status_phase_left_ready() {
+        let status = |round, ready| Progress {
+            action_phase: false,
+            status_phase: true,
+            ..step(round, 0, ready)
+        };
+        // Round one ends its Action phase with 5 ready, spends 3 on an objective (2 left at the
+        // redistribution), then readies everything (6, a later status decision). Round two: an
+        // Action snapshot only.
+        let episode = holdings_episode(
+            vec![step(1, 5, 5), status(1, 5), status(1, 2), status(1, 6), step(2, 4, 4)],
+            step(2, 1, 1),
+        );
+        let terms = production_terms(&snapshots(&episode));
+        assert_eq!(terms.unused, vec![(0, 5), (4, 1)]);
+        assert_eq!(terms.unused_after_scoring, vec![(1, 2), (4, 1)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.unused_resources_weight = 0.1;
+        reward.unused_after_scoring = true;
+        let shifted = shift(&episode, &reward);
+        assert_shift(&shifted, &[-0.3, -0.3, -0.1, -0.1, -0.1]);
+        // Off keeps the Action-phase count.
+        reward.unused_after_scoring = false;
+        assert_shift(&shift(&episode, &reward), &[-0.6, -0.1, -0.1, -0.1, -0.1]);
     }
 
     #[test]

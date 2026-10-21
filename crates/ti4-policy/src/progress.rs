@@ -98,7 +98,11 @@ pub struct Progress {
     /// Whether the game is in the Action phase.
     #[serde(default)]
     pub action_phase: bool,
-    /// Printed resources of the controlled, still-ready planets; measured in the Action phase only.
+    /// Whether the game is in the Status phase.
+    #[serde(default)]
+    pub status_phase: bool,
+    /// Printed resources of the controlled, still-ready planets; measured in the Action and Status
+    /// phases only.
     #[serde(default)]
     pub ready_planet_resources: i64,
     /// The decision offers a produce, pay or place option (set by the recording bot).
@@ -214,7 +218,11 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         support_for_the_throne_points: seen.support_for_the_throne_points(player),
         spend_pool: seen.available_spend(player, ti4_engine::production::Spend::Resources),
         action_phase: seen.phase() == ti4_model::state::Phase::Action,
-        ready_planet_resources: if seen.phase() == ti4_model::state::Phase::Action {
+        status_phase: seen.phase() == ti4_model::state::Phase::Status,
+        ready_planet_resources: if matches!(
+            seen.phase(),
+            ti4_model::state::Phase::Action | ti4_model::state::Phase::Status
+        ) {
             controlled
                 .iter()
                 .filter(|(_, planet)| seen.planet_is_ready(planet))

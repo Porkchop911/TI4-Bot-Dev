@@ -295,6 +295,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--trade-goods-hoard-weight",
     "--overpay-penalty",
     "--unused-resources-weight",
+    "--unused-after-scoring",
     "--build-weight",
     "--scuttle-multiplier",
     "--unit-weight",
@@ -1000,7 +1001,10 @@ fn play_one(
             let terms = ti4_training::reward::production_terms(&all);
             let seat_terms: [i64; 5] = [
                 terms.overpay.iter().map(|t| t.1).sum(),
-                terms.unused.iter().map(|t| t.1).sum(),
+                (if reward.unused_after_scoring { &terms.unused_after_scoring } else { &terms.unused })
+                    .iter()
+                    .map(|t| t.1)
+                    .sum(),
                 terms.built_permille.iter().map(|t| t.1).sum(),
                 episode.final_progress.fleet_value_permille,
                 terms.scuttled_permille.iter().map(|t| t.1).sum(),
@@ -2669,6 +2673,8 @@ fn main() {
         "--unused-resources-weight",
         reward.unused_resources_weight,
     );
+    // Count unused resources after the status phase's scoring, not at the last Action decision.
+    reward.unused_after_scoring = weight("--unused-after-scoring", 0.0) != 0.0;
     reward.build_weight = weight("--build-weight", reward.build_weight);
     reward.scuttle_multiplier = weight("--scuttle-multiplier", reward.scuttle_multiplier);
     // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
@@ -2823,9 +2829,10 @@ fn main() {
             ti4_training::reward::RELIC_SHAPING_CAP
         );
         println!(
-            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round | build {} per table point built (per-unit table: war sun 20, dreadnought 10/13, flagship 10, carrier 6/8, mech 3.5, cruiser 3/5, destroyer 2.4/3.2, fighter 1.8/2.5, infantry 1.5/2; basic fighters only within capacity) | scuttle {} x build weight per table point removed over fleet supply or capacity",
+            "  production  overpay penalty {} per resource lost | unused ready planets {} per resource per round{} | build {} per table point built (per-unit table: war sun 20, dreadnought 10/13, flagship 10, carrier 6/8, mech 3.5, cruiser 3/5, destroyer 2.4/3.2, fighter 1.8/2.5, infantry 1.5/2; basic fighters only within capacity) | scuttle {} x build weight per table point removed over fleet supply or capacity",
             reward.overpay_penalty,
             reward.unused_resources_weight,
+            if reward.unused_after_scoring { " (after status-phase scoring)" } else { "" },
             reward.build_weight,
             reward.scuttle_multiplier
         );

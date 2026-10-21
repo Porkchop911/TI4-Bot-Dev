@@ -58,7 +58,7 @@ $allowed = @(
     'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'sil-min-vp', 'faction-focus', 'gae-lambda',
     'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'round-expansion-weight', 'factions', 'record-best', 'record-vp', 'sftt-weight', 'phase-lock',
     'async-batch-games', 'async-publish-games', 'async-queue-batches', 'rollout-workers',
-    'faction-terms-weight'
+    'faction-terms-weight', 'unused-after-scoring'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })
