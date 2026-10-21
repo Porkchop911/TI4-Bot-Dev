@@ -438,9 +438,18 @@ pub struct PendingManualChoice {
     pub prompt: String,
     /// Options in the engine's own order. Panel order and the fingerprint both follow it.
     pub options: Vec<OfferedOption>,
-    /// Serialized typed decision context.
+    /// Serialized typed decision context, display-only fields stripped: this is what the
+    /// fingerprint and the replay record bind.
     pub context: Option<Value>,
     pub fingerprint: ChoiceFingerprint,
+    /// The question's display-only facts (`Choice::details`): pools, fleet supply, phrases, offer
+    /// card. For the panel only; excluded from the fingerprint and from records.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub details: serde_json::Map<String, Value>,
+    /// The full decision context, with the reaction-card previews and the pending effect that
+    /// `context` strips. For the panel only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<ti4_engine::decision_context::DecisionContext>,
 }
 
 impl PendingManualChoice {
@@ -481,7 +490,36 @@ impl PendingManualChoice {
             options,
             context,
             fingerprint,
+            details: choice.details.clone(),
+            display: choice.context.clone(),
         })
+    }
+
+    /// The display-only lines under this question's prompt: the engine's details (pools, fleet
+    /// supply, capacity, offer card, phrased prompt) and what the played card will do when it
+    /// resolves. Both panels (local and remote) take them from here, so neither can drop them.
+    #[must_use]
+    pub fn question_lines(&self, session: &ti4_review::ReviewSession) -> Vec<String> {
+        let mut lines = ti4_review::view::details_lines(session, &self.prompt, &self.details);
+        if let Some(said) = self
+            .pending_effect()
+            .and_then(|effect| ti4_review::view::say_effect(session, effect))
+        {
+            lines.push(format!("Pending effect: {said}"));
+        }
+        lines
+    }
+
+    /// The reaction-card previews of this offer (display only).
+    #[must_use]
+    pub fn previews(&self) -> &[ti4_engine::decision_context::EffectPreview] {
+        self.display.as_ref().map_or(&[], |display| &display.previews)
+    }
+
+    /// What the played card this window reacts to will do when it resolves (display only).
+    #[must_use]
+    pub fn pending_effect(&self) -> Option<&ti4_engine::decision_context::EffectPreview> {
+        self.display.as_ref()?.pending_effect.as_ref()
     }
 
     #[must_use]

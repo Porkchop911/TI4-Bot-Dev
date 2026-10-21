@@ -48,15 +48,17 @@ if ($diplomacy) {
 $allowed = @(
     'clear-bonus', 'clearance-weight', 'conjunctive-weight', 'curriculum-seeds',
     'demo-corpus', 'demo-per-update', 'device', 'entropy-final', 'entropy-start', 'expansion-weight',
-    'fleet-hoard-penalty', 'fleet-weight', 'projection-weight', 'status-income-tg', 'fracture-entry-bonus', 'fracture-planet-bonus',
+    'fleet-hoard-penalty', 'fleet-weight', 'projection-weight', 'status-income-tg', 'fracture-entry-bonus', 'fracture-planet-bonus', 'fracture-planet-shaping', 'styx-shaping', 'relic-shaping',
     'high-vp-bonus', 'learning-rate', 'movement-entropy', 'objective-weight', 'r1-bonus',
     'r1-shaping', 'report-every', 'rounds', 'secret-weight', 'seed-base', 'stage',
     'strategy-diversity-weight', 'styx-bonus', 'tech-weight', 'temperature',
     'opponent', 'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight',
-    'waste-penalties',
+    'waste-penalties', 'overpay-penalty', 'unused-resources-weight', 'build-weight', 'scuttle-multiplier',
     'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
-    'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'faction-focus', 'gae-lambda',
-    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'phase-lock'
+    'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'sil-min-vp', 'faction-focus', 'gae-lambda',
+    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'round-expansion-weight', 'factions', 'record-best', 'record-vp', 'sftt-weight', 'phase-lock',
+    'async-batch-games', 'async-publish-games', 'async-queue-batches', 'rollout-workers',
+    'faction-terms-weight', 'unused-after-scoring'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })

@@ -771,6 +771,17 @@ fn remove_one(
     state
         .system_mut(system)
         .remove(std::slice::from_ref(&doomed));
+    // Training bookkeeping: what a seat scuttles to get under fleet supply (37.3) or capacity
+    // (16.3), valued with the same table as a build.
+    {
+        let types = catalogue(content, sources);
+        if let Some(stats) = types.get(doomed.type_id.as_str()) {
+            let value = Observed::table_permille(*stats);
+            if let Some(seat) = state.player_mut(player) {
+                seat.scuttled_permille += value;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1236,6 +1247,50 @@ mod tests {
                 .all(|option| ["remove cruiser", "remove destroyer"]
                     .contains(&option.label.as_str()))
         );
+    }
+
+    #[test]
+    fn supply_and_capacity_removals_are_booked_as_scuttled_table_value() {
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 2;
+        put(&mut state, &system, "dreadnought", &player, 1);
+        put(&mut state, &system, "cruiser", &player, 2);
+        let mut table = Table::new();
+        let content = ContentStore::embedded();
+        enforce(&mut state, content, POK, &mut table, &player, &system).unwrap();
+        // The default decider takes the first option, the dreadnought: table 10.
+        assert_eq!(state.player(&player).unwrap().scuttled_permille, 10_000);
+
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 9;
+        put(&mut state, &system, "carrier", &player, 1);
+        put(&mut state, &system, "fighter", &player, 9);
+        let removed = enforce(&mut state, content, POK, &mut table, &player, &system).unwrap();
+        // Capacity removals count too: each basic fighter is 1.8.
+        assert_eq!(
+            state.player(&player).unwrap().scuttled_permille,
+            1800 * i64::try_from(removed).unwrap()
+        );
+        assert!(removed >= 2);
+    }
+
+    #[test]
+    fn build_value_follows_the_table_and_fighters_need_capacity() {
+        let content = ContentStore::embedded();
+        let value = |state: &GameState, player: &PlayerId, system: &SystemId, unit: &str, n: i64| {
+            Observed::new(state, content, POK, None).build_value_permille(player, unit, n, system)
+        };
+        let (mut state, system, player) = arena();
+        assert_eq!(value(&state, &player, &system, "dreadnought", 1), 10_000);
+        assert_eq!(value(&state, &player, &system, "dreadnought2", 1), 13_000);
+        assert_eq!(value(&state, &player, &system, "carrier2", 1), 8_000);
+        // No ship: no capacity, so basic fighters score nothing.
+        assert_eq!(value(&state, &player, &system, "fighter", 2), 0);
+        put(&mut state, &system, "carrier", &player, 1);
+        assert_eq!(value(&state, &player, &system, "fighter", 2), 3_600);
+        put(&mut state, &system, "fighter", &player, 4);
+        assert_eq!(value(&state, &player, &system, "fighter", 2), 0);
+        assert_eq!(value(&state, &player, &system, "fighter2", 2), 5_000);
     }
 
     #[test]

@@ -1989,3 +1989,128 @@ impl Drop for ShutdownGateOnDrop {
         self.0.shutdown();
     }
 }
+
+/// Parks of a real all-manual game over one round, answered with the first option each time, and
+/// the session that went with them (so the panel's lines can be rendered with its names).
+fn real_questions(goal: AdvanceGoal) -> (Vec<PendingManualChoice>, ti4_review::ReviewSession) {
+    let branch = start(&ALL_SEATS);
+    let driven = drive(&branch, goal);
+    let session = branch
+        .into_session()
+        .expect("the thread hands the session back");
+    (driven.parks, session)
+}
+
+#[test]
+fn real_questions_carry_the_engines_display_facts_into_what_the_panel_renders() {
+    let (parks, session) = real_questions(AdvanceGoal::EndOfGame);
+    assert!(!parks.is_empty(), "a round of manual play parks");
+    let mut keys = BTreeMap::<String, usize>::new();
+    for park in &parks {
+        for key in park.details.keys() {
+            *keys.entry(key.clone()).or_default() += 1;
+        }
+    }
+    eprintln!("details keys over {} parks: {keys:?}", parks.len());
+    eprintln!(
+        "parks with previews: {}, with pending effect: {}",
+        parks.iter().filter(|p| !p.previews().is_empty()).count(),
+        parks.iter().filter(|p| p.pending_effect().is_some()).count()
+    );
+    // Every park keeps the full context beside the stripped one the fingerprint binds.
+    for park in &parks {
+        assert_eq!(park.display.is_some(), park.context.is_some());
+        let stripped = park
+            .display
+            .as_ref()
+            .map(|display| serde_json::to_value(display.without_display_fields()).unwrap());
+        assert_eq!(stripped, park.context, "fingerprint context is the stripped one");
+    }
+    // The pools questions render the numbers the engine counted, from the typed pools.
+    let pooled: Vec<_> = parks.iter().filter(|p| p.details.contains_key("pools")).collect();
+    for park in &pooled {
+        let pools: ti4_engine::tokens::CommandPools =
+            serde_json::from_value(park.details["pools"].clone()).unwrap();
+        let lines = park.question_lines(&session);
+        let expect = format!(
+            "tactic {} · fleet {} · strategic {}",
+            pools.tactic, pools.fleet, pools.strategic
+        );
+        assert!(lines.iter().any(|line| line.contains(&expect)), "{lines:?}");
+    }
+    let supplied: Vec<_> = parks
+        .iter()
+        .filter(|p| p.details.contains_key(ti4_engine::fleet::FLEET_SUPPLY_KEY))
+        .collect();
+    for park in &supplied {
+        let hint: ti4_engine::fleet::FleetSupplyHints = serde_json::from_value(
+            park.details[ti4_engine::fleet::FLEET_SUPPLY_KEY].clone(),
+        )
+        .unwrap();
+        let lines = park.question_lines(&session);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with(&format!("Fleet supply here: {}/", hint.used))),
+            "{lines:?}"
+        );
+    }
+    assert!(!pooled.is_empty(), "a game asks about command pools");
+    assert!(!supplied.is_empty(), "a game asks about fleet supply");
+    // Phrased questions say their names, with no placeholder left over.
+    let mut phrased = 0;
+    for park in parks.iter().filter(|p| p.details.contains_key("phrases")) {
+        for line in park.question_lines(&session) {
+            assert!(!line.contains('{'), "unresolved placeholder in {line:?}");
+        }
+        for option in &park.options {
+            for line in ti4_review::view::option_lines(
+                &session,
+                &option.id,
+                &option.label,
+                &park.details,
+                park.previews(),
+            ) {
+                assert!(!line.contains('{'), "unresolved placeholder in {line:?}");
+                phrased += 1;
+            }
+        }
+    }
+    assert!(phrased > 0, "some option of a phrased question is said by its phrase");
+}
+
+#[test]
+fn real_reaction_windows_render_what_each_card_will_do() {
+    let (parks, session) = real_questions(AdvanceGoal::EndOfGame);
+    let windows: Vec<_> = parks.iter().filter(|p| !p.previews().is_empty()).collect();
+    assert!(!windows.is_empty(), "a game opens reaction windows with previews");
+    for park in &windows {
+        for preview in park.previews() {
+            assert!(park.offers(&preview.option), "a preview belongs to an offered option");
+            let option = park.options.iter().find(|o| o.id == preview.option).unwrap();
+            let lines = ti4_review::view::option_lines(
+                &session,
+                &option.id,
+                &option.label,
+                &park.details,
+                park.previews(),
+            );
+            let said = ti4_review::view::say_effect(&session, preview)
+                .expect("the engine words every preview it sends");
+            assert!(!said.contains('{'), "{said:?}");
+            assert!(lines.iter().any(|line| line.ends_with(&said)), "{lines:?} vs {said:?}");
+        }
+    }
+    for park in parks.iter().filter(|p| p.pending_effect().is_some()) {
+        let lines = park.question_lines(&session);
+        assert!(
+            lines.iter().any(|line| line.starts_with("Pending effect: ")),
+            "{lines:?}"
+        );
+    }
+    assert!(
+        parks.iter().any(|p| p.pending_effect().is_some()),
+        "a game answers a played card with its pending effect"
+    );
+}
+

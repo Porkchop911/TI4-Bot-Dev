@@ -2631,13 +2631,11 @@ mod tests {
 
     #[test]
     fn note_sales_carry_their_own_price_in_id_and_label() {
-        let (_hub, mut state) = trading_partners();
+        let (hub, mut state) = trading_partners();
         // b can afford every price the table offers here.
         state.player_mut(&b()).unwrap().trade_goods = 6;
 
-        // a (hacan) holds cf + ps + ta + convoys after the re-deal; `an` is withheld until its
-        // commander unlocks, which this scaffolding never does. BTreeMap key order: cf, convoys,
-        // ps, ta.
+        // A locked Alliance may be traded before its commander unlocks.
         let offers = offer_options(&state, ContentStore::embedded(), &a(), &b());
         let ids: Vec<&str> = offers
             .iter()
@@ -2647,6 +2645,7 @@ mod tests {
         assert_eq!(
             ids,
             vec![
+                "pnan:hacan:3",
                 "pncf:hacan:2",
                 "pnconvoys:hacan:3",
                 "pnps:hacan:2",
@@ -2658,6 +2657,14 @@ mod tests {
             .find(|option| option.id == "pncf:hacan:2")
             .expect("the ceasefire is on the table");
         assert_eq!(cf.label, "sell cf:hacan for 2 trade goods");
+        let alliance = offers
+            .iter()
+            .find(|option| option.id == "pnan:hacan:3")
+            .expect("the Alliance is on the table while locked");
+        assert_eq!(alliance.label, "sell an:hacan for 3 trade goods");
+        struck(&mut state, &hub, &a(), &b(), alliance);
+        assert_eq!(state.promissory_notes.get("an:hacan"), Some(&b()));
+        assert!(state.promissory_faceup.contains("an:hacan"));
     }
 
     /// Strike the deal the option names and say so loudly if the engine would not.

@@ -427,6 +427,10 @@ pub struct Player {
     /// the fleet pool. The card says "during this game round", so this holds the round
     /// number rather than a flag, and is cleared when that round ends.
     pub fleet_supply_unlimited_until: Option<u32>,
+    /// Cumulative value, in per-mille resources, of this seat's units removed because it was over
+    /// fleet supply (37.3); training reward bookkeeping only. Not compared.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub scuttled_permille: i64,
     /// Morale Boost: the [`GameState::combat_round_seq`] during which this player's combat
     /// rolls get +1.
     pub combat_bonus_round: Option<u32>,
@@ -711,6 +715,7 @@ impl Player {
             public_objectives_forbidden: false,
             leaders: BTreeMap::new(),
             fleet_supply_unlimited_until: None,
+            scuttled_permille: 0,
             combat_bonus_round: None,
             extra_votes_agenda: None,
             hack_votes_last_agenda: None,
@@ -3291,6 +3296,14 @@ mod tests {
     reason = "serde's skip_serializing_if signature"
 )]
 fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if signature"
+)]
+fn is_zero_i64(value: &i64) -> bool {
     *value == 0
 }
 

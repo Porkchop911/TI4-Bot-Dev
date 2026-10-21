@@ -2065,6 +2065,46 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn aello_alliance_recipient_is_paid_when_another_player_researches() {
+        let mut state = game();
+        coexisting_everywhere(&mut state, 1);
+        crate::leaders::check_unlocks(&mut state, content(), DEFAULT, None, &a());
+        let note = crate::promissory::note_id("an", "deepwrought");
+        crate::promissory::take(&mut state, content(), &c(), &note);
+        assert!(state.promissory_faceup.contains(&note));
+        clear_techs(&mut state, &b());
+        {
+            let seat = state.player_mut(&b()).unwrap();
+            seat.trade_goods = 4;
+            seat.commodities = 0;
+        }
+        for (_, planet) in state
+            .controlled_planets(&b())
+            .iter()
+            .map(|(s, p)| ((*s).clone(), (*p).clone()))
+            .collect::<Vec<_>>()
+        {
+            state.exhaust_planet(planet);
+        }
+        state.player_mut(&c()).unwrap().commodities = 0;
+        let mut table = scripted(&["decline", "reduce", "decline", "nm"]);
+        crate::strategy_cards::secondary(
+            &mut state,
+            content(),
+            DEFAULT,
+            None,
+            &mut table,
+            &b(),
+            "pok7technology",
+        )
+        .expect("research resolves");
+        assert!(owned(&state, &b(), "nm"));
+        assert_eq!(goods(&state, &b()), 1, "the researcher pays one less");
+        assert_eq!(state.player(&c()).unwrap().commodities, 1,
+            "the Alliance recipient gains the commodity");
+    }
+
     // -- neutrality ---------------------------------------------------------------------------------
 
     #[test]

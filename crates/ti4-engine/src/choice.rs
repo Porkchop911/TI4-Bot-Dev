@@ -724,6 +724,14 @@ impl<'a> Observed<'a> {
         }
     }
 
+    /// Measurement hook: the position itself, so a probe can try hypothetical boards (add a unit,
+    /// re-ask the power map). Not for deciders: it exposes the whole state, not only public facts.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn probe_state(&self) -> &'a GameState {
+        self.state
+    }
+
     /// The content corpus this game is played from.
     #[must_use]
     pub const fn content(&self) -> &'a ContentStore {
@@ -1399,8 +1407,58 @@ impl<'a> Observed<'a> {
             .sum()
     }
 
+    /// Reward points x1000 for building `count` of `unit_id` in `system`: the per-unit table of
+    /// [`Self::table_permille`]. Basic fighters score only up to the capacity free in `system`
+    /// (the unit is placed after this is read); fighters beyond it, and Fighter II (exempt, it
+    /// rides the fleet pool), follow that rule.
+    #[must_use]
+    pub fn build_value_permille(
+        &self,
+        player: &PlayerId,
+        unit_id: &str,
+        count: i64,
+        system: &SystemId,
+    ) -> i64 {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        let Some(stats) = types.get(unit_id) else {
+            return 0;
+        };
+        let mut scored = count.max(0);
+        if stats.is_fighter() && stats.upgrades_from().is_none() {
+            let free = crate::fleet::standing(self.state, self.content, self.sources, player, system, None)
+                .capacity_free();
+            scored = scored.min(free);
+        }
+        Self::table_permille(*stats) * scored
+    }
+
+    /// The per-unit reward table, x1000 (build value and scuttle claw-back both use it). Faction
+    /// units map to their base type and count as upgraded when they upgrade from something.
+    /// Structures and anything off the table are 0.
+    pub(crate) fn table_permille(stats: ti4_content::units::UnitType<'_>) -> i64 {
+        let up = stats.upgrades_from().is_some();
+        match stats.base_type() {
+            "warsun" => 20_000,
+            "dreadnought" => if up { 13_000 } else { 10_000 },
+            "flagship" => 10_000,
+            "carrier" => if up { 8_000 } else { 6_000 },
+            "mech" => 3_500,
+            "cruiser" => if up { 5_000 } else { 3_000 },
+            "destroyer" => if up { 3_200 } else { 2_400 },
+            "fighter" => if up { 2_500 } else { 1_800 },
+            "infantry" => if up { 2_000 } else { 1_500 },
+            _ => 0,
+        }
+    }
+
+    /// Cumulative per-mille table value of this seat's units removed for being over fleet supply or capacity.
+    #[must_use]
+    pub fn scuttled_permille(&self, player: &PlayerId) -> i64 {
+        self.state.player(player).map_or(0, |seat| seat.scuttled_permille)
+    }
+
     /// One ship or ground force's share of [`Self::fleet_value_permille`].
-    fn unit_value_permille(
+    pub(crate) fn unit_value_permille(
         stats: ti4_content::units::UnitType<'_>,
         types: &BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     ) -> i64 {
@@ -1438,6 +1496,18 @@ impl<'a> Observed<'a> {
     pub fn is_fracture_system(&self, system: &SystemId) -> bool {
         self.state.fracture_in_play
             && crate::fracture::is_fracture_system(self.content, self.sources, system)
+    }
+
+    /// Victory points this seat currently holds from Support for the Throne, from the public
+    /// ledger of every point moved. Used only by training progress; not a policy feature.
+    #[must_use]
+    pub fn support_for_the_throne_points(&self, player: &PlayerId) -> i64 {
+        self.state
+            .vp_ledger
+            .iter()
+            .filter(|(holder, _, reason)| holder == player && reason == "support_for_the_throne")
+            .map(|(_, delta, _)| i64::from(*delta))
+            .sum()
     }
 
     /// How many of this seat's home planets it does not control (61.16 bars public scoring while

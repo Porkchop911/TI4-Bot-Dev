@@ -1276,6 +1276,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ahk_siever_pays_an_actual_alliance_holder_only_while_faceup_and_unlocked() {
+        let mut state = game();
+        let note = crate::promissory::note_id("an", "crimson");
+        crate::promissory::take(&mut state, content(), &c(), &note);
+        assert!(state.promissory_faceup.contains(&note));
+        state.player_mut(&c()).unwrap().commodities = 0;
+
+        emit(&mut state, None, &[], "SPACE_COMBAT_ENDED", &[]);
+        assert_eq!(state.player(&c()).unwrap().commodities, 0, "locked owner");
+
+        state.player_mut(&a()).unwrap().leaders.insert(
+            LeaderId::new(super::super::crimson::COMMANDER),
+            LeaderStatus::Unlocked,
+        );
+        emit(&mut state, None, &[], "SPACE_COMBAT_ENDED", &[]);
+        assert_eq!(state.player(&c()).unwrap().commodities, 1,
+            "the faceup recipient gains the commander's commodity");
+
+        crate::promissory::give_back(&mut state, &note);
+        emit(&mut state, None, &[], "SPACE_COMBAT_ENDED", &[]);
+        assert_eq!(state.player(&c()).unwrap().commodities, 1,
+            "returning the note removes the recipient's ability");
+    }
+
     // -- Ahk Ravin --------------------------------------------------------------------------------------------
 
     fn agent() -> LeaderId {

@@ -58,7 +58,10 @@ use ti4_training::rollout::{
 
 pub mod diplomacy;
 #[cfg(feature = "simulate")]
+pub mod faction_goals;
+#[cfg(feature = "simulate")]
 pub mod gui;
+pub mod faction_state;
 pub mod novelty;
 pub mod panels;
 #[cfg(feature = "simulate")]
@@ -354,6 +357,16 @@ pub struct DecisionDetail {
     pub options: Vec<OptionDetail>,
     #[serde(default)]
     pub context: Option<Value>,
+    /// The display-only facts the engine put on the question (`Choice::details`): pools, fleet
+    /// supply, phrases, offer-card header. Never part of `context`, which is what replays bind.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub details: serde_json::Map<String, Value>,
+    /// What each reaction card of the window would do, worded by the engine (display only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previews: Vec<ti4_engine::decision_context::EffectPreview>,
+    /// What the card this window reacts to will do when it resolves (display only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_effect: Option<ti4_engine::decision_context::EffectPreview>,
 }
 
 /// Stable replay copy of one fully resolved engine timing event.
@@ -579,6 +592,16 @@ impl TraceBot {
                 .context
                 .as_ref()
                 .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
+            details: choice.details.clone(),
+            previews: choice
+                .context
+                .as_ref()
+                .map(|context| context.previews.clone())
+                .unwrap_or_default(),
+            pending_effect: choice
+                .context
+                .as_ref()
+                .and_then(|context| context.pending_effect.clone()),
         });
     }
 }
@@ -701,6 +724,16 @@ impl MlpTraceBot {
                 .context
                 .as_ref()
                 .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
+            details: choice.details.clone(),
+            previews: choice
+                .context
+                .as_ref()
+                .map(|context| context.previews.clone())
+                .unwrap_or_default(),
+            pending_effect: choice
+                .context
+                .as_ref()
+                .and_then(|context| context.pending_effect.clone()),
         });
     }
 }
@@ -980,9 +1013,13 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
-        let faction_roster: Vec<FactionId> = match &config.lineup {
-            None => FACTIONS.map(FactionId::new).to_vec(),
-            Some(lineup) => {
+        let faction_roster: Vec<FactionId> = match (&config.lineup, &policy) {
+            // A separate-models run seats the factions it trained.
+            (None, LoadedPolicy::Mlp { by_faction, .. }) if by_faction.len() == FACTIONS.len() => {
+                by_faction.keys().map(FactionId::new).collect()
+            }
+            (None, _) => FACTIONS.map(FactionId::new).to_vec(),
+            (Some(lineup), _) => {
                 check_lineup(content, lineup).map_err(ReviewError::Invalid)?;
                 lineup.iter().map(FactionId::new).collect()
             }
@@ -1968,7 +2005,7 @@ fn load_policy(
     if let Some(directory) = bundle_directory {
         ti4_tensor::configure_deterministic(20_260_821)
             .map_err(|error| ReviewError::Invalid(format!("MLP runtime: {error}")))?;
-        if let Some(bundles) = ti4_mlp::bundle::separate_model_bundles(&directory, &FACTIONS)
+        if let Some(bundles) = ti4_mlp::bundle::separate_model_bundles(&directory)
             .map_err(ReviewError::Invalid)?
         {
             return load_separate_models(directory, &bundles);

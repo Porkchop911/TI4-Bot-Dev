@@ -613,6 +613,245 @@ pub fn annotate(session: &ReviewSession, text: &str) -> String {
     annotate_seats(session, &annotate_systems(session, text))
 }
 
+/// A card, agenda or planet by its printed name alone (the id when the catalogue has none).
+fn printed_name(content: &ContentStore, category: ContentType, id: &str) -> String {
+    content
+        .get(category, id)
+        .and_then(|record| record.text("name").or_else(|| record.text("shortName")))
+        .map_or_else(|| id.to_owned(), str::to_owned)
+}
+
+fn unit_word(unit_type: &str, count: Option<u32>) -> String {
+    let base = unit_type.to_ascii_lowercase().replace('_', " ");
+    let plural = match base.as_str() {
+        "infantry" | "pds" => base.clone(),
+        "warsun" | "war sun" => "war suns".to_owned(),
+        "spacedock" | "space dock" => "space docks".to_owned(),
+        _ => format!("{base}s"),
+    };
+    match count {
+        None => base,
+        Some(1) => format!("1 {base}"),
+        Some(n) => format!("{n} {plural}"),
+    }
+}
+
+/// An engine phrase (`text` with `{key}` placeholders) said with names a reader knows: seats with
+/// their factions, systems with their planets, cards by printed name, units with counts.
+#[must_use]
+pub fn say_phrase(session: &ReviewSession, phrase: &ti4_engine::phrases::Phrase) -> String {
+    use ti4_engine::phrases::Subject;
+    let content = ContentStore::embedded();
+    let say = |subject: &Subject| match subject {
+        Subject::Seat { player } => annotate_seats(session, player.as_str()),
+        Subject::SeatPossessive { player } => {
+            format!("{}'s", annotate_seats(session, player.as_str()))
+        }
+        Subject::System { system } => system_label(session, system.as_str()),
+        Subject::Planet { planet } => printed_name(content, ContentType::Planets, planet.as_str()),
+        Subject::Unit { unit_type } => unit_word(unit_type, None),
+        Subject::Units { unit_type, count } => unit_word(unit_type, Some(*count)),
+        Subject::Agenda { card } => printed_name(content, ContentType::Agendas, card),
+        Subject::StrategyCard { card } => printed_name(content, ContentType::StrategyCards, card),
+        Subject::Note { card, .. } => printed_name(content, ContentType::PromissoryNotes, card),
+        Subject::ActionCard { card } => {
+            printed_name(content, ContentType::ActionCards, &card.to_string())
+        }
+        Subject::SecretObjective { card } => {
+            printed_name(content, ContentType::SecretObjectives, &card.to_string())
+        }
+    };
+    let mut out = String::with_capacity(phrase.text.len() + 32);
+    let mut rest = phrase.text.as_str();
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let tail = &rest[open..];
+        match tail.find('}').map(|close| (&tail[1..close], close)) {
+            Some((key, close)) if phrase.refs.contains_key(key) => {
+                out.push_str(&say(&phrase.refs[key]));
+                rest = &tail[close + 1..];
+            }
+            _ => {
+                out.push('{');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// What playing a reaction card would do, as the engine words it; `None` without words.
+#[must_use]
+pub fn say_effect(
+    session: &ReviewSession,
+    preview: &ti4_engine::decision_context::EffectPreview,
+) -> Option<String> {
+    (!preview.phrase.text.is_empty()).then(|| say_phrase(session, &preview.phrase))
+}
+
+fn phrase_hints(
+    details: &serde_json::Map<String, serde_json::Value>,
+) -> Option<ti4_engine::phrases::PhraseHints> {
+    serde_json::from_value(details.get(ti4_engine::phrases::PHRASES_KEY)?.clone()).ok()
+}
+
+fn typed<T: serde::de::DeserializeOwned>(
+    details: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<T> {
+    serde_json::from_value(details.get(key)?.clone()).ok()
+}
+
+/// The display-only facts of a question (`Choice::details`) as reader lines: command pools with
+/// the fleet-supply bonus, fleet supply used/limit, capacity, the offer card header and facts,
+/// and the prompt as the engine phrases it when that says more than the prompt does.
+#[must_use]
+pub fn details_lines(
+    session: &ReviewSession,
+    prompt: &str,
+    details: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<String> {
+    use serde_json::Value;
+    let mut lines = Vec::new();
+    if let Some(pools) = typed::<ti4_engine::tokens::CommandPools>(details, "pools") {
+        let mut line = format!(
+            "Command pools: tactic {} · fleet {} · strategic {}",
+            pools.tactic, pools.fleet, pools.strategic
+        );
+        if pools.fleet_supply_bonus > 0 {
+            line.push_str(&format!(
+                " · fleet supply +{} beyond the pool",
+                pools.fleet_supply_bonus
+            ));
+        }
+        lines.push(line);
+    }
+    for (key, label) in [
+        ("reinforcements", "Command tokens in reinforcements"),
+        ("tokens_to_place", "Tokens still to place"),
+    ] {
+        if let Some(n) = details.get(key).and_then(Value::as_i64) {
+            lines.push(format!("{label}: {n}"));
+        }
+    }
+    if let Some(fleet) =
+        typed::<ti4_engine::fleet::FleetSupplyHints>(details, ti4_engine::fleet::FLEET_SUPPLY_KEY)
+    {
+        let limit = if fleet.unlimited {
+            "unlimited this round".to_owned()
+        } else {
+            fleet.limit.to_string()
+        };
+        let mut line = format!("Fleet supply here: {}/{limit}", fleet.used);
+        if fleet.fleet_supply_bonus > 0 && !fleet.unlimited {
+            line.push_str(&format!(
+                " (limit includes +{} bonus)",
+                fleet.fleet_supply_bonus
+            ));
+        }
+        lines.push(line);
+    }
+    if let Some(cap) =
+        typed::<ti4_engine::production::CapacityHints>(details, ti4_engine::production::CAPACITY_KEY)
+    {
+        lines.push(format!(
+            "Capacity here: {}/{} used · fighters take {}{}",
+            cap.consumed,
+            cap.transport,
+            cap.fighters,
+            if cap.unused_support > 0 {
+                format!(" · {} dock fighter support free", cap.unused_support)
+            } else {
+                String::new()
+            }
+        ));
+    }
+    if let Some(Value::Object(card)) = details.get("card") {
+        let part = |key: &str| {
+            card.get(key)
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        };
+        let head: Vec<&str> = ["title", "tag", "window"]
+            .into_iter()
+            .filter_map(part)
+            .collect();
+        if !head.is_empty() {
+            lines.push(head.join(" · "));
+        }
+        if let Some(text) = part("text") {
+            lines.push(text.to_owned());
+        }
+    }
+    if let Some(Value::Array(facts)) = details.get("facts") {
+        for fact in facts.iter().filter_map(Value::as_object) {
+            let label = fact
+                .get("label")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let text = |key: &str| fact.get(key).and_then(Value::as_str);
+            let number = |key: &str| fact.get(key).and_then(Value::as_i64);
+            let value = if let (Some(from), Some(to)) = (number("from"), number("to")) {
+                number("of").map_or_else(
+                    || format!("{from} -> {to}"),
+                    |of| format!("{from} -> {to} (of {of})"),
+                )
+            } else if let Some(seat) = text("seat") {
+                annotate_seats(session, seat)
+            } else if let Some(name) = text("planet")
+                .or_else(|| text("unit"))
+                .or_else(|| text("technology"))
+            {
+                name.to_owned()
+            } else {
+                match fact.get("value") {
+                    Some(Value::String(text)) => text.clone(),
+                    Some(other) => other.to_string(),
+                    None => String::new(),
+                }
+            };
+            lines.push(format!("{label}: {value}"));
+        }
+    }
+    if let Some(said) = phrase_hints(details).and_then(|hints| hints.prompt) {
+        let said = say_phrase(session, &said);
+        if said != annotate(session, prompt) {
+            lines.push(said);
+        }
+    }
+    lines
+}
+
+/// What to show under one option beyond its label: the engine's phrase for what it names (when it
+/// says more than the label) and, in a reaction window, what the card will do.
+#[must_use]
+pub fn option_lines(
+    session: &ReviewSession,
+    option_id: &str,
+    label: &str,
+    details: &serde_json::Map<String, serde_json::Value>,
+    previews: &[ti4_engine::decision_context::EffectPreview],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(said) =
+        phrase_hints(details).and_then(|mut hints| hints.options.remove(option_id))
+    {
+        let said = say_phrase(session, &said);
+        if said != annotate(session, label) {
+            lines.push(said);
+        }
+    }
+    lines.extend(
+        previews
+            .iter()
+            .filter(|preview| preview.option == option_id)
+            .filter_map(|preview| say_effect(session, preview))
+            .map(|effect| format!("When it resolves: {effect}")),
+    );
+    lines
+}
+
 pub fn polygon(center: Pos2, radius: f32, sides: usize, offset: f32) -> Vec<Pos2> {
     (0..sides)
         .map(|index| {
@@ -1259,8 +1498,12 @@ pub fn board_view(
             token_labels.push("Frontier".to_owned());
         }
         if state.breach_tokens.contains(&system_id) {
-            token_labels.push("Breach".to_owned());
+            token_labels.push(format!(
+                "Breach ({})",
+                crate::faction_state::breach_state(state, &system_id)
+            ));
         }
+        token_labels.extend(crate::faction_state::tile_labels(state, &system_id));
         if state.thunders_edge_system.as_ref() == Some(&system_id) {
             token_labels.push("Thunder's Edge".to_owned());
         }
@@ -1546,6 +1789,10 @@ pub struct DecisionRow {
     pub path: DecisionPath,
     pub prompt: String,
     pub context: Option<String>,
+    /// Display-only facts of the question, the reaction-card previews and the pending effect.
+    pub details: serde_json::Map<String, serde_json::Value>,
+    pub previews: Vec<ti4_engine::decision_context::EffectPreview>,
+    pub pending_effect: Option<ti4_engine::decision_context::EffectPreview>,
     /// `head → resolved · temperature T · chosen C`, the reviewer's one-line summary.
     pub summary: String,
     pub rank: Option<RankInfo>,
@@ -1646,6 +1893,9 @@ pub fn decision_rows(frame: &ReviewFrame) -> Vec<DecisionRow> {
                 path: path_kind(&decision.path),
                 prompt: decision.prompt.clone(),
                 context: decision.context.as_ref().map(json_pretty),
+                details: decision.details.clone(),
+                previews: decision.previews.clone(),
+                pending_effect: decision.pending_effect.clone(),
                 summary: format!(
                     "{} → {} · temperature {:?} · chosen {}",
                     decision.requested_head,

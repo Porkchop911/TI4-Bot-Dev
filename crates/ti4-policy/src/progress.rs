@@ -51,6 +51,9 @@ pub struct Progress {
     /// dreadnought II 5.2 = 5200). Infantry and mechs, in space or on planets, use normal cost.
     #[serde(default)]
     pub fleet_value_permille: i64,
+    /// Faction-term milestones ([`crate::faction_measure`]); zero unless `MEASURE_FACTION_TERMS` is on.
+    #[serde(default)]
+    pub faction_terms: crate::faction_measure::FactionProgress,
     /// Technologies owned beyond the setup baseline, so a seat is paid for researching rather
     /// than for what it was dealt.
     #[serde(default)]
@@ -70,6 +73,9 @@ pub struct Progress {
     /// Planets in Fracture systems this seat controls, Styx included; reward bookkeeping only.
     #[serde(default)]
     pub fracture_planets: i64,
+    /// Relics this seat holds; reward bookkeeping only.
+    #[serde(default)]
+    pub relics: i64,
     /// Opportunity, in thousandths: planet value this seat could expect to take with one activation
     /// ([`crate::power_map::opportunity`]). Zero unless [`MEASURE_PROJECTION`] is on and a
     /// recording bot fills it, because the movement search behind it costs about a millisecond.
@@ -82,6 +88,40 @@ pub struct Progress {
     /// reward bookkeeping only.
     #[serde(default)]
     pub non_home_planet_value: i64,
+    /// Victory points held from Support for the Throne (included in `victory_points`); reward
+    /// bookkeeping only.
+    #[serde(default)]
+    pub support_for_the_throne_points: i64,
+    /// Spendable resources (ready planets plus trade goods); reward bookkeeping only.
+    #[serde(default)]
+    pub spend_pool: i64,
+    /// Whether the game is in the Action phase.
+    #[serde(default)]
+    pub action_phase: bool,
+    /// Whether the game is in the Status phase.
+    #[serde(default)]
+    pub status_phase: bool,
+    /// Printed resources of the controlled, still-ready planets; measured in the Action and Status
+    /// phases only.
+    #[serde(default)]
+    pub ready_planet_resources: i64,
+    /// The decision offers a produce, pay or place option (set by the recording bot).
+    #[serde(default)]
+    pub production_related: bool,
+    /// The decision offers a produce option (set by the recording bot).
+    #[serde(default)]
+    pub produce_offered: bool,
+    /// Bill of the units the chosen produce option builds (every unit type, full cost).
+    #[serde(default)]
+    pub built_cost: i64,
+    /// Build value in per-mille reward points: the per-unit table (dreadnought 10, II 13, ...),
+    /// basic fighters only within capacity (`SeatObservation::build_value_permille`).
+    #[serde(default)]
+    pub built_value_permille: i64,
+    /// Cumulative table value, per-mille points, of units this seat has removed for being over
+    /// fleet supply (37.3) or capacity (16.3), valued like a build; reward bookkeeping only.
+    #[serde(default)]
+    pub scuttled_permille: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -143,6 +183,13 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         scoreable_secret: count(seen.scoreable_secret(player)),
         round_number: seen.round(),
         fleet_value_permille: seen.fleet_value_permille(player),
+        faction_terms: if crate::faction_measure::MEASURE_FACTION_TERMS
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            crate::faction_measure::measure(seen, player)
+        } else {
+            Default::default()
+        },
         technologies_gained: {
             let held = seen.seat(player).map_or(0, |seat| seat.technologies.len());
             count(held.saturating_sub(baseline.technologies))
@@ -160,6 +207,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
                 .filter(|(system, _)| seen.is_fracture_system(system))
                 .count(),
         ),
+        relics: seen.seat(player).map_or(0, |seat| count(seat.relics.len())),
         holds_styx: controlled
             .iter()
             .any(|(_, planet)| planet.as_str() == "styx"),
@@ -167,6 +215,34 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         // both this and the critic; see `MEASURE_PROJECTION`.
         projection_permille: 0,
         home_planets_lost: count(seen.home_planets_lost(player)),
+        support_for_the_throne_points: seen.support_for_the_throne_points(player),
+        spend_pool: seen.available_spend(player, ti4_engine::production::Spend::Resources),
+        action_phase: seen.phase() == ti4_model::state::Phase::Action,
+        status_phase: seen.phase() == ti4_model::state::Phase::Status,
+        ready_planet_resources: if matches!(
+            seen.phase(),
+            ti4_model::state::Phase::Action | ti4_model::state::Phase::Status
+        ) {
+            controlled
+                .iter()
+                .filter(|(_, planet)| seen.planet_is_ready(planet))
+                .map(|(_, planet)| {
+                    ti4_engine::production::planet_value(
+                        seen.content(),
+                        seen.sources(),
+                        planet,
+                        ti4_engine::production::Spend::Resources,
+                    )
+                })
+                .sum()
+        } else {
+            0
+        },
+        production_related: false,
+        produce_offered: false,
+        built_cost: 0,
+        built_value_permille: 0,
+        scuttled_permille: seen.scuttled_permille(player),
         non_home_planet_value: {
             let home = seen
                 .seat(player)

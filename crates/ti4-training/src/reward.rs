@@ -170,6 +170,35 @@ pub struct Reward {
     /// Marrow already attaches to it. Credited at the final slot. Off by default.
     #[serde(default)]
     pub styx_bonus: f64,
+    /// Penalty per resource lost to overpaying at a production window: how far the seat's
+    /// spendable pool shrank minus the bill of the units bought (the engine carries overpayment as
+    /// credit inside one window and drops it when the window closes). Charged on the window's last
+    /// decision. Off by default.
+    #[serde(default)]
+    pub overpay_penalty: f64,
+    /// Penalty per printed resource of the seat's still-ready planets at its last Action-phase
+    /// decision of each round (the status phase readies them again, so they were never spent).
+    /// Planets only; trade goods have `trade_goods_hoard_weight`. Off by default.
+    #[serde(default)]
+    pub unused_resources_weight: f64,
+    /// Count unused resources after the status phase's scoring instead of at the last Action-phase
+    /// decision: the round's figure is the lowest ready-planet count from that decision through the
+    /// round's Status-phase decisions (scoring only spends, readying only adds, and the token
+    /// redistribution comes between them), so resources spent on a spend objective count as used.
+    /// Off keeps the reference reward exactly.
+    #[serde(default)]
+    pub unused_after_scoring: bool,
+    /// Bonus per resource of units built (the produce option's bill), paid on the producing
+    /// decision. Every unit counts at full cost, including fighters, infantry and mechs; upgraded
+    /// ships count 1.3x their bill, the `Progress::fleet_value_permille` convention. Rewards
+    /// spending, unlike the fleet-value potential. Off by default.
+    #[serde(default)]
+    pub build_weight: f64,
+    /// Claw-back for units scuttled to get under fleet supply (37.3): `scuttle_multiplier` times
+    /// `build_weight` per resource removed, valued like a build, charged on the decision before the
+    /// removal is first seen. Needs `build_weight > 0`. Off (0) by default.
+    #[serde(default)]
+    pub scuttle_multiplier: f64,
     /// One small Stage-2 bonus on the first observed entry into the Fracture. Paid once per
     /// seat-game, before discounting, and never again for leaving and re-entering. Off by default;
     /// an experiment must select its value explicitly.
@@ -179,6 +208,23 @@ pub struct Reward {
     /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
     #[serde(default)]
     pub fracture_planet_bonus: f64,
+    /// Potential per Fracture planet this seat controls, Styx included. Pure shaping: `returns`
+    /// takes it back at the horizon, so it pays for taking Fracture planets, not for holding them at
+    /// the end (`fracture_planet_bonus` is the terminal version). Off by default.
+    #[serde(default)]
+    pub fracture_planet_shaping: f64,
+    /// Potential while this seat controls Styx, on top of its victory point and of
+    /// `fracture_planet_shaping`. Pure shaping, like it. Off by default.
+    #[serde(default)]
+    pub styx_shaping: f64,
+    /// Potential per relic held, up to [`RELIC_SHAPING_CAP`]. Pure shaping, like
+    /// `fracture_planet_shaping`. Off by default.
+    #[serde(default)]
+    pub relic_shaping: f64,
+    /// Scale on the per-faction milestone terms ([`crate::faction_terms`]), in VP times `vp_weight`.
+    /// Pure shaping except the doubled home charge. 0 = off, and then nothing changes.
+    #[serde(default)]
+    pub faction_terms_weight: f64,
     /// Zero the scoreable public/secret counts in the final snapshot, as projection is, so
     /// `objective_weight`/`secret_weight` become pure shaping: a game can no longer bank reward for
     /// standing next to a point at the horizon. Off keeps the reference reward exactly.
@@ -207,6 +253,15 @@ pub struct Reward {
     /// at the seat's last round-one decision like `r1_bonus`. Off by default.
     #[serde(default)]
     pub r1_expansion_weight: f64,
+    /// The same holding payment for every later round: per resource and influence of the non-home
+    /// planets held when the round ends, credited at the seat's last decision of that round.
+    /// Off by default.
+    #[serde(default)]
+    pub round_expansion_weight: f64,
+    /// What a Support for the Throne point is worth as a share of `vp_weight` (1 counts it like any
+    /// other point). The default keeps every earlier reward exact.
+    #[serde(default = "full_weight")]
+    pub sftt_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -222,6 +277,10 @@ pub struct Reward {
     /// difference in the advantage and calls it signal. Bucketing the baseline by round removes
     /// it. Costs nothing in data: the buckets partition the same decisions.
     pub round_baseline: bool,
+}
+
+const fn full_weight() -> f64 {
+    1.0
 }
 
 const fn default_requirement() -> Requirement {
@@ -264,14 +323,25 @@ impl Default for Reward {
             zero_fleet_penalty: 0.0,
             trade_goods_hoard_weight: 0.0,
             styx_bonus: 0.0,
+            overpay_penalty: 0.0,
+            unused_resources_weight: 0.0,
+            unused_after_scoring: false,
+            build_weight: 0.0,
+            scuttle_multiplier: 0.0,
             fracture_entry_bonus: 0.0,
             fracture_planet_bonus: 0.0,
+            fracture_planet_shaping: 0.0,
+            styx_shaping: 0.0,
+            relic_shaping: 0.0,
+            faction_terms_weight: 0.0,
             zero_terminal_objectives: false,
             home_loss_weight: 0.0,
             keep_terminal_projection: false,
             projection_rank_weight: 0.0,
             negotiation_step_penalty: 0.0,
             r1_expansion_weight: 0.0,
+            round_expansion_weight: 0.0,
+            sftt_weight: 1.0,
         }
     }
 }
@@ -281,6 +351,9 @@ pub const FLEET_HOARD_AT: i64 = 7;
 
 /// Trade goods up to this many are free of `trade_goods_hoard_weight`.
 pub const TRADE_GOODS_FREE: i64 = 7;
+
+/// Relics beyond this many earn no `relic_shaping`.
+pub const RELIC_SHAPING_CAP: i64 = 2;
 
 impl Reward {
     /// The default coefficients for a stage.
@@ -331,12 +404,29 @@ impl Reward {
             reason = "home planet counts are single digits"
         )]
         let home_lost = progress.home_planets_lost as f64;
+        #[expect(clippy::cast_precision_loss, reason = "a handful of points")]
+        let sftt = progress.support_for_the_throne_points as f64;
         self.projection_weight * projection - self.home_loss_weight * home_lost
-            + self.vp_weight * points
+            + self.vp_weight * (points - (1.0 - self.sftt_weight) * sftt)
             + self.objective_weight * public
             + self.secret_weight * secret
             + self.fleet_weight * fleet
             + self.tech_weight * techs
+            + self.discovery_potential(progress)
+    }
+
+    /// The Fracture, Styx and relic shaping inside [`Self::horizon_potential`]. `returns` takes it
+    /// back at the horizon, so these terms only speed up discovering the Fracture.
+    #[must_use]
+    pub fn discovery_potential(&self, progress: &Progress) -> f64 {
+        #[expect(clippy::cast_precision_loss, reason = "a handful of planets and relics")]
+        let (planets, relics) = (
+            progress.fracture_planets as f64,
+            progress.relics.min(RELIC_SHAPING_CAP) as f64,
+        );
+        self.fracture_planet_shaping * planets
+            + self.styx_shaping * f64::from(u8::from(progress.holds_styx))
+            + self.relic_shaping * relics
     }
 
     /// Whether this reward is self-consistent.
@@ -453,6 +543,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     if rewards.is_empty() {
         return Vec::new();
     }
+    // The discovery terms are pure shaping: their horizon potential is taken back at the final
+    // slot. Not by zeroing the final snapshot, which the terminal Styx/Fracture bonuses still read.
+    if reward.stage == Stage::Two
+        && let (Some(slot), Some(horizon)) = (rewards.last_mut(), snapshots.last())
+    {
+        *slot -= reward.discovery_potential(horizon);
+    }
 
     match reward.stage {
         Stage::One => {
@@ -483,6 +580,25 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                     .get(index + 1)
                     .map_or(0.0, |after| after.non_home_planet_value as f64);
                 *slot += reward.r1_expansion_weight * expanded;
+            }
+            if reward.round_expansion_weight > 0.0 {
+                // The last decision of each later round, paid what is held right after it.
+                for (index, step) in episode.steps.iter().enumerate() {
+                    let last_of_round = episode
+                        .steps
+                        .get(index + 1)
+                        .is_none_or(|next| next.round_number != step.round_number);
+                    if step.round_number < 2 || !last_of_round {
+                        continue;
+                    }
+                    #[expect(clippy::cast_precision_loss, reason = "planet values are small")]
+                    let held = snapshots
+                        .get(index + 1)
+                        .map_or(0.0, |after| after.non_home_planet_value as f64);
+                    if let Some(slot) = rewards.get_mut(index) {
+                        *slot += reward.round_expansion_weight * held;
+                    }
+                }
             }
             if let Some(last) = rewards.last_mut() {
                 *last += reward.trade_bonus * episode.traded_goods;
@@ -522,6 +638,14 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                 }
             }
             charge_holdings(&snapshots, reward, &mut rewards);
+            if reward.faction_terms_weight > 0.0 {
+                crate::faction_terms::add_to_rewards(
+                    &snapshots,
+                    reward.faction_terms_weight * reward.vp_weight,
+                    reward.home_loss_weight,
+                    &mut rewards,
+                );
+            }
         }
     }
 
@@ -535,6 +659,95 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
         result[index] = future;
     }
     result
+}
+
+/// Per-seat production facts read off the decision snapshots, each as `(reward slot, amount)`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ProductionTerms {
+    /// Resources lost to overpaying, one per production window, at the window's last decision.
+    pub overpay: Vec<(usize, i64)>,
+    /// Ready planet resources at each round's last Action-phase decision.
+    pub unused: Vec<(usize, i64)>,
+    /// The same after the status phase's scoring: per round, the lowest ready count from the last
+    /// Action-phase decision through the round's Status-phase decisions (`Reward::unused_after_scoring`).
+    pub unused_after_scoring: Vec<(usize, i64)>,
+    /// Build value in per-mille resources: full bill, upgraded ships at 1.3x.
+    pub built_permille: Vec<(usize, i64)>,
+    /// Value of units removed for being over fleet supply, per-mille, at the decision before the
+    /// snapshot that first shows the removal (`Progress::scuttled_permille` is cumulative).
+    pub scuttled_permille: Vec<(usize, i64)>,
+}
+
+/// A window runs from the first decision offering a produce option until the first later decision
+/// that offers none of produce/pay/place. Its waste is what left the spendable pool minus the bill
+/// of the units bought: the credit the engine drops when the window closes. Windows that leave the
+/// Action phase or cross a round are skipped (the pool is then refilled, not spent). Same
+/// definition as `production_eval`. Forced decisions are not recorded; their pool drops land in the
+/// next recorded snapshot.
+#[must_use]
+pub fn production_terms(snapshots: &[Progress]) -> ProductionTerms {
+    let mut terms = ProductionTerms::default();
+    let mut window: Option<(i64, i64, bool)> = None; // bill, pool drop, valid
+    let (mut prev_pool, mut prev_round, mut prev_scuttled) = (0, 0, 0);
+    let mut last_action: std::collections::BTreeMap<u32, (usize, i64)> =
+        std::collections::BTreeMap::new();
+    let mut after_scoring: std::collections::BTreeMap<u32, (usize, i64)> =
+        std::collections::BTreeMap::new();
+    for (index, now) in snapshots.iter().enumerate() {
+        if let Some(open) = window.as_mut() {
+            if !now.action_phase || now.round_number != prev_round {
+                open.2 = false;
+            }
+            open.1 += (prev_pool - now.spend_pool).max(0);
+        }
+        if !now.production_related
+            && let Some((bill, drop, valid)) = window.take()
+            && valid
+            && drop > bill
+        {
+            terms.overpay.push((index.saturating_sub(1), drop - bill));
+        }
+        if window.is_none() && now.produce_offered {
+            window = Some((0, 0, true));
+        }
+        if let Some(open) = window.as_mut() {
+            open.0 += now.built_cost;
+        }
+        if now.built_value_permille > 0 {
+            terms.built_permille.push((index, now.built_value_permille));
+        }
+        if now.scuttled_permille > prev_scuttled {
+            terms
+                .scuttled_permille
+                .push((index.saturating_sub(1), now.scuttled_permille - prev_scuttled));
+        }
+        prev_scuttled = now.scuttled_permille.max(prev_scuttled);
+        if now.action_phase {
+            last_action.insert(now.round_number, (index, now.ready_planet_resources));
+            after_scoring.insert(now.round_number, (index, now.ready_planet_resources));
+        }
+        // Scoring spends and readying adds, so the round's lowest status count is the one after
+        // scoring and before the planets ready (latest on a tie).
+        if now.status_phase {
+            let entry = after_scoring
+                .entry(now.round_number)
+                .or_insert((index, now.ready_planet_resources));
+            if now.ready_planet_resources <= entry.1 {
+                *entry = (index, now.ready_planet_resources);
+            }
+        }
+        prev_pool = now.spend_pool;
+        prev_round = now.round_number;
+    }
+    terms.unused = last_action
+        .into_values()
+        .map(|(index, ready)| (index.saturating_sub(1), ready))
+        .collect();
+    terms.unused_after_scoring = after_scoring
+        .into_values()
+        .map(|(index, ready)| (index.saturating_sub(1), ready))
+        .collect();
+    terms
 }
 
 /// The holding terms, credited into `rewards` -- one shorter than `snapshots`, whose last entry is
@@ -578,6 +791,36 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
             .position(|progress| progress.fleet_tokens == 0)
     {
         rewards[first.saturating_sub(1)] -= reward.zero_fleet_penalty;
+    }
+    if reward.overpay_penalty > 0.0
+        || reward.unused_resources_weight > 0.0
+        || reward.build_weight > 0.0
+        || reward.scuttle_multiplier > 0.0
+    {
+        let terms = production_terms(snapshots);
+        #[expect(clippy::cast_precision_loss, reason = "resource counts are small")]
+        {
+            for &(slot, lost) in &terms.overpay {
+                rewards[slot] -= reward.overpay_penalty * lost as f64;
+            }
+            let unused = if reward.unused_after_scoring {
+                &terms.unused_after_scoring
+            } else {
+                &terms.unused
+            };
+            for &(slot, ready) in unused {
+                rewards[slot] -= reward.unused_resources_weight * ready as f64;
+            }
+            for &(slot, permille) in &terms.built_permille {
+                if let Some(paid) = rewards.get_mut(slot) {
+                    *paid += reward.build_weight * permille as f64 / 1000.0;
+                }
+            }
+            for &(slot, permille) in &terms.scuttled_permille {
+                rewards[slot] -=
+                    reward.scuttle_multiplier * reward.build_weight * permille as f64 / 1000.0;
+            }
+        }
     }
     // Trade goods beyond the free allowance, charged per round on the holding the round ends with,
     // at the transition into that round's last snapshot.
@@ -1102,6 +1345,33 @@ mod tests {
     }
 
     #[test]
+    fn a_support_for_the_throne_point_pays_its_weight() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let before = Progress {
+            victory_points: 2,
+            ..at(2)
+        };
+        let after = Progress {
+            victory_points: 3,
+            support_for_the_throne_points: 1,
+            ..at(2)
+        };
+        let full = step_rewards(&[before, after], &reward)[0];
+        reward.sftt_weight = 0.3;
+        let reduced = step_rewards(&[before, after], &reward)[0];
+        assert!((full - reward.vp_weight).abs() < 1e-9, "by default it is a point");
+        assert!((reduced - 0.3 * reward.vp_weight).abs() < 1e-9, "at 0.3 it pays 0.3");
+        let objective = Progress {
+            victory_points: 3,
+            ..at(2)
+        };
+        assert!(
+            (step_rewards(&[before, objective], &reward)[0] - reward.vp_weight).abs() < 1e-9,
+            "any other point still pays in full"
+        );
+    }
+
+    #[test]
     fn round_one_expansion_pays_for_what_is_held_when_round_one_ends() {
         let mut reward = Reward::for_stage(Stage::Two);
         let round_two = Progress {
@@ -1125,6 +1395,32 @@ mod tests {
         );
         assert!((with[1] - without[1] - 2.5).abs() < 1e-9);
         assert!((with[2] - without[2]).abs() < 1e-9, "round two does not");
+    }
+
+    #[test]
+    fn later_rounds_pay_what_is_held_at_each_rounds_end() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let held = |round, value| Progress {
+            non_home_planet_value: value,
+            ..at(round)
+        };
+        // Paid on the snapshot after each round's last decision: 6 after round 2, 7 (final) after round 3.
+        let episode = Episode {
+            steps: vec![at(1), held(2, 3), held(2, 5), held(3, 6)],
+            final_progress: held(3, 7),
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let without = returns(&episode, &reward);
+        reward.round_expansion_weight = 0.5;
+        let with = returns(&episode, &reward);
+        let added: Vec<f64> = with.iter().zip(&without).map(|(w, o)| w - o).collect();
+        // Suffix sums: every decision up to round 2's last carries 0.5x6 + 0.5x7; round 3's only 0.5x7.
+        assert!((added[3] - 3.5).abs() < 1e-9, "{added:?}");
+        assert!((added[1] - 6.5).abs() < 1e-9, "{added:?}");
+        assert!((added[0] - added[1]).abs() < 1e-9, "round one earns nothing itself: {added:?}");
     }
 
     #[test]
@@ -1330,6 +1626,9 @@ mod tests {
         assert!(reference.zero_fleet_penalty.abs() < f64::EPSILON);
         assert!(reference.trade_goods_hoard_weight.abs() < f64::EPSILON);
         assert!(reference.styx_bonus.abs() < f64::EPSILON);
+        assert!(reference.overpay_penalty.abs() < f64::EPSILON);
+        assert!(reference.unused_resources_weight.abs() < f64::EPSILON);
+        assert!(reference.build_weight.abs() < f64::EPSILON);
         assert!(reference.fracture_planet_bonus.abs() < f64::EPSILON);
     }
 
@@ -1366,6 +1665,41 @@ mod tests {
     }
 
     #[test]
+    fn discovery_shaping_pays_the_capture_and_takes_the_horizon_back() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_planet_shaping = 8.0;
+        reward.styx_shaping = 4.0;
+        reward.relic_shaping = 2.0;
+        let planets = |count: i64, progress: Progress| Progress {
+            fracture_planets: count,
+            ..progress
+        };
+        // The first decision takes a planet (+8); the horizon holds two. With the horizon
+        // potential taken back, each undiscounted return is minus the potential before its
+        // decision, so the capture reaches the policy through the step reward (GAE), not the suffix.
+        let episode = holdings_episode(
+            vec![holding(1, 3, 0), planets(1, holding(2, 3, 0))],
+            planets(2, holding(4, 3, 0)),
+        );
+        assert_shift(&shift(&episode, &reward), &[0.0, -8.0]);
+        let mut snapshots = episode.steps.clone();
+        snapshots.push(episode.final_progress);
+        let steps = step_rewards(&snapshots, &reward);
+        assert!((steps[0] - 8.0).abs() < 1e-9, "{steps:?}");
+        // Styx, and relics capped at two: 8 + 4 + 2 * 2.
+        let rich = Progress {
+            holds_styx: true,
+            relics: 3,
+            ..planets(1, Progress::default())
+        };
+        assert!((reward.discovery_potential(&rich) - 16.0).abs() < 1e-9);
+        // The terminal Styx bonus still reads the unaltered horizon.
+        reward.styx_bonus = 5.0;
+        let styx = holdings_episode(vec![holding(1, 3, 0)], rich);
+        assert_shift(&shift(&styx, &reward), &[5.0]);
+    }
+
+    #[test]
     fn a_fleet_pool_of_seven_at_the_horizon_is_charged_on_every_return() {
         let mut reward = Reward::for_stage(Stage::Two);
         reward.fleet_hoard_penalty = 5.0;
@@ -1392,6 +1726,105 @@ mod tests {
             holding(4, 0, 0),
         );
         assert_shift(&shift(&episode, &reward), &[-10.0, -10.0, 0.0, 0.0]);
+    }
+
+    fn step(round: u32, pool: i64, ready: i64) -> Progress {
+        Progress {
+            round_number: round,
+            action_phase: true,
+            spend_pool: pool,
+            ready_planet_resources: ready,
+            ..Progress::default()
+        }
+    }
+
+    /// Round one has three production windows: bills 3 and 3 paid exactly, then a bill of 2 that
+    /// shrinks the pool by 4 (overpaid 2). Decision 1 buys an upgraded ship (2 -> 2.6); decision 2 a bill-1 infantry.
+    fn production_episode() -> Episode {
+        let produce = |pool, built, permille| Progress {
+            production_related: true,
+            produce_offered: true,
+            built_cost: built,
+            built_value_permille: permille,
+            ..step(1, pool, 5)
+        };
+        holdings_episode(
+            vec![
+                step(1, 6, 5),
+                produce(6, 2, 2600),
+                produce(4, 1, 1000),
+                step(1, 3, 3),
+                produce(3, 3, 3000),
+                step(1, 0, 0),
+                produce(7, 2, 2000),
+                step(1, 3, 3),
+                step(2, 0, 4),
+            ],
+            step(2, 0, 0),
+        )
+    }
+
+    fn snapshots(episode: &Episode) -> Vec<Progress> {
+        let mut all = episode.steps.clone();
+        all.push(episode.final_progress);
+        all
+    }
+
+    #[test]
+    fn overpay_charges_the_lost_credit_of_each_window_on_its_last_decision() {
+        let terms = production_terms(&snapshots(&production_episode()));
+        assert_eq!(terms.overpay, vec![(6, 2)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.overpay_penalty = 0.05;
+        let shifted = shift(&production_episode(), &reward);
+        assert_shift(&shifted, &[-0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn unused_ready_planets_are_charged_once_per_round() {
+        let terms = production_terms(&snapshots(&production_episode()));
+        // Round one's last Action snapshot is index 7 (3 ready); round two's is the final one (0).
+        assert_eq!(terms.unused, vec![(6, 3), (8, 0)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.unused_resources_weight = 0.01;
+        let shifted = shift(&production_episode(), &reward);
+        assert_shift(&shifted, &[-0.03, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn builds_pay_full_cost_and_upgraded_ships_a_premium() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.build_weight = 0.1;
+        let shifted = shift(&production_episode(), &reward);
+        // Rewards 0.26 (upgraded bill 2), 0.1 (bill-1 infantry, full), 0.3 (bill 3), 0.2 (bill 2) at decisions
+        // 1, 2, 4 and 6; returns are their suffix sums.
+        assert_shift(&shifted, &[0.86, 0.86, 0.6, 0.5, 0.5, 0.2, 0.2, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn scuttled_units_claw_back_a_multiple_of_the_build_value() {
+        let scuttled = |permille| Progress {
+            scuttled_permille: permille,
+            ..step(1, 0, 0)
+        };
+        // Cumulative 4000 shows at decision 2 (slot 1), another 5200 at the final snapshot (slot 2).
+        let episode = holdings_episode(
+            vec![scuttled(0), scuttled(0), scuttled(4000)],
+            scuttled(9200),
+        );
+        let terms = production_terms(&snapshots(&episode));
+        assert_eq!(terms.scuttled_permille, vec![(1, 4000), (2, 5200)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.build_weight = 0.1;
+        reward.scuttle_multiplier = 2.0;
+        // Charges 0.8 at slot 1 and 1.04 at slot 2; returns are their suffix sums.
+        assert_shift(&shift(&episode, &reward), &[-1.84, -1.84, -1.04]);
+        reward.scuttle_multiplier = 0.0;
+        assert_shift(&shift(&episode, &reward), &[0.0, 0.0, 0.0]);
+        // A capacity removal of two basic fighters (2 x 1.8 = 3600): 3.6 x 2 x 0.1 = 0.72.
+        reward.scuttle_multiplier = 2.0;
+        let episode = holdings_episode(vec![scuttled(0), scuttled(3600)], scuttled(3600));
+        assert_shift(&shift(&episode, &reward), &[-0.72, 0.0]);
     }
 
     #[test]
@@ -1452,6 +1885,33 @@ mod tests {
                 returns(&episode, &stage_one_off)
             );
         }
+    }
+
+    #[test]
+    fn unused_after_scoring_counts_what_the_status_phase_left_ready() {
+        let status = |round, ready| Progress {
+            action_phase: false,
+            status_phase: true,
+            ..step(round, 0, ready)
+        };
+        // Round one ends its Action phase with 5 ready, spends 3 on an objective (2 left at the
+        // redistribution), then readies everything (6, a later status decision). Round two: an
+        // Action snapshot only.
+        let episode = holdings_episode(
+            vec![step(1, 5, 5), status(1, 5), status(1, 2), status(1, 6), step(2, 4, 4)],
+            step(2, 1, 1),
+        );
+        let terms = production_terms(&snapshots(&episode));
+        assert_eq!(terms.unused, vec![(0, 5), (4, 1)]);
+        assert_eq!(terms.unused_after_scoring, vec![(1, 2), (4, 1)]);
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.unused_resources_weight = 0.1;
+        reward.unused_after_scoring = true;
+        let shifted = shift(&episode, &reward);
+        assert_shift(&shifted, &[-0.3, -0.3, -0.1, -0.1, -0.1]);
+        // Off keeps the Action-phase count.
+        reward.unused_after_scoring = false;
+        assert_shift(&shift(&episode, &reward), &[-0.6, -0.1, -0.1, -0.1, -0.1]);
     }
 
     #[test]

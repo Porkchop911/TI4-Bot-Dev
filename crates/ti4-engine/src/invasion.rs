@@ -8475,7 +8475,11 @@ mod tests {
             "the card was spent"
         );
         let move_offer = |from: &PlanetId, to: &PlanetId| {
-            vec![format!("move|{from}|{to}|infantry"), "decline".to_owned()]
+            vec![
+                format!("move|{from}|{to}|infantry|1"),
+                format!("move|{from}|{to}|infantry"),
+                "decline".to_owned(),
+            ]
         };
         let reaction_offer = vec![
             "reaction:generic:UNITS_COMMITTED:after".to_owned(),

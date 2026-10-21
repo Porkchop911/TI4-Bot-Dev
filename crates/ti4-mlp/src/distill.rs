@@ -238,11 +238,82 @@ impl Adam {
         self.t
     }
 
+    /// Deep copies of the step counter and both moment tables, on the host.
+    pub(crate) fn snapshot_moments(&self) -> (i64, Vec<Tensor>, Vec<Tensor>) {
+        let host = |tensor: &Tensor| tensor.detach().to_device(ti4_tensor::Device::Cpu).copy();
+        (self.t, self.m.iter().map(host).collect(), self.v.iter().map(host).collect())
+    }
+
+    /// Put back what [`Self::snapshot_moments`] took, each table on its current device.
+    pub(crate) fn restore_moments(&mut self, t: i64, m: &[Tensor], v: &[Tensor]) {
+        for (tensor, saved) in self.m.iter_mut().zip(m).chain(self.v.iter_mut().zip(v)) {
+            *tensor = saved.to_device(tensor.device()).copy();
+        }
+        self.t = t;
+    }
+
     /// Move both moment tables without resetting their values or the bias-correction cursor.
     pub fn move_to(&mut self, device: ti4_tensor::Device) {
         for tensor in self.m.iter_mut().chain(&mut self.v) {
             *tensor = tensor.to_device(device);
         }
+    }
+
+    /// Write the moments and step counter: `TI4ADAM1`, `t`, tensor count, then per tensor (m's
+    /// then v's) its length and f32 values, all little-endian. Staged and renamed, so a crash
+    /// never leaves a half file under the real name.
+    ///
+    /// # Errors
+    /// Returns an error when a tensor cannot be read or the file cannot be written.
+    pub fn save_state(&self, path: &std::path::Path) -> Result<(), String> {
+        let mut bytes = b"TI4ADAM1".to_vec();
+        bytes.extend(self.t.to_le_bytes());
+        bytes.extend(((self.m.len() + self.v.len()) as u64).to_le_bytes());
+        for tensor in self.m.iter().chain(&self.v) {
+            let values = ti4_tensor::to_vec(tensor).map_err(|error| error.to_string())?;
+            bytes.extend((values.len() as u64).to_le_bytes());
+            values.iter().for_each(|value| bytes.extend(value.to_le_bytes()));
+        }
+        let staging = path.with_extension("adam.tmp");
+        std::fs::write(&staging, bytes).map_err(|error| format!("writing {}: {error}", staging.display()))?;
+        std::fs::rename(&staging, path).map_err(|error| format!("publishing {}: {error}", path.display()))
+    }
+
+    /// Restore what [`Adam::save_state`] wrote. Nothing changes unless the whole file matches
+    /// this optimiser's tensors.
+    ///
+    /// # Errors
+    /// Returns an error for a missing, malformed or differently shaped file.
+    pub fn load_state(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let bytes = std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+        let word = |at: usize| -> Result<[u8; 8], String> {
+            bytes.get(at..at + 8).and_then(|b| b.try_into().ok()).ok_or_else(|| "truncated Adam state".to_owned())
+        };
+        if bytes.get(..8) != Some(b"TI4ADAM1".as_slice()) {
+            return Err("not an Adam state file".to_owned());
+        }
+        let t = i64::from_le_bytes(word(8)?);
+        if u64::from_le_bytes(word(16)?) != (self.m.len() + self.v.len()) as u64 {
+            return Err("Adam state has a different parameter count".to_owned());
+        }
+        let mut at = 24;
+        let mut loaded = Vec::new();
+        for tensor in self.m.iter().chain(&self.v) {
+            let len = usize::try_from(u64::from_le_bytes(word(at)?)).map_err(|e| e.to_string())?;
+            at += 8;
+            if len != tensor.numel() {
+                return Err("Adam state has a differently shaped tensor".to_owned());
+            }
+            let body = bytes.get(at..at + 4 * len).ok_or("truncated Adam state")?;
+            at += 4 * len;
+            let values: Vec<f32> = body.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+            loaded.push(Tensor::from_slice(&values).reshape(tensor.size()));
+        }
+        for (tensor, value) in self.m.iter_mut().chain(&mut self.v).zip(loaded) {
+            *tensor = value.to_device(tensor.device());
+        }
+        self.t = t;
+        Ok(())
     }
 
     /// Exact optimizer-state fingerprint for repeatability and resume tests.
@@ -906,6 +977,21 @@ pub fn train(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adam_state_round_trips_through_a_file() {
+        let mut params = vec![Tensor::from_slice(&[1.0f32, -2.0, 3.0]).set_requires_grad(true)];
+        let mut adam = Adam::new(Settings::default(), &params);
+        (&params[0] * &params[0]).sum(ti4_tensor::Kind::Float).backward();
+        adam.step(&mut params, 1.0).expect("step");
+        let path = std::env::temp_dir().join(format!("ti4-adam-{}.adam", std::process::id()));
+        adam.save_state(&path).expect("save");
+        let mut fresh = Adam::new(Settings::default(), &params);
+        fresh.load_state(&path).expect("load");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(fresh.steps(), 1);
+        assert_eq!(fresh.state_fingerprint().unwrap(), adam.state_fingerprint().unwrap());
+    }
 
     fn vocabulary() -> ti4_policy::vocabulary::Vocabulary {
         ti4_policy::vocabulary::Vocabulary::build((0..64).map(|n| format!("option:name{n}")))

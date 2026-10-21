@@ -24,7 +24,7 @@ Do not stop, unload or restart `strata` (or LM Studio) to free memory. Ask the o
 
 | Job | Owner | Resource | Started |
 |---|---|---|---|
-| (none; only bounded focused checks) | | | |
+| (none; r8 stopped by the operator's STOP at update 1280, 2026-10-21; checkpoint-1280 for all 32 factions) | | | |
 
 ## Log
 
